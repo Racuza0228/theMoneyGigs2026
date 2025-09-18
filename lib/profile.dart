@@ -59,36 +59,82 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _loadProfileData() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    // Don't set _profileDataLoaded = false here if you want the loading indicator
+    // to show based on its initial state. The build method should handle the
+    // CircularProgressIndicator based on the initial value of _profileDataLoaded.
 
-    String address1 = prefs.getString(_keyAddress1) ?? '';
-    String city = prefs.getString(_keyCity) ?? '';
-    String? state = prefs.getString(_keyState);
-    String zip = prefs.getString(_keyZipCode) ?? '';
-    String minRateString = (prefs.getInt(_keyMinHourlyRate) ?? '').toString();
-    if (minRateString == '0' && (prefs.getInt(_keyMinHourlyRate) == null || !(prefs.containsKey(_keyMinHourlyRate)) )) {
-      minRateString = '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Check if the widget is still mounted after the await.
+      if (!mounted) return;
+
+      // Load address fields
+      String address1 = prefs.getString(_keyAddress1) ?? '';
+      String address2 = prefs.getString(_keyAddress2) ?? ''; // Load address2 directly
+      String city = prefs.getString(_keyCity) ?? '';
+      String? state = prefs.getString(_keyState); // This can be null
+      String zip = prefs.getString(_keyZipCode) ?? '';
+
+      // Load and process minimum hourly rate
+      String minRateString = ''; // Default to empty string
+      // Check if the key exists first to avoid unnecessary getInt calls if it was never set
+      if (prefs.containsKey(_keyMinHourlyRate)) {
+        int? minHourlyRate = prefs.getInt(_keyMinHourlyRate);
+        if (minHourlyRate != null && minHourlyRate > 0) { // Only use it if it's a valid positive number
+          minRateString = minHourlyRate.toString();
+        }
+        // If minHourlyRate is 0 or null after being set, it implies it should be treated as empty or reset.
+      }
+      // The previous complex conditions for minRateString like '0' or 'null'
+      // are simplified by this approach. If it was stored as 0 or couldn't be parsed
+      // to a positive int, it defaults to ''.
+
+      setState(() {
+        _address1Controller.text = address1;
+        _address2Controller.text = address2;
+        _cityController.text = city;
+        _selectedState = state;
+        _zipCodeController.text = zip;
+        _minHourlyRateController.text = minRateString;
+
+        // Determine initial editing states
+        // Start editing address if all core address fields are empty
+        bool hasCoreAddressInfo = address1.isNotEmpty ||
+            city.isNotEmpty ||
+            (state != null && state.isNotEmpty) || // Check if state is not just null but also not empty
+            zip.isNotEmpty;
+        _isEditingAddress = !hasCoreAddressInfo;
+
+        // Start editing rate if no valid rate is set
+        _isEditingRate = minRateString.isEmpty;
+
+        _profileDataLoaded = true; // Data is loaded (or attempted to load)
+      });
+
+    } catch (e) {
+      // Handle any errors during SharedPreferences access or processing
+      print("Error loading profile data: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading profile: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          // Even on error, we mark data as "loaded" to stop the loading indicator.
+          // The UI will show empty fields or whatever default state is appropriate.
+          _profileDataLoaded = true;
+          // Optionally, you might want to set _isEditingAddress and _isEditingRate to true
+          // to encourage the user to input data if loading failed.
+          _isEditingAddress = true;
+          _isEditingRate = true;
+        });
+      }
     }
-    if (minRateString == 'null') {
-      minRateString = '';
-    }
-
-
-    setState(() {
-      _address1Controller.text = address1;
-      _address2Controller.text = prefs.getString(_keyAddress2) ?? '';
-      _cityController.text = city;
-      _selectedState = state;
-      _zipCodeController.text = zip;
-      _minHourlyRateController.text = minRateString;
-
-      _isEditingAddress = !(address1.isNotEmpty || city.isNotEmpty || state != null || zip.isNotEmpty);
-      _isEditingRate = minRateString.isEmpty; // Start editing if no rate is set
-
-      _profileDataLoaded = true;
-    });
   }
+
 
   @override
   void dispose() {

@@ -133,30 +133,83 @@ class _MapPageState extends State<MapPage> {
     await _loadSavedLocations();
   }
 
-  // --- MODIFIED _loadSavedLocations FOR ARCHIVING ---
   Future<void> _loadSavedLocations() async {
     print("MapPage: Loading saved locations...");
     if (!mounted) return;
-    setState(() { _isLoading = true; });
-    final prefs = await SharedPreferences.getInstance();
-    final List<String>? locationsJson = prefs.getStringList(_keySavedLocations);
-    List<StoredLocation> loadedFromPrefs = [];
-    if (locationsJson != null) {
-      loadedFromPrefs = locationsJson.map((jsonString) {
-        try { return StoredLocation.fromJson(jsonDecode(jsonString)); }
-        catch (e) { print("Error decoding StoredLocation in MapPage: $jsonString, Error: $e"); return null; }
-      }).whereType<StoredLocation>().toList();
-    }
-    if (!mounted) return;
+
+    // Set loading state at the beginning.
+    // No need for another setState before this if it's the first thing you do that affects UI.
     setState(() {
-      _allKnownMapVenues = loadedFromPrefs;
-      _displayableMapVenues = _allKnownMapVenues.where((venue) => !venue.isArchived).toList();
-      _updateMarkers(); // _updateMarkers will now use _displayableMapVenues
-      _isLoading = false;
+      _isLoading = true;
     });
-    print("MapPage: Loaded ${_allKnownMapVenues.length} total, ${_displayableMapVenues.length} displayable. Markers updated.");
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Re-check if the widget is still mounted after the await.
+      if (!mounted) {
+        // If not mounted, and we had set _isLoading = true,
+        // it's good practice to try and reset it if possible,
+        // though typically the widget is gone.
+        // However, since setState might not be safe here,
+        // the initial `if (!mounted) return;` is the primary guard.
+        return;
+      }
+
+      final List<String>? locationsJson = prefs.getStringList(_keySavedLocations);
+      List<StoredLocation> loadedFromPrefs = [];
+
+      if (locationsJson != null && locationsJson.isNotEmpty) {
+        List<StoredLocation?> potentiallyNullLocations = locationsJson.map((jsonString) {
+          try {
+            return StoredLocation.fromJson(jsonDecode(jsonString));
+          } catch (e) {
+            print("Error decoding StoredLocation in MapPage: '$jsonString', Error: $e");
+            // Optionally, show a specific error to the user for this item,
+            // or log it more formally. For now, we'll just skip it.
+            return null; // Return null for items that fail to parse
+          }
+        }).toList();
+
+        // Filter out any nulls that resulted from parsing errors.
+        loadedFromPrefs = potentiallyNullLocations.whereType<StoredLocation>().toList();
+      }
+
+      // Check mount again before the final setState, as processing might take time.
+      if (!mounted) return;
+
+      setState(() {
+        _allKnownMapVenues = loadedFromPrefs;
+        _displayableMapVenues = _allKnownMapVenues.where((venue) => !venue.isArchived).toList();
+        _updateMarkers(); // This will use _displayableMapVenues
+        _isLoading = false; // Data loaded (or tried to), stop loading indicator.
+      });
+
+      print("MapPage: Loaded ${_allKnownMapVenues.length} total venues from prefs, "
+          "${_displayableMapVenues.length} are displayable. Markers updated.");
+
+    } catch (e) {
+      print("MapPage: Critical error loading saved locations: $e");
+      if (mounted) {
+        // Show a general error message to the user.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading saved venues: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        // Ensure UI is updated to reflect that loading has finished, even if with an error.
+        setState(() {
+          _isLoading = false;
+          // Optionally, clear existing venue data if loading fails catastrophically
+          // _allKnownMapVenues.clear();
+          // _displayableMapVenues.clear();
+          // _updateMarkers(); // To clear markers from the map
+        });
+      }
+    }
   }
-  // --- END MODIFICATION ---
+
 
   // --- MODIFIED _updateMarkers FOR ARCHIVING ---
   void _updateMarkers() {

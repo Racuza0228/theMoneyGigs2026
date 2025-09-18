@@ -8,8 +8,19 @@ import 'profile.dart';
 import 'page_background_wrapper.dart'; // Import the new wrapper
 import 'package:url_launcher/url_launcher.dart';
 import 'refreshable_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized(); // ENSURE THIS IS CALLED FIRST
+
+  // Optional: If you had any critical SharedPreferences to load *before* runApp,
+  // you could do it here. For example:
+  // final prefs = await SharedPreferences.getInstance();
+  // bool hasSeenOnboarding = prefs.getBool('has_seen_onboarding') ?? false;
+  // Now `hasSeenOnboarding` could be passed to MyApp or a global state management solution.
+  // However, for most cases, loading within widgets is preferred.
+
   runApp(const MyApp());
 }
 
