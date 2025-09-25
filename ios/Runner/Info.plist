@@ -24,12 +24,18 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>GMPAPIKey</key>
+	<string>AIzaSyCjyQbNWIXnY5L9AHXhZrhzqsDwYAZPKVo</string>
 	<key>GoogleMapsApiKey</key>
 	<string>AIzaSyCjyQbNWIXnY5L9AHXhZrhzqsDwYAZPKVo</string>
-	<key>GMPAPIKey</key>
-    <string>AIzaSyCjyQbNWIXnY5L9AHXhZrhzqsDwYAZPKVo</string>
+	<key>LSApplicationCategoryType</key>
+	<string></string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Your app needs access to your location to help you find nearby gigs.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your app needs access to your location to help you find nearby gigs.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -49,11 +55,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>LSApplicationCategoryType</key>
-	<string></string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Your app needs access to your location to help you find nearby gigs.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Your app needs access to your location to help you find nearby gigs.</string>
 </dict>
 </plist>
