@@ -37,11 +37,12 @@ dependencies:
   intl: ^0.18.0
   flutter_rating_bar: ^4.0.1 # Or the latest version
   table_calendar: ^3.0.0
-
-
+  add_2_calendar_new: ^1.0.4
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+      # For generating UIDs for calendar events
+
 
 dev_dependencies:
   flutter_test:

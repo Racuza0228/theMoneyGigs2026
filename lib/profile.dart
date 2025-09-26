@@ -1,8 +1,17 @@
 // lib/profile_page.dart
+import 'dart:convert'; // <<< ADD THIS IMPORT
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // For TextInputFormatter
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart'; // <<< ADD THIS IMPORT
+// You might want to import your models if you were to process the data more deeply before sending
+// import 'gig_model.dart';
+// import 'venue_model.dart';
+
+// Assuming RefreshablePage is a mixin or interface you've defined elsewhere
+// If not, and it's not used, you can remove it. For now, I'll keep it as in your original.
 import 'package:the_money_gigs/refreshable_page.dart';
+
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -27,8 +36,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // State Variables for Edit/View modes
   bool _isEditingAddress = false;
-  bool _isEditingRate = false; // <-- NEW
+  bool _isEditingRate = false;
   bool _profileDataLoaded = false;
+  bool _isExporting = false; // <<< NEW: To disable button during export
 
   static const String _keyAddress1 = 'profile_address1';
   static const String _keyAddress2 = 'profile_address2';
@@ -36,6 +46,11 @@ class _ProfilePageState extends State<ProfilePage> {
   static const String _keyState = 'profile_state';
   static const String _keyZipCode = 'profile_zip_code';
   static const String _keyMinHourlyRate = 'profile_min_hourly_rate';
+
+  // Keys for gigs and venues data (as used in other parts of your app)
+  static const String _keyGigsList = 'gigs_list';
+  static const String _keySavedLocations = 'saved_locations';
+
 
   final List<String> _usStates = [
     'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
@@ -50,45 +65,32 @@ class _ProfilePageState extends State<ProfilePage> {
     super.initState();
     _loadProfileData();
   }
-  @override
+
+  // Assuming you have a RefreshablePage setup, keep it if used.
+  // @override
   Future<void> refreshPageData() async {
     print("ProfilePage: Refresh triggered by global refresh button.");
-    // Implement your specific refresh logic here
-    // e.g., await _loadProfileData();
-    setState(() {});
+    await _loadProfileData(); // Reload profile data on refresh
+    if(mounted) setState(() {});
   }
 
   Future<void> _loadProfileData() async {
-    // Don't set _profileDataLoaded = false here if you want the loading indicator
-    // to show based on its initial state. The build method should handle the
-    // CircularProgressIndicator based on the initial value of _profileDataLoaded.
-
     try {
       final prefs = await SharedPreferences.getInstance();
-
-      // Check if the widget is still mounted after the await.
       if (!mounted) return;
 
-      // Load address fields
       String address1 = prefs.getString(_keyAddress1) ?? '';
-      String address2 = prefs.getString(_keyAddress2) ?? ''; // Load address2 directly
+      String address2 = prefs.getString(_keyAddress2) ?? '';
       String city = prefs.getString(_keyCity) ?? '';
-      String? state = prefs.getString(_keyState); // This can be null
+      String? state = prefs.getString(_keyState);
       String zip = prefs.getString(_keyZipCode) ?? '';
-
-      // Load and process minimum hourly rate
-      String minRateString = ''; // Default to empty string
-      // Check if the key exists first to avoid unnecessary getInt calls if it was never set
+      String minRateString = '';
       if (prefs.containsKey(_keyMinHourlyRate)) {
         int? minHourlyRate = prefs.getInt(_keyMinHourlyRate);
-        if (minHourlyRate != null && minHourlyRate > 0) { // Only use it if it's a valid positive number
+        if (minHourlyRate != null && minHourlyRate > 0) {
           minRateString = minHourlyRate.toString();
         }
-        // If minHourlyRate is 0 or null after being set, it implies it should be treated as empty or reset.
       }
-      // The previous complex conditions for minRateString like '0' or 'null'
-      // are simplified by this approach. If it was stored as 0 or couldn't be parsed
-      // to a positive int, it defaults to ''.
 
       setState(() {
         _address1Controller.text = address1;
@@ -98,22 +100,16 @@ class _ProfilePageState extends State<ProfilePage> {
         _zipCodeController.text = zip;
         _minHourlyRateController.text = minRateString;
 
-        // Determine initial editing states
-        // Start editing address if all core address fields are empty
         bool hasCoreAddressInfo = address1.isNotEmpty ||
             city.isNotEmpty ||
-            (state != null && state.isNotEmpty) || // Check if state is not just null but also not empty
+            (state != null && state.isNotEmpty) ||
             zip.isNotEmpty;
         _isEditingAddress = !hasCoreAddressInfo;
-
-        // Start editing rate if no valid rate is set
         _isEditingRate = minRateString.isEmpty;
-
-        _profileDataLoaded = true; // Data is loaded (or attempted to load)
+        _profileDataLoaded = true;
       });
 
     } catch (e) {
-      // Handle any errors during SharedPreferences access or processing
       print("Error loading profile data: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -123,11 +119,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         );
         setState(() {
-          // Even on error, we mark data as "loaded" to stop the loading indicator.
-          // The UI will show empty fields or whatever default state is appropriate.
           _profileDataLoaded = true;
-          // Optionally, you might want to set _isEditingAddress and _isEditingRate to true
-          // to encourage the user to input data if loading failed.
           _isEditingAddress = true;
           _isEditingRate = true;
         });
@@ -167,9 +159,9 @@ class _ProfilePageState extends State<ProfilePage> {
         await prefs.remove(_keyState);
       }
       await prefs.setString(_keyZipCode, zipCode);
-      if (minHourlyRate != null) {
+      if (minHourlyRate != null && minHourlyRate > 0) { // Store only positive rates
         await prefs.setInt(_keyMinHourlyRate, minHourlyRate);
-      } else {
+      } else { // Remove if zero, negative, or not parseable
         await prefs.remove(_keyMinHourlyRate);
       }
 
@@ -180,7 +172,7 @@ class _ProfilePageState extends State<ProfilePage> {
         );
         setState(() {
           _isEditingAddress = false;
-          _isEditingRate = false; // <-- Switch back to view mode for rate too
+          _isEditingRate = false;
         });
       }
     } else {
@@ -191,6 +183,100 @@ class _ProfilePageState extends State<ProfilePage> {
       }
     }
   }
+
+  // <<< NEW METHOD TO EXPORT APP DATA >>>
+  Future<void> _exportAppData() async {
+    if (!mounted) return;
+    setState(() {
+      _isExporting = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 1. Gather Profile Data
+      Map<String, dynamic> profileData = {
+        _keyAddress1: prefs.getString(_keyAddress1) ?? '',
+        _keyAddress2: prefs.getString(_keyAddress2) ?? '',
+        _keyCity: prefs.getString(_keyCity) ?? '',
+        _keyState: prefs.getString(_keyState), // Can be null
+        _keyZipCode: prefs.getString(_keyZipCode) ?? '',
+        _keyMinHourlyRate: prefs.getInt(_keyMinHourlyRate), // Can be null
+      };
+
+      // 2. Gather Gigs Data
+      final String? gigsJsonString = prefs.getString(_keyGigsList);
+      final List<dynamic> gigsList = gigsJsonString != null && gigsJsonString.isNotEmpty
+          ? jsonDecode(gigsJsonString)
+          : [];
+
+      // 3. Gather Venues Data
+      final List<String>? venuesJsonStringList = prefs.getStringList(_keySavedLocations);
+      final List<dynamic> venuesList = venuesJsonStringList != null
+          ? venuesJsonStringList.map((v) => jsonDecode(v)).toList()
+          : [];
+
+      // 4. Combine all data
+      Map<String, dynamic> allData = {
+        'profile': profileData,
+        'gigs': gigsList,
+        'venues': venuesList,
+        'exported_at': DateTime.now().toIso8601String(),
+        'app_version': 'your_app_version_here', // Consider adding app version
+      };
+
+      // 5. Convert to pretty JSON string for email body
+      String prettyJsonData = const JsonEncoder.withIndent('  ').convert(allData);
+
+      // 6. Create mailto link
+      final String emailTo = 'clifford.adams.ii@gmail.com'; // <<< REPLACE WITH YOUR EMAIL
+      final String emailSubject = 'MoneyGigs App - User Data Export';
+      final Uri emailLaunchUri = Uri(
+        scheme: 'mailto',
+        path: emailTo,
+        queryParameters: {
+          'subject': emailSubject,
+          'body': 'Hi Developer,\n\nPlease find my app data attached below for testing purposes:\n\n$prettyJsonData',
+        },
+      );
+
+      if (await canLaunchUrl(emailLaunchUri)) {
+        await launchUrl(emailLaunchUri);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please send the prepared email.')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open email client. Please copy data manually if needed.'),backgroundColor: Colors.orange),
+          );
+        }
+        // As a fallback, you could print to console or offer to copy to clipboard
+        print("--- APP DATA EXPORT ---");
+        print(prettyJsonData);
+        print("--- END APP DATA EXPORT ---");
+        Clipboard.setData(ClipboardData(text: prettyJsonData)).then((_){
+          if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Data copied to clipboard as email client failed.')));
+        });
+      }
+    } catch (e) {
+      print('Error exporting app data: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error exporting data: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isExporting = false;
+        });
+      }
+    }
+  }
+
 
   InputDecoration _formInputDecoration({
     required String labelText,
@@ -239,7 +325,7 @@ class _ProfilePageState extends State<ProfilePage> {
       String title, {
         bool showEditIcon = false,
         VoidCallback? onEditPressed,
-        String tooltip = 'Edit', // Generic tooltip
+        String tooltip = 'Edit',
       }) {
     return Padding(
       padding: const EdgeInsets.only(top: 20.0, bottom: 12.0),
@@ -277,7 +363,7 @@ class _ProfilePageState extends State<ProfilePage> {
     String? displayState = _selectedState;
     String displayZip = _zipCodeController.text;
 
-    if (displayAddress1.isEmpty && displayCity.isEmpty && displayState == null && displayZip.isEmpty) {
+    if (displayAddress1.isEmpty && displayAddress2.isEmpty && displayCity.isEmpty && displayState == null && displayZip.isEmpty) {
       return const Center(child: Padding(
         padding: EdgeInsets.symmetric(vertical: 8.0),
         child: Text("No address information available. Tap edit to add.", style: TextStyle(color: Colors.white70)),
@@ -295,8 +381,8 @@ class _ProfilePageState extends State<ProfilePage> {
           if (displayCity.isNotEmpty || displayState != null || displayZip.isNotEmpty)
             Text(
               "${displayCity.isNotEmpty ? displayCity : ''}"
-                  "${displayCity.isNotEmpty && displayState != null ? ', ' : ''}"
-                  "${displayState ?? ''} ${displayZip.isNotEmpty ? displayZip : ''}",
+                  "${(displayCity.isNotEmpty && displayState != null) ? ', ' : ''}" // Add comma only if both city and state exist
+                  "${displayState ?? ''} ${displayZip.isNotEmpty ? displayZip : ''}".trim(), // Trim to remove leading/trailing spaces if some parts are empty
               style: textStyle,
             ),
           const SizedBox(height: 10),
@@ -305,7 +391,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildRateDisplay() { // <-- NEW WIDGET FOR RATE DISPLAY
+  Widget _buildRateDisplay() {
     String displayRate = _minHourlyRateController.text;
     if (displayRate.isEmpty) {
       return const Center(child: Padding(
@@ -330,9 +416,8 @@ class _ProfilePageState extends State<ProfilePage> {
     final formBackgroundColor = Colors.black.withAlpha(128);
     final formTextColor = Colors.white;
 
-    // Determine if any address data exists for the edit icon logic
     bool hasAddressData = _address1Controller.text.isNotEmpty ||
-        _address2Controller.text.isNotEmpty || // Also check address2
+        _address2Controller.text.isNotEmpty ||
         _cityController.text.isNotEmpty ||
         _selectedState != null ||
         _zipCodeController.text.isNotEmpty;
@@ -378,7 +463,8 @@ class _ProfilePageState extends State<ProfilePage> {
                     icon: Icons.home_outlined,
                   ),
                   validator: (value) {
-                    if (value == null || value.isEmpty) return 'Please enter Address 1';
+                    // Make Address 1 optional if user doesn't want to save any address
+                    // if (value == null || value.isEmpty) return 'Please enter Address 1';
                     return null;
                   },
                 ),
@@ -400,10 +486,10 @@ class _ProfilePageState extends State<ProfilePage> {
                     labelText: 'City',
                     icon: Icons.location_city_outlined,
                   ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) return 'Please enter your city';
-                    return null;
-                  },
+                  // validator: (value) {
+                  //   if (value == null || value.isEmpty) return 'Please enter your city';
+                  //   return null;
+                  // },
                 ),
                 const SizedBox(height: 16.0),
                 Row(
@@ -427,10 +513,10 @@ class _ProfilePageState extends State<ProfilePage> {
                             );
                           }).toList(),
                           onChanged: (String? newValue) => setState(() => _selectedState = newValue),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) return 'Select a state';
-                            return null;
-                          },
+                          // validator: (value) {
+                          //   if (value == null || value.isEmpty) return 'Select a state';
+                          //   return null;
+                          // },
                         ),
                       ),
                     ),
@@ -446,11 +532,11 @@ class _ProfilePageState extends State<ProfilePage> {
                           FilteringTextInputFormatter.digitsOnly,
                           LengthLimitingTextInputFormatter(5),
                         ],
-                        validator: (value) {
-                          if (value == null || value.isEmpty) return 'Enter zip code';
-                          if (value.length != 5) return 'Zip must be 5 digits';
-                          return null;
-                        },
+                        // validator: (value) {
+                        //   if (value == null || value.isEmpty) return 'Enter zip code';
+                        //   if (value.length != 5) return 'Zip must be 5 digits';
+                        //   return null;
+                        // },
                       ),
                     ),
                   ],
@@ -462,11 +548,11 @@ class _ProfilePageState extends State<ProfilePage> {
 
               _buildSectionTitle(
                 'Work Preferences',
-                showEditIcon: !_isEditingRate && hasRateData, // <-- Show edit for rate
-                onEditPressed: () => setState(() => _isEditingRate = true), // <-- Set editing rate
+                showEditIcon: !_isEditingRate && hasRateData,
+                onEditPressed: () => setState(() => _isEditingRate = true),
                 tooltip: 'Edit Minimum Rate',
               ),
-              if (_isEditingRate) ...[ // <-- Conditional display for rate
+              if (_isEditingRate) ...[
                 TextFormField(
                   controller: _minHourlyRateController,
                   style: TextStyle(color: formTextColor, fontSize: 16),
@@ -479,21 +565,22 @@ class _ProfilePageState extends State<ProfilePage> {
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   validator: (value) {
-                    if (value == null || value.isEmpty) return null;
-                    final rate = int.tryParse(value);
-                    if (rate == null) return 'Please enter a valid number';
-                    if (rate <= 0) return 'Rate must be > 0';
-                    return null;
+                    if (value != null && value.isNotEmpty) { // Only validate if not empty
+                      final rate = int.tryParse(value);
+                      if (rate == null) return 'Please enter a valid number';
+                      if (rate <= 0) return 'Rate must be > 0';
+                    }
+                    return null; // Null if empty or valid
                   },
                 ),
-                const SizedBox(height: 10), // Space after rate input
+                const SizedBox(height: 10),
               ] else ...[
-                _buildRateDisplay(), // <-- Display rate as text
+                _buildRateDisplay(),
               ],
 
               const SizedBox(height: 32.0),
               ElevatedButton(
-                onPressed: _saveProfile,
+                onPressed: (_isEditingAddress || _isEditingRate) && !_isExporting ? _saveProfile : null, // Disable if not editing or currently exporting
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Theme.of(context).colorScheme.primary,
                   foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -501,9 +588,49 @@ class _ProfilePageState extends State<ProfilePage> {
                   textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
                   minimumSize: const Size(double.infinity, 50),
+                ).copyWith(
+                  backgroundColor: MaterialStateProperty.resolveWith<Color?>(
+                        (Set<MaterialState> states) {
+                      if (states.contains(MaterialState.disabled)) {
+                        return Colors.grey.shade700; // Color when disabled
+                      }
+                      return Theme.of(context).colorScheme.primary; // Default color
+                    },
+                  ),
                 ),
-                // Adjust button text if either address or rate is being edited.
-                child: Text(_isEditingAddress || _isEditingRate ? 'Save Changes' : 'Save Profile'),
+                child: Text((_isEditingAddress || _isEditingRate) ? 'Save Changes' : 'Profile Saved'),
+              ),
+              const SizedBox(height: 20.0),
+
+              // <<< EXPORT BUTTON ADDED HERE >>>
+              Divider(color: Colors.grey.shade700, height: 40),
+              Text(
+                "Developer Options",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.orangeAccent.shade200, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10.0),
+              ElevatedButton.icon(
+                icon: _isExporting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.email_outlined),
+                label: const Text('Export App Data for Developer'),
+                onPressed: _isExporting ? null : _exportAppData, // Disable while exporting
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12.0),
+                  textStyle: const TextStyle(fontSize: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Text(
+                  "This helps the developer understand how the app is being used during testing.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                ),
               ),
               const SizedBox(height: 20.0),
             ],
@@ -513,4 +640,3 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 }
-

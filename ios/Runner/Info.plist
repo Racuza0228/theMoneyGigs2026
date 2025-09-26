@@ -32,10 +32,18 @@
 	<string></string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+            <array>
+              <string>mailto</string>
+            </array>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Your app needs access to your location to help you find nearby gigs.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Your app needs access to your location to help you find nearby gigs.</string>
+	<key>NSCalendarsUsageDescription</key>
+    <string>This app needs access to your calendar if you want to add your gigs there.</string>
+    <key>NSContactsUsageDescription</key> <!-- Sometimes required by add_2_calendar indirectly or for future features -->
+    <string>This app needs access to contacts for event attendees (not currently used but good practice).</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
