@@ -1,2 +1,4 @@
+#include "DartDefines.xcconfig"
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
-DART_DEFINES=GOOGLE_API_KEY=AIzaSyCjyQbNWIXnY5L9AHXhZrhzqsDwYAZPKVo
+#include "Generated.xcconfig"
+

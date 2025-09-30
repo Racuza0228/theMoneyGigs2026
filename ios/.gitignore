@@ -1,3 +1,4 @@
+# OS and IDE files
 **/dgph
 *.mode1v3
 *.mode2v3
@@ -10,15 +11,15 @@
 **/.vagrant/
 **/DerivedData/
 Icon?
-**/Pods/
-**/.symlinks/
-profile
 xcuserdata
+profile
+
+# Flutter-specific (these regenerate)
+**/.symlinks/
 **/.generated/
 Flutter/App.framework
 Flutter/Flutter.framework
 Flutter/Flutter.podspec
-Flutter/Generated.xcconfig
 Flutter/ephemeral/
 Flutter/app.flx
 Flutter/app.zip
@@ -27,8 +28,13 @@ Flutter/flutter_export_environment.sh
 ServiceDefinitions.json
 Runner/GeneratedPluginRegistrant.*
 
-# Exceptions to above rules.
+# Exceptions to above rules
 !default.mode1v3
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# IMPORTANT: Do NOT ignore these for App Store Connect builds
+# !Flutter/Generated.xcconfig
+# !**/Pods/
+# !ios/Podfile.lock
