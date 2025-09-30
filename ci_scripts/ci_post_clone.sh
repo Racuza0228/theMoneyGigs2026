@@ -1,35 +1,104 @@
 #!/bin/sh
-
-# Exit if any command fails
 set -e
 
-echo "--- Xcode Cloud Post-Clone Script Starting ---"
+echo "========================================="
+echo "🚀 Xcode Cloud Post-Clone Script"
+echo "========================================="
 
-# 1. Define the iOS directory path
-IOS_DIR="$CI_PRIMARY_REPO_PATH/ios" 
+# Environment info
+echo "📍 Repository Path: $CI_PRIMARY_REPO_PATH"
+echo "📍 Workspace: $CI_WORKSPACE"
+echo "📍 Current Directory: $(pwd)"
 
-# 2. Navigate to the main repo root 
-echo "Navigating to: $CI_PRIMARY_REPO_PATH"
+# Navigate to repo root
 cd "$CI_PRIMARY_REPO_PATH"
 
-# 3. Ensure Flutter dependencies are ready and the Flutter configuration file is generated
-echo "Running Flutter build iOS..."
-flutter build ios --no-codesign
+# Flutter setup
+echo ""
+echo "📦 Flutter Setup"
+echo "----------------"
+flutter --version
+flutter doctor -v
 
-# 4. Navigate to the iOS directory where the Podfile is located
-echo "Navigating to Podfile directory: $IOS_DIR"
-cd "$IOS_DIR"
+# Clean and get dependencies
+echo ""
+echo "🧹 Cleaning Flutter project..."
+flutter clean
 
-# 5. Check if Podfile exists (Diagnostic)
-if [ ! -f "Podfile" ]; then
-    echo "ERROR: Podfile not found in $IOS_DIR. Build cannot continue."
+echo ""
+echo "📥 Getting Flutter packages..."
+flutter pub get
+
+# Generate iOS configuration files
+echo ""
+echo "⚙️  Generating Flutter iOS configuration..."
+flutter build ios --config-only --no-codesign
+
+# Verify Generated.xcconfig was created
+if [ ! -f "ios/Flutter/Generated.xcconfig" ]; then
+    echo "❌ ERROR: Generated.xcconfig not created!"
+    echo "Listing ios/Flutter directory:"
+    ls -la ios/Flutter/
     exit 1
 fi
 
-# 6. Install CocoaPods dependencies and generate missing files
-echo "Running pod install..."
-pod install
+echo "✅ Generated.xcconfig created successfully"
 
-echo "--- Xcode Cloud Post-Clone Script Finished Successfully ---"
+# CocoaPods setup
+echo ""
+echo "🔧 CocoaPods Setup"
+echo "------------------"
+cd ios
 
-exit 0
+# Verify Podfile
+if [ ! -f "Podfile" ]; then
+    echo "❌ ERROR: Podfile not found in ios directory!"
+    ls -la
+    exit 1
+fi
+
+echo "📝 Podfile found"
+
+# Deintegrate old pods if any (cleanup)
+echo "🧹 Cleaning old pods..."
+pod deintegrate || true
+rm -rf Pods
+rm -rf Podfile.lock
+
+# Install pods
+echo ""
+echo "📦 Installing CocoaPods dependencies..."
+pod install --repo-update
+
+# Verify workspace was created
+if [ ! -f "Runner.xcworkspace" ]; then
+    echo "❌ ERROR: Runner.xcworkspace not created!"
+    ls -la
+    exit 1
+fi
+
+echo ""
+echo "✅ Runner.xcworkspace created successfully"
+
+# Verify critical files exist
+echo ""
+echo "🔍 Verifying generated files..."
+REQUIRED_FILES=(
+    "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+    "Pods/Target Support Files/Pods-Runner/Pods-Runner-frameworks-Release-input-files.xcfilelist"
+    "Pods/Target Support Files/Pods-Runner/Pods-Runner-frameworks-Release-output-files.xcfilelist"
+    "Flutter/Generated.xcconfig"
+)
+
+for file in "${REQUIRED_FILES[@]}"; do
+    if [ -f "$file" ]; then
+        echo "✅ $file"
+    else
+        echo "❌ MISSING: $file"
+    fi
+done
+
+echo ""
+echo "========================================="
+echo "✨ Post-Clone Script Completed"
+echo "========================================="
