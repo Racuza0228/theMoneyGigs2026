@@ -93,6 +93,10 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
+            argument = "--dart-define=GOOGLE_API_KEY=AIzaSyCjyQbNWIXnY5L9AHXhZrhzqsDwYAZPKVo"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
             argument = ""
             isEnabled = "NO">
          </CommandLineArgument>

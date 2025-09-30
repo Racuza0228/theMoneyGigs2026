@@ -1,104 +1,31 @@
-#!/bin/sh
+#!/bin/bash
 set -e
-# Final fix attempt: Forced push update
-echo "========================================="
-echo "🚀 Xcode Cloud Post-Clone Script"
-echo "========================================="
 
-# Environment info
-echo "📍 Repository Path: $CI_PRIMARY_REPO_PATH"
-echo "📍 Workspace: $CI_WORKSPACE"
-echo "📍 Current Directory: $(pwd)"
+# --- ZZZ_CI_SCRIPT_EXECUTING_FINAL_ATTEMPT_ZZZ ---
+# This line is a tracer to confirm script execution in logs.
 
-# Navigate to repo root
-cd "$CI_PRIMARY_REPO_PATH"
+FLUTTER_BUILD_ARGS="--config-only --no-codesign"
 
-# Flutter setup
-echo ""
-echo "📦 Flutter Setup"
-echo "----------------"
-flutter --version
-flutter doctor -v
+echo "--- CI Script Start: Generating Dependencies ---"
 
-# Clean and get dependencies
-echo ""
-echo "🧹 Cleaning Flutter project..."
-flutter clean
+# 1. Navigate to the repo root
+cd "$CI_PRIMARY_REPOSITORY_PATH"
 
-echo ""
-echo "📥 Getting Flutter packages..."
+# 2. Get Flutter packages
+echo "Running flutter pub get..."
 flutter pub get
 
-# Generate iOS configuration files
-echo ""
-echo "⚙️  Generating Flutter iOS configuration..."
-flutter build ios --config-only --no-codesign
+# 3. Generate Flutter iOS configuration files (e.g., Generated.xcconfig)
+echo "Running flutter build ios $FLUTTER_BUILD_ARGS"
+flutter build ios $FLUTTER_BUILD_ARGS
 
-# Verify Generated.xcconfig was created
-if [ ! -f "ios/Flutter/Generated.xcconfig" ]; then
-    echo "❌ ERROR: Generated.xcconfig not created!"
-    echo "Listing ios/Flutter directory:"
-    ls -la ios/Flutter/
-    exit 1
-fi
-
-echo "✅ Generated.xcconfig created successfully"
-
-# CocoaPods setup
-echo ""
-echo "🔧 CocoaPods Setup"
-echo "------------------"
+# 4. Navigate to the iOS folder
 cd ios
 
-# Verify Podfile
-if [ ! -f "Podfile" ]; then
-    echo "❌ ERROR: Podfile not found in ios directory!"
-    ls -la
-    exit 1
-fi
+# 5. Install CocoaPods (Generates Pods-Runner.xcconfig and .xcfilelist files)
+echo "Running pod install..."
+pod install
 
-echo "📝 Podfile found"
+echo "--- CI Script Finish: Dependencies Generated Successfully ---"
 
-# Deintegrate old pods if any (cleanup)
-echo "🧹 Cleaning old pods..."
-pod deintegrate || true
-rm -rf Pods
-rm -rf Podfile.lock
-
-# Install pods
-echo ""
-echo "📦 Installing CocoaPods dependencies..."
-pod install --repo-update
-
-# Verify workspace was created
-if [ ! -f "Runner.xcworkspace" ]; then
-    echo "❌ ERROR: Runner.xcworkspace not created!"
-    ls -la
-    exit 1
-fi
-
-echo ""
-echo "✅ Runner.xcworkspace created successfully"
-
-# Verify critical files exist
-echo ""
-echo "🔍 Verifying generated files..."
-REQUIRED_FILES=(
-    "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
-    "Pods/Target Support Files/Pods-Runner/Pods-Runner-frameworks-Release-input-files.xcfilelist"
-    "Pods/Target Support Files/Pods-Runner/Pods-Runner-frameworks-Release-output-files.xcfilelist"
-    "Flutter/Generated.xcconfig"
-)
-
-for file in "${REQUIRED_FILES[@]}"; do
-    if [ -f "$file" ]; then
-        echo "✅ $file"
-    else
-        echo "❌ MISSING: $file"
-    fi
-done
-
-echo ""
-echo "========================================="
-echo "✨ Post-Clone Script Completed"
-echo "========================================="
+exit 0
