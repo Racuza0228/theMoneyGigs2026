@@ -14,6 +14,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized(); // ENSURE THIS IS CALLED FIRST
 
+  // Test all possible ways to get the key
+  const dartDefineKey = String.fromEnvironment('GOOGLE_API_KEY');
+  const dartDefineDefault = String.fromEnvironment('GOOGLE_API_KEY', defaultValue: 'DART_DEFINE_NOT_FOUND');
+
+  print('1. String.fromEnvironment result: "$dartDefineKey"');
+  print('2. With default: "$dartDefineDefault"');
+  print('3. Is empty: ${dartDefineKey.isEmpty}');
+  print('4. Length: ${dartDefineKey.length}');
+
+  // Print all environment keys that contain "GOOGLE"
+  print('5. All environment variables with GOOGLE:');
+  const allEnv = String.fromEnvironment('', defaultValue: '');
+  // This won't work, but let's try other approaches
+
+  print('========================');
   // Optional: If you had any critical SharedPreferences to load *before* runApp,
   // you could do it here. For example:
   // final prefs = await SharedPreferences.getInstance();
