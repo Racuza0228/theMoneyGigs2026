@@ -1,6 +1,6 @@
 # the_money_gigs
 
-By gigging musicians, for gigging musicians.
+By gigging musicians, for gigging musicians.  In BETA testing.
 
 ## Getting Started
 
