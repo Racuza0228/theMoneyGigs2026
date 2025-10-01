@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http; // Import for API calls
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'gig_model.dart'; // Your Gig class
 import 'venue_model.dart'; // Ensure StoredLocation has 'isArchived' and 'copyWith'
-import 'package:add_2_calendar_new/add_2_calendar_new.dart';
+// import 'package:add_2_calendar_new/add_2_calendar_new.dart'; // REMOVED
 
 // Enum to indicate the result of the dialog when editing
 enum GigEditResultAction { updated, deleted, noChange }
@@ -90,7 +90,7 @@ class _BookingDialogState extends State<BookingDialog> {
   bool get _isMapModeNewGig => widget.preselectedVenue != null && !_isEditingMode;
 
   final TimeOfDay _defaultGigTime = const TimeOfDay(hour: 20, minute: 0);
-  bool _addGigToCalendar = false;
+  // bool _addGigToCalendar = false; // REMOVED
 
   @override
   void initState() {
@@ -136,7 +136,7 @@ class _BookingDialogState extends State<BookingDialog> {
       );
       _isAddNewVenue = false;
       _isLoadingVenues = false;
-      _addGigToCalendar = false;
+      // _addGigToCalendar = false; // REMOVED
 
       _payController.addListener(_calculateDynamicRate);
       _gigLengthController.addListener(_calculateDynamicRate);
@@ -145,7 +145,7 @@ class _BookingDialogState extends State<BookingDialog> {
       _calculateDynamicRate();
     } else {
       _selectedTime = _defaultGigTime;
-      _addGigToCalendar = true;
+      // _addGigToCalendar = true; // REMOVED
 
       if (_isMapModeNewGig) {
         _payController = TextEditingController(text: widget.totalPay?.toStringAsFixed(0) ?? '');
@@ -191,9 +191,6 @@ class _BookingDialogState extends State<BookingDialog> {
           .toList();
     }
   }
-
-  // Not used in current logic, _selectedVenue is directly assigned in initState or through dropdown.
-  // bool _findArchivedStatusForGigVenue(Gig gig) { ... }
 
   void _calculateDynamicRate() {
     if (!mounted || _isCalculatorMode) return;
@@ -292,7 +289,7 @@ class _BookingDialogState extends State<BookingDialog> {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: initialDatePickerDate,
-      firstDate: DateTime(DateTime.now().year - 5), // Allow past dates for editing historical gigs
+      firstDate: DateTime(DateTime.now().year - 5),
       lastDate: DateTime(DateTime.now().year + 5),
     );
     if (picked != null && picked != _selectedDate) {
@@ -359,8 +356,8 @@ class _BookingDialogState extends State<BookingDialog> {
 
     final StoredLocation venueWithCorrectArchiveStatus = venueToSave.copyWith(
         isArchived: venueToSave.placeId != null && venueToSave.placeId!.startsWith('manual_')
-            ? false // Manually added venues are active by default
-            : venueToSave.isArchived // Otherwise, respect its current status (e.g., from map preselection)
+            ? false
+            : venueToSave.isArchived
     );
 
     List<StoredLocation> currentSavedVenues = List.from(_allKnownVenuesInternal);
@@ -372,11 +369,7 @@ class _BookingDialogState extends State<BookingDialog> {
     bool wasActuallyAddedOrUpdated = false;
 
     if (existingIndex != -1) {
-      // Potentially update if different (e.g. name/address was edited for an existing placeId)
-      // For now, if placeId exists, we assume it's the same venue, but this could be enhanced.
-      // Let's assume if it has a placeId and it exists, we don't need to re-save unless other properties have changed.
-      // The current logic might re-save if an instance from map (with placeId) is "newly" added by this dialog.
-      if (currentSavedVenues[existingIndex] != venueWithCorrectArchiveStatus) { // Basic check
+      if (currentSavedVenues[existingIndex] != venueWithCorrectArchiveStatus) {
         currentSavedVenues[existingIndex] = venueWithCorrectArchiveStatus;
         wasActuallyAddedOrUpdated = true;
         print("BookingDialog: Updated existing venue via placeId '${venueWithCorrectArchiveStatus.name}'.");
@@ -384,8 +377,8 @@ class _BookingDialogState extends State<BookingDialog> {
     } else if (
     venueWithCorrectArchiveStatus.placeId != StoredLocation.addNewVenuePlaceholder.placeId &&
         !currentSavedVenues.any((v) =>
-        (v.placeId != null && venueWithCorrectArchiveStatus.placeId != null && v.placeId!.isNotEmpty && venueWithCorrectArchiveStatus.placeId!.isNotEmpty && v.placeId == venueWithCorrectArchiveStatus.placeId) || // Check by Place ID
-            (v.name.toLowerCase() == venueWithCorrectArchiveStatus.name.toLowerCase() && v.address.toLowerCase() == venueWithCorrectArchiveStatus.address.toLowerCase()) // Fallback to name/address
+        (v.placeId != null && venueWithCorrectArchiveStatus.placeId != null && v.placeId!.isNotEmpty && venueWithCorrectArchiveStatus.placeId!.isNotEmpty && v.placeId == venueWithCorrectArchiveStatus.placeId) ||
+            (v.name.toLowerCase() == venueWithCorrectArchiveStatus.name.toLowerCase() && v.address.toLowerCase() == venueWithCorrectArchiveStatus.address.toLowerCase())
         )
     ){
       currentSavedVenues.add(venueWithCorrectArchiveStatus);
@@ -428,7 +421,7 @@ class _BookingDialogState extends State<BookingDialog> {
   Gig? _checkForConflict(DateTime newGigStart, double newGigDurationHours, List<Gig> otherGigsToCheck) {
     final newGigEnd = newGigStart.add(Duration(milliseconds: (newGigDurationHours * 3600000).toInt()));
     for (var existingGig in otherGigsToCheck) {
-      if (existingGig.isJamOpenMic) continue; // Don't conflict with placeholder jams
+      if (existingGig.isJamOpenMic) continue;
       final existingGigStart = existingGig.dateTime;
       final existingGigEnd = existingGigStart.add(Duration(milliseconds: (existingGig.gigLengthHours * 3600000).toInt()));
       if (newGigStart.isBefore(existingGigEnd) && newGigEnd.isAfter(existingGigStart)) {
@@ -475,7 +468,6 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     if (mounted) setState(() => _isProcessing = true);
 
-    // --- PAST DATE/TIME WARNING LOGIC ---
     final DateTime now = DateTime.now();
     final DateTime selectedFullDateTime = DateTime(
       _selectedDate!.year,
@@ -485,7 +477,7 @@ class _BookingDialogState extends State<BookingDialog> {
       _selectedTime!.minute,
     );
 
-    if (!_isEditingMode && selectedFullDateTime.isBefore(now)) { // Only show for new gigs, allow editing past gigs
+    if (!_isEditingMode && selectedFullDateTime.isBefore(now)) {
       if (!mounted) {
         if (mounted) setState(() => _isProcessing = false);
         return;
@@ -517,9 +509,6 @@ class _BookingDialogState extends State<BookingDialog> {
         return;
       }
     } else if (_isEditingMode && selectedFullDateTime.isBefore(now) && selectedFullDateTime != widget.editingGig!.dateTime) {
-      // If editing, and the new date is in the past AND it's different from the original past date, also warn.
-      // This prevents accidentally making a past gig even further in the past without confirmation.
-      // If they are just re-saving a past gig without changing its date, no need to warn again.
       if (!mounted) {
         if (mounted) setState(() => _isProcessing = false);
         return;
@@ -550,7 +539,6 @@ class _BookingDialogState extends State<BookingDialog> {
         return;
       }
     }
-    // --- END PAST DATE/TIME WARNING LOGIC ---
 
     double finalPay;
     double finalGigLengthHours;
@@ -581,7 +569,7 @@ class _BookingDialogState extends State<BookingDialog> {
 
     if (_isEditingMode) {
       finalVenueDetails = _selectedVenue!;
-      if (finalVenueDetails.isArchived && finalVenueDetails.placeId != widget.editingGig?.placeId) { // Allow editing if it's the *same* archived venue
+      if (finalVenueDetails.isArchived && finalVenueDetails.placeId != widget.editingGig?.placeId) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text('${finalVenueDetails.name} is archived. Gig cannot be moved to a different archived venue.'),
@@ -641,7 +629,7 @@ class _BookingDialogState extends State<BookingDialog> {
           if (mounted) setState(() => _isProcessing = false);
           return;
         }
-        _selectedVenue = finalVenueDetails; // Update _selectedVenue after adding
+        _selectedVenue = finalVenueDetails;
       } else {
         if (_selectedVenue == null || _selectedVenue!.placeId == StoredLocation.addNewVenuePlaceholder.placeId) {
           if (mounted) {
@@ -677,14 +665,14 @@ class _BookingDialogState extends State<BookingDialog> {
       longitude: finalVenueDetails.coordinates.longitude,
       address: finalVenueDetails.address,
       placeId: finalVenueDetails.placeId,
-      dateTime: selectedFullDateTime, // Use the combined and potentially past-confirmed date
+      dateTime: selectedFullDateTime,
       pay: finalPay,
       gigLengthHours: finalGigLengthHours,
       driveSetupTimeHours: finalDriveSetupHours,
       rehearsalLengthHours: finalRehearsalHours,
     );
 
-    List<Gig> otherGigsToCheck = List.from(widget.existingGigs.where((g) => !g.isJamOpenMic)); // Exclude jam gigs
+    List<Gig> otherGigsToCheck = List.from(widget.existingGigs.where((g) => !g.isJamOpenMic));
     if (_isEditingMode) {
       otherGigsToCheck.removeWhere((g) => g.id == widget.editingGig!.id);
     }
@@ -723,44 +711,7 @@ class _BookingDialogState extends State<BookingDialog> {
       return;
     }
 
-    bool calendarAddAttempted = false;
-    bool calendarAddSuccess = false;
-    if (_addGigToCalendar) {
-      calendarAddAttempted = true;
-      final Event event = Event(
-        title: 'MoneyGig: ${newOrUpdatedGigData.venueName}',
-        description:
-        'Pay: \$${newOrUpdatedGigData.pay.toStringAsFixed(0)}\nGig Length: ${newOrUpdatedGigData.gigLengthHours} hrs\nRehearsal: ${newOrUpdatedGigData.rehearsalLengthHours} hrs',
-        location: newOrUpdatedGigData.address.isNotEmpty
-            ? newOrUpdatedGigData.address
-            : newOrUpdatedGigData.venueName,
-        startDate: newOrUpdatedGigData.dateTime,
-        endDate: newOrUpdatedGigData.dateTime
-            .add(Duration(minutes: (newOrUpdatedGigData.gigLengthHours * 60).toInt())),
-        allDay: false,
-      );
-      try {
-        final bool didPluginSucceed = await Add2Calendar.addEvent2Cal(event);
-        calendarAddSuccess = didPluginSucceed;
-        print("Add2Calendar.addEvent2Cal for '${newOrUpdatedGigData.venueName}' returned: $didPluginSucceed");
-      } on PlatformException catch (e, s) {
-        print("PLATFORM EXCEPTION adding gig to calendar: ${e.message}, Stack: $s");
-        calendarAddSuccess = false;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Error adding to calendar: ${e.message}'),
-              backgroundColor: Colors.orange));
-        }
-      } catch (e, s) {
-        print("Error adding gig to calendar: $e, Stack: $s");
-        calendarAddSuccess = false;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Could not add to calendar: $e'),
-              backgroundColor: Colors.orange));
-        }
-      }
-    }
+    // --- CALENDAR LOGIC REMOVED ---
 
     if (mounted) setState(() => _isProcessing = false);
 
@@ -770,29 +721,7 @@ class _BookingDialogState extends State<BookingDialog> {
       Navigator.of(context).pop(newOrUpdatedGigData);
     }
 
-    if (calendarAddAttempted && mounted) {
-      // Use a GlobalKey for ScaffoldMessenger if showing SnackBar after dialog pop
-      // Or ensure the context used is still valid. For simplicity, we assume context is page context.
-      // However, it's safer to get it from a global key or pass the page's ScaffoldMessenger key.
-      // For now, will try with current context, but be aware this can sometimes fail if context is from dialog.
-      BuildContext snackbarContext = GlobalKey<ScaffoldMessengerState>().currentContext ?? context;
-      if (mounted && ScaffoldMessenger.maybeOf(snackbarContext) != null) { // Check if ScaffoldMessenger is available
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) {
-            ScaffoldMessenger.of(snackbarContext).showSnackBar(
-              SnackBar(
-                content: Text(calendarAddSuccess
-                    ? 'Gig sent to your calendar app.'
-                    : 'Could not add gig to calendar. Check app permissions?'),
-                backgroundColor: calendarAddSuccess ? Colors.green : Colors.orange,
-              ),
-            );
-          }
-        });
-      } else {
-        print("Could not show calendar SnackBar: No ScaffoldMessenger found with the context.");
-      }
-    }
+    // --- CALENDAR SUCCESS/FAILURE SNACKBAR LOGIC REMOVED ---
   }
 
   Widget _buildVenueDropdown() {
@@ -821,14 +750,12 @@ class _BookingDialogState extends State<BookingDialog> {
       return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()));
     }
     if (_selectableVenuesForDropdown.isEmpty && !_isAddNewVenue) {
-      // If empty and not already in "add new" mode, switch to it
       WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() {
         _isAddNewVenue = true;
         _selectableVenuesForDropdown = [StoredLocation.addNewVenuePlaceholder];
         _selectedVenue = StoredLocation.addNewVenuePlaceholder;
       }); });
     } else if (_selectableVenuesForDropdown.isEmpty && _isAddNewVenue) {
-      // Already in add new mode, ensure placeholder is there
       _selectableVenuesForDropdown = [StoredLocation.addNewVenuePlaceholder];
       _selectedVenue ??= StoredLocation.addNewVenuePlaceholder;
     }
@@ -899,7 +826,7 @@ class _BookingDialogState extends State<BookingDialog> {
     TextStyle detailLabelStyle = const TextStyle(fontWeight: FontWeight.bold);
     TextStyle detailValueStyle = TextStyle(color: Colors.grey.shade700, fontSize: 14);
     TextStyle rateValueStyle = const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16);
-    bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode && !_isAddNewVenue); // Adjust loading state
+    bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode && !_isAddNewVenue);
 
     String dialogTitle = "Book New Gig";
     String confirmButtonText = "CONFIRM & BOOK";
@@ -943,7 +870,7 @@ class _BookingDialogState extends State<BookingDialog> {
                   _buildVenueDropdown(),
                   const SizedBox(height: 12),
 
-                  if ((_isCalculatorMode || _isMapModeNewGig) && _isAddNewVenue) ...[ // Also allow for MapMode if somehow venue becomes add new
+                  if ((_isCalculatorMode || _isMapModeNewGig) && _isAddNewVenue) ...[
                     TextFormField( controller: _newVenueNameController, decoration: const InputDecoration(labelText: 'New Venue Name*', border: OutlineInputBorder()),
                       validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue name is required'; } return null; },
                     ),
@@ -957,24 +884,8 @@ class _BookingDialogState extends State<BookingDialog> {
                   Row( children: [ Expanded(child: Text(_selectedDate == null ? 'No date selected*' : 'Date: ${DateFormat.yMMMEd().format(_selectedDate!)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickDate(context), child: const Text('SELECT DATE')), ], ),
                   Row( children: [ Expanded(child: Text(_selectedTime == null ? 'No time selected*' : 'Time: ${_selectedTime!.format(context)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickTime(context), child: const Text('SELECT TIME')), ], ),
 
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0, bottom: 0.0),
-                    child: CheckboxListTile(
-                      title: const Text("Add to device calendar"),
-                      value: _addGigToCalendar,
-                      onChanged: isDialogProcessing ? null : (bool? value) {
-                        if (mounted && value != null) {
-                          setState(() {
-                            _addGigToCalendar = value;
-                          });
-                        }
-                      },
-                      controlAffinity: ListTileControlAffinity.leading,
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
+                  // --- CHECKBOXLISTTILE REMOVED ---
+                  const SizedBox(height: 10), // Existing SizedBox, adjust if needed
                 ],
               ),
             ),
