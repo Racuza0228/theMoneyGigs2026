@@ -3,15 +3,20 @@ set -e
 
 echo "--- CI Script Start: Generating Dependencies ---"
 
-# --- FIX: Attempt to set FLUTTER_ROOT and add Flutter to PATH ---
-# 1. Standard CI location for Flutter on macOS environments
-export PATH="$PATH:/Users/Shared/Library/flutter/bin"
+# --- FIX: Ensure flutter command is found by adding the standard Flutter and Pub Cache paths to the PATH ---
+#
+# 1. Add the local user's bin folder which sometimes contains the flutter symlink
+export PATH="$PATH:$HOME/.local/bin"
 
-# 2. Add pub cache to path for any required executables
+# 2. Add the pub cache location, which is critical for some Flutter tools
 export PATH="$PATH:$HOME/.pub-cache/bin"
 
-# 3. Navigate to the correct repository root before running flutter
-# The script runs from /Volumes/workspace/repository/ios/ci_scripts, so navigate to root.
+# 3. Add the common global Flutter installation location if using FVM or a central install
+export PATH="$PATH:/Users/Shared/Library/flutter/bin"
+
+# 4. Navigate to the repository root where the pubspec.yaml and ios directories are located.
+# The script starts from /Volumes/workspace/repository/ios/ci_scripts,
+# so $CI_PRIMARY_REPOSITORY_PATH should take us to the root.
 cd "$CI_PRIMARY_REPOSITORY_PATH"
 
 # -------------------------------------------------------------------
@@ -23,7 +28,7 @@ FLUTTER_BUILD_ARGS="--config-only --no-codesign $FLUTTER_API_DEFINE"
 
 # 2. Get Flutter packages
 echo "Running flutter pub get..."
-flutter pub get # This should now work
+flutter pub get
 
 # 3. Generate Flutter iOS configuration files for Release/Archive
 echo "Running flutter build ipa $FLUTTER_BUILD_ARGS"
