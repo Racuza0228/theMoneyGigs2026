@@ -1,6 +1,4 @@
 PODS:
-  - add_2_calendar_new (0.0.1):
-    - Flutter
   - Flutter (1.0.0)
   - Google-Maps-iOS-Utils (5.0.0):
     - GoogleMaps (~> 8.0)
@@ -20,7 +18,6 @@ PODS:
     - Flutter
 
 DEPENDENCIES:
-  - add_2_calendar_new (from `.symlinks/plugins/add_2_calendar_new/ios`)
   - Flutter (from `Flutter`)
   - google_maps_flutter_ios (from `.symlinks/plugins/google_maps_flutter_ios/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
@@ -32,8 +29,6 @@ SPEC REPOS:
     - GoogleMaps
 
 EXTERNAL SOURCES:
-  add_2_calendar_new:
-    :path: ".symlinks/plugins/add_2_calendar_new/ios"
   Flutter:
     :path: Flutter
   google_maps_flutter_ios:
@@ -44,7 +39,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/url_launcher_ios/ios"
 
 SPEC CHECKSUMS:
-  add_2_calendar_new: 68ef3d90f48e9ae4056357711462e427be6098a0
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   Google-Maps-iOS-Utils: 66d6de12be1ce6d3742a54661e7a79cb317a9321
   google_maps_flutter_ios: 0291eb2aa252298a769b04d075e4a9d747ff7264
