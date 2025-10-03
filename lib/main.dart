@@ -1,41 +1,25 @@
 // lib/main.dart
-
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'gig_calculator.dart';
 import 'map.dart';
 import 'gigs.dart';
 import 'profile.dart';
-import 'page_background_wrapper.dart'; // Import the new wrapper
+import 'page_background_wrapper.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'refreshable_page.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+// This simple notifier will allow the profile page to trigger a refresh in main.dart
+class RefreshNotifier extends ChangeNotifier {
+  void notify() {
+    notifyListeners();
+  }
+}
+
+final refreshNotifier = RefreshNotifier();
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized(); // ENSURE THIS IS CALLED FIRST
-
-  // Test all possible ways to get the key
-  const dartDefineKey = String.fromEnvironment('GOOGLE_API_KEY');
-  const dartDefineDefault = String.fromEnvironment('GOOGLE_API_KEY', defaultValue: 'DART_DEFINE_NOT_FOUND');
-
-  print('1. String.fromEnvironment result: "$dartDefineKey"');
-  print('2. With default: "$dartDefineDefault"');
-  print('3. Is empty: ${dartDefineKey.isEmpty}');
-  print('4. Length: ${dartDefineKey.length}');
-
-  // Print all environment keys that contain "GOOGLE"
-  print('5. All environment variables with GOOGLE:');
-  const allEnv = String.fromEnvironment('', defaultValue: '');
-  // This won't work, but let's try other approaches
-
-  print('========================');
-  // Optional: If you had any critical SharedPreferences to load *before* runApp,
-  // you could do it here. For example:
-  // final prefs = await SharedPreferences.getInstance();
-  // bool hasSeenOnboarding = prefs.getBool('has_seen_onboarding') ?? false;
-  // Now `hasSeenOnboarding` could be passed to MyApp or a global state management solution.
-  // However, for most cases, loading within widgets is preferred.
-
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 
@@ -47,7 +31,11 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'The Money Gigs',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
         useMaterial3: true,
       ),
       home: const MainPage(),
@@ -65,6 +53,19 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
+  bool _isLoading = true;
+
+  // State variables for dynamic backgrounds
+  late List<String?> _pageBackgroundPaths;
+  late List<Color?> _pageBackgroundColors;
+  late List<double> _pageBackgroundOpacities;
+
+  static const List<Widget> _widgetOptions = <Widget>[
+    GigCalculator(),
+    MapPage(),
+    GigsPage(),
+    ProfilePage(),
+  ];
 
   static const List<String> _pageTitles = <String>[
     'Gig Calculator',
@@ -73,32 +74,51 @@ class _MainPageState extends State<MainPage> {
     'Profile',
   ];
 
-  // List of background image paths for each page. Null means no background.
-  static const List<String?> _pageBackgrounds = <String?>[
-    'assets/background1.png', // For GigCalculator
-    null,                     // For MapPage
-    'assets/background2.png', // For GigsPage
-    'assets/background3.png', // For ProfilePage
+  // Default values
+  static const List<String?> _defaultBackgroundImages = [
+    'assets/background1.png',
+    null,
+    'assets/background2.png',
+    'assets/background3.png',
   ];
+  static const double _defaultOpacity = 0.7;
 
-  // Optional: Define opacities if you want different ones per background
-  static const List<double> _backgroundOpacities = <double>[
-    0.7, // Example: GigCalculator background slightly transparent
-    1.0, // MapPage (not used as background is null)
-    0.8, // Example: GigsPage background
-    1.0, // Example: ProfilePage background fully opaque
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _initializeSettings();
+    refreshNotifier.addListener(_onSettingsChanged);
+  }
 
-  // The actual widgets for each page
-  // These should be const if their content doesn't change and they don't have internal state
-  // that needs to be preserved by IndexedStack in a specific way by NOT being const.
-  // For simplicity and common use with IndexedStack, making them const is often fine.
-  static final List<Widget> _widgetOptions = <Widget>[
-    const GigCalculator(),
-    const MapPage(),
-    const GigsPage(),
-    const ProfilePage(),
-  ];
+  @override
+  void dispose() {
+    refreshNotifier.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  void _onSettingsChanged() {
+    print("MainPage: Notified of settings change. Reloading...");
+    _initializeSettings();
+  }
+
+  Future<void> _initializeSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+
+    final backgroundPaths = List.generate(4, (i) => prefs.getString('background_image_$i'));
+    final backgroundColors = List.generate(4, (i) {
+      final colorVal = prefs.getInt('background_color_$i');
+      return colorVal != null ? Color(colorVal) : null;
+    });
+    final backgroundOpacities = List.generate(4, (i) => prefs.getDouble('background_opacity_$i') ?? _defaultOpacity);
+
+    setState(() {
+      _pageBackgroundPaths = backgroundPaths;
+      _pageBackgroundColors = backgroundColors;
+      _pageBackgroundOpacities = backgroundOpacities;
+      _isLoading = false;
+    });
+  }
 
   void _onItemTapped(int index) {
     setState(() {
@@ -109,8 +129,6 @@ class _MainPageState extends State<MainPage> {
   Future<void> _launchThirdRockURL() async {
     final Uri url = Uri.parse('https://www.thirdrockmusiccenter.com/');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      // Show a SnackBar if the URL can't be launched
-      // Ensure context has a ScaffoldMessenger ancestor
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not launch website')),
@@ -118,117 +136,91 @@ class _MainPageState extends State<MainPage> {
       }
     }
   }
+
   @override
   Widget build(BuildContext context) {
-    // Get the current page's content, background path, and opacity
-    Widget currentPageContent = _widgetOptions.elementAt(_selectedIndex);
-    String? currentBackgroundPath = _pageBackgrounds.elementAt(_selectedIndex);
-    double currentBackgroundOpacity = _backgroundOpacities.elementAt(_selectedIndex);
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final List<Widget> wrappedPages = List.generate(4, (index) {
+      final color = _pageBackgroundColors[index];
+
+      // *** FIX: Logic to decide between color, custom image, or default image ***
+      ImageProvider? provider;
+      Color? bgColor;
+
+      if (color != null) {
+        // If a color is set, use it and ensure no image is shown.
+        bgColor = color;
+        provider = null;
+      } else {
+        // If no color, check for a custom image path.
+        final path = _pageBackgroundPaths[index];
+        if (path != null) {
+          provider = path.startsWith('/') ? FileImage(File(path)) : AssetImage(path);
+        } else {
+          // If no custom path, fall back to the default asset image.
+          final defaultPath = _defaultBackgroundImages[index];
+          if (defaultPath != null) {
+            provider = AssetImage(defaultPath);
+          }
+        }
+        // If there's an image, the background color should be null.
+        bgColor = null;
+      }
+
+      return PageBackgroundWrapper(
+        imageProvider: provider,
+        backgroundColor: bgColor,
+        backgroundOpacity: _pageBackgroundOpacities[index],
+        child: _widgetOptions[index],
+      );
+    });
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         leading: Padding(
           padding: const EdgeInsets.all(8.0),
-          child: Image.asset(
-            'assets/app_icon.png',
-            errorBuilder: (BuildContext context, Object exception, StackTrace? stackTrace) {
-              //print('Error loading app icon: $exception');
-              return const Icon(Icons.error_outline, color: Colors.red);
-            },
-          ),
+          child: Image.asset('assets/app_icon.png'),
         ),
         title: Text(_pageTitles[_selectedIndex]),
       ),
       body: Column(
         children: <Widget>[
           Expanded(
-            // Use IndexedStack to preserve page state
             child: IndexedStack(
               index: _selectedIndex,
-              children: _widgetOptions.asMap().entries.map((entry) {
-                int idx = entry.key;
-                Widget pageWidget = entry.value;
-                return PageBackgroundWrapper(
-                  backgroundImagePath: _pageBackgrounds[idx],
-                  backgroundOpacity: _backgroundOpacities[idx], // Apply opacity
-                  child: pageWidget,
-                );
-              }).toList(),
+              children: wrappedPages,
             ),
           ),
           GestureDetector(
-            onTap: _launchThirdRockURL, // Make the banner tappable
+            onTap: _launchThirdRockURL,
             child: Container(
-              height: 70, // Increased height slightly for better visuals
+              height: 70,
               padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
               decoration: BoxDecoration(
-                // Inspired by the dark theme in your image
-                color: Colors.grey[850], // Dark grey background
-                // You could also use a gradient like in your image:
-                // gradient: LinearGradient(
-                //   colors: [Colors.grey.shade800, Colors.black54],
-                //   begin: Alignment.centerLeft,
-                //   end: Alignment.centerRight,
-                // ),
-                border: Border( // Subtle top border
-                  top: BorderSide(color: Colors.grey.shade700, width: 1.0),
-                ),
-                // boxShadow: [ // Optional: add a subtle shadow
-                //   BoxShadow(
-                //     color: Colors.black.withOpacity(0.2),
-                //     spreadRadius: 1,
-                //     blurRadius: 3,
-                //     offset: Offset(0, -1), // changes position of shadow
-                //   ),
-                // ],
+                color: Colors.grey[850],
+                border: Border(top: BorderSide(color: Colors.grey.shade700, width: 1.0)),
               ),
               child: Row(
                 children: <Widget>[
-                  // Logo
-                  Image.asset(
-                    'assets/third_rock_logo.png',
-                    height: 50.0, // Adjust as needed
-                    width: 50.0,  // Adjust as needed
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const SizedBox(width: 50, height: 50, child: Icon(Icons.store, color: Colors.white70, size: 30)); // Fallback
-                    },
-                  ),
+                  Image.asset('assets/third_rock_logo.png', height: 50.0, width: 50.0, fit: BoxFit.contain),
                   const SizedBox(width: 12.0),
-                  // Text Content
                   Expanded(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(
-                          'Third Rock Music Center',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: Colors.orangeAccent.shade100, // Accent color
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2.0),
-                        Text(
-                          'Your one-stop shop for musical gear!',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[300], // Lighter text for subtitle
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        Text('Third Rock Music Center', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.orangeAccent.shade100)),
+                        Text('Your one-stop shop for musical gear!', style: TextStyle(fontSize: 12, color: Colors.grey[300])),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8.0),
-                  // "Visit Us" Icon (Optional)
-                  Icon(
-                    Icons.open_in_new,
-                    color: Colors.orangeAccent.shade100,
-                    size: 20.0,
-                  ),
+                  Icon(Icons.open_in_new, color: Colors.orangeAccent.shade100, size: 20.0),
                 ],
               ),
             ),
@@ -237,28 +229,17 @@ class _MainPageState extends State<MainPage> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calculate),
-            label: 'Calc',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map),
-            label: 'Map',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.list),
-            label: 'My Gigs',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.calculate), label: 'Calc'),
+          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Map'),
+          BottomNavigationBarItem(icon: Icon(Icons.list), label: 'My Gigs'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Theme.of(context).colorScheme.primary,
         unselectedItemColor: Colors.grey,
         onTap: _onItemTapped,
         type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.grey[850],
       ),
     );
   }

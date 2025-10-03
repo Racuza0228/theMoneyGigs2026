@@ -1,18 +1,15 @@
-// lib/profile_page.dart
-import 'dart:convert'; // <<< ADD THIS IMPORT
+// lib/profile.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // For TextInputFormatter
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart'; // <<< ADD THIS IMPORT
-// You might want to import your models if you were to process the data more deeply before sending
-// import 'gig_model.dart';
-// import 'venue_model.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'main.dart'; // Import for refreshNotifier
 
-// Assuming RefreshablePage is a mixin or interface you've defined elsewhere
-// If not, and it's not used, you can remove it. For now, I'll keep it as in your original.
-import 'package:the_money_gigs/refreshable_page.dart';
-
-
+// Keep the rest of your ProfilePage code as it is.
+// The key changes are adding the settings icon and the dialog.
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -21,44 +18,27 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
+  // ... (keep all your existing controllers and variables)
   final _formKey = GlobalKey<FormState>();
-
-  // Controllers for Address fields
   final _address1Controller = TextEditingController();
   final _address2Controller = TextEditingController();
   final _cityController = TextEditingController();
   final _zipCodeController = TextEditingController();
-
-  // Controller for Work Preferences
   final _minHourlyRateController = TextEditingController();
-
   String? _selectedState;
-
-  // State Variables for Edit/View modes
   bool _isEditingAddress = false;
   bool _isEditingRate = false;
   bool _profileDataLoaded = false;
-  bool _isExporting = false; // <<< NEW: To disable button during export
-
+  bool _isExporting = false;
   static const String _keyAddress1 = 'profile_address1';
   static const String _keyAddress2 = 'profile_address2';
   static const String _keyCity = 'profile_city';
   static const String _keyState = 'profile_state';
   static const String _keyZipCode = 'profile_zip_code';
   static const String _keyMinHourlyRate = 'profile_min_hourly_rate';
-
-  // Keys for gigs and venues data (as used in other parts of your app)
   static const String _keyGigsList = 'gigs_list';
   static const String _keySavedLocations = 'saved_locations';
-
-
-  final List<String> _usStates = [
-    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
-    'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
-    'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
-    'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
-    'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
-  ];
+  final List<String> _usStates = [ 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY' ];
 
   @override
   void initState() {
@@ -66,15 +46,17 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadProfileData();
   }
 
-  // Assuming you have a RefreshablePage setup, keep it if used.
-  // @override
-  Future<void> refreshPageData() async {
-    print("ProfilePage: Refresh triggered by global refresh button.");
-    await _loadProfileData(); // Reload profile data on refresh
-    if(mounted) setState(() {});
+  @override
+  void dispose() {
+    _address1Controller.dispose();
+    _address2Controller.dispose();
+    _cityController.dispose();
+    _zipCodeController.dispose();
+    _minHourlyRateController.dispose();
+    super.dispose();
   }
 
-  Future<void> _loadProfileData() async {
+  Future<void> _loadProfileData() async { /* ... your existing code ... */
     try {
       final prefs = await SharedPreferences.getInstance();
       if (!mounted) return;
@@ -126,19 +108,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
     }
   }
-
-
-  @override
-  void dispose() {
-    _address1Controller.dispose();
-    _address2Controller.dispose();
-    _cityController.dispose();
-    _zipCodeController.dispose();
-    _minHourlyRateController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _saveProfile() async {
+  Future<void> _saveProfile() async { /* ... your existing code ... */
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
       final prefs = await SharedPreferences.getInstance();
@@ -183,9 +153,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
     }
   }
-
-  // <<< NEW METHOD TO EXPORT APP DATA >>>
-  Future<void> _exportAppData() async {
+  Future<void> _exportAppData() async { /* ... your existing code ... */
     if (!mounted) return;
     setState(() {
       _isExporting = true;
@@ -276,14 +244,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
     }
   }
-
-
-  InputDecoration _formInputDecoration({
-    required String labelText,
-    String? hintText,
-    IconData? icon,
-    String? prefixText,
-  }) {
+  InputDecoration _formInputDecoration({ required String labelText, String? hintText, IconData? icon, String? prefixText, }) { /* ... your existing code ... */
     final formLabelColor = Colors.orangeAccent.shade100;
     final formHintColor = Colors.white70;
     final inputBorderColor = Colors.grey.shade600;
@@ -320,43 +281,7 @@ class _ProfilePageState extends State<ProfilePage> {
           : null,
     );
   }
-
-  Widget _buildSectionTitle(
-      String title, {
-        bool showEditIcon = false,
-        VoidCallback? onEditPressed,
-        String tooltip = 'Edit',
-      }) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 20.0, bottom: 12.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                shadows: [
-                  Shadow(
-                    offset: const Offset(1.0, 1.0),
-                    blurRadius: 2.0,
-                    color: Colors.black.withAlpha(128),
-                  ),
-                ]),
-          ),
-          if (showEditIcon)
-            IconButton(
-              icon: Icon(Icons.edit_outlined, color: Colors.orangeAccent.shade100),
-              onPressed: onEditPressed,
-              tooltip: tooltip,
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAddressDisplay() {
+  Widget _buildAddressDisplay() { /* ... your existing code ... */
     String displayAddress1 = _address1Controller.text;
     String displayAddress2 = _address2Controller.text;
     String displayCity = _cityController.text;
@@ -390,8 +315,7 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     );
   }
-
-  Widget _buildRateDisplay() {
+  Widget _buildRateDisplay() { /* ... your existing code ... */
     String displayRate = _minHourlyRateController.text;
     if (displayRate.isEmpty) {
       return const Center(child: Padding(
@@ -406,9 +330,60 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  // UPDATED: Section title builder with a new flag for the settings icon
+  Widget _buildSectionTitle(
+      String title, {
+        bool showEditIcon = false,
+        VoidCallback? onEditPressed,
+        String tooltip = 'Edit',
+        bool showSettingsIcon = false, // <-- NEW
+      }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20.0, bottom: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          // Row for icons to ensure they are together
+          Row(
+            children: [
+              if (showEditIcon)
+                IconButton(
+                  icon: Icon(Icons.edit_outlined, color: Colors.orangeAccent.shade100),
+                  onPressed: onEditPressed,
+                  tooltip: tooltip,
+                ),
+              // NEW: Show settings icon if the flag is true
+              if (showSettingsIcon)
+                IconButton(
+                  icon: Icon(Icons.settings_outlined, color: Colors.orangeAccent.shade100),
+                  onPressed: () => _showBackgroundSettingsDialog(context),
+                  tooltip: 'App Settings',
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // NEW: Method to show the settings dialog
+  void _showBackgroundSettingsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return const BackgroundSettingsDialog();
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    // ... (Your build method's logic)
+    // The key change is in the call to _buildSectionTitle
     if (!_profileDataLoaded) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -447,6 +422,14 @@ class _ProfilePageState extends State<ProfilePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              // UPDATED: This title now includes the settings icon
+              _buildSectionTitle(
+                'Your Profile',
+                showSettingsIcon: true,
+              ),
+              Divider(color: Colors.grey.shade700, height: 1),
+
+              // ... (rest of your build method is the same)
               _buildSectionTitle(
                 'Your Address',
                 showEditIcon: !_isEditingAddress && hasAddressData,
@@ -636,6 +619,117 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// NEW: The settings dialog widget
+class BackgroundSettingsDialog extends StatelessWidget {
+  const BackgroundSettingsDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> pageNames = ['Calculator', 'Gigs', 'Profile'];
+    final List<int> pageIndices = [0, 2, 3]; // Corresponding indices in main.dart
+
+    return AlertDialog(
+      title: const Text('Background Settings'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: List.generate(pageNames.length, (i) {
+            final pageIndex = pageIndices[i];
+            return ExpansionTile(
+              title: Text(pageNames[i]),
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Default Image'),
+                  onTap: () => _setBackground(context, pageIndex, isDefault: true),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.color_lens_outlined),
+                  title: const Text('Solid Color'),
+                  onTap: () => _pickColor(context, pageIndex),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.image_outlined),
+                  title: const Text('Custom Image'),
+                  onTap: () => _pickImage(context, pageIndex),
+                ),
+              ],
+            );
+          }),
+        ),
+      ),
+      actions: [
+        TextButton(
+          child: const Text('Close'),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    );
+  }
+
+  // Saves the chosen background setting and notifies the app
+  Future<void> _setBackground(BuildContext context, int pageIndex, {String? imagePath, Color? color, bool isDefault = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final imageKey = 'background_image_$pageIndex';
+    final colorKey = 'background_color_$pageIndex';
+
+    // Clear old settings before applying new ones
+    await prefs.remove(imageKey);
+    await prefs.remove(colorKey);
+
+    if (isDefault) {
+      // By removing both keys, main.dart will fall back to its defaults
+    } else if (imagePath != null) {
+      await prefs.setString(imageKey, imagePath);
+    } else if (color != null) {
+      await prefs.setInt(colorKey, color.value);
+    }
+
+    // Notify main.dart to rebuild with the new settings
+    refreshNotifier.notify();
+
+    if (context.mounted) Navigator.of(context).pop(); // Close the dialog
+  }
+
+  // Opens the image gallery
+  Future<void> _pickImage(BuildContext context, int pageIndex) async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      if (context.mounted) {
+        _setBackground(context, pageIndex, imagePath: image.path);
+      }
+    }
+  }
+
+  // Opens the color picker dialog
+  void _pickColor(BuildContext context, int pageIndex) {
+    Color pickerColor = Colors.black;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Pick a color'),
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            pickerColor: pickerColor,
+            onColorChanged: (color) => pickerColor = color,
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            child: const Text('Select'),
+            onPressed: () {
+              Navigator.of(dialogContext).pop(); // Close color picker
+              _setBackground(context, pageIndex, color: pickerColor);
+            },
+          ),
+        ],
       ),
     );
   }
