@@ -5,9 +5,18 @@ set -e
 # Navigate to repository root
 cd $CI_PRIMARY_REPOSITORY_PATH
 
-# Install Flutter using git
-git clone https://github.com/flutter/flutter.git --depth 1 -b stable $HOME/flutter
+# Check if Flutter is already installed, if not install it
+if [ ! -d "$HOME/flutter" ]; then
+    echo "Installing Flutter..."
+    git clone https://github.com/flutter/flutter.git --depth 1 -b stable $HOME/flutter
+else
+    echo "Flutter already installed"
+fi
+
 export PATH="$HOME/flutter/bin:$PATH"
+
+# Verify Flutter installation
+flutter --version
 
 # Configure Flutter
 flutter precache --ios
