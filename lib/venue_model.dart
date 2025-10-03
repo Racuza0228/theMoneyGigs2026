@@ -1,18 +1,13 @@
+// lib/venue_model.dart
 import 'package:flutter/material.dart'; // For TimeOfDay
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:intl/intl.dart'; // For toBeginningOfSentenceCase
+import 'package:intl/intl.dart';
+import 'package:the_money_gigs/venue_contact.dart';
 
-// Enum for day of the week
+// ... (Enums DayOfWeek and JamFrequencyType remain unchanged)
 enum DayOfWeek { monday, tuesday, wednesday, thursday, friday, saturday, sunday }
+enum JamFrequencyType { weekly, biWeekly, monthlySameDay, monthlySameDate, customNthDay }
 
-// Define an enum for frequency types
-enum JamFrequencyType {
-  weekly,
-  biWeekly,
-  monthlySameDay,
-  monthlySameDate,
-  customNthDay
-}
 
 class StoredLocation {
   final String placeId;
@@ -30,6 +25,11 @@ class StoredLocation {
   final bool addJamToGigs;
   final JamFrequencyType jamFrequencyType;
   final int? customNthValue;
+  final VenueContact? contact;
+
+  // <<< NEW: Venue-specific notes and URL >>>
+  final String? venueNotes;
+  final String? venueNotesUrl;
 
   StoredLocation({
     required this.placeId,
@@ -43,8 +43,11 @@ class StoredLocation {
     this.jamOpenMicDay,
     this.jamOpenMicTime,
     this.addJamToGigs = false,
-    this.jamFrequencyType = JamFrequencyType.weekly, // Default value
+    this.jamFrequencyType = JamFrequencyType.weekly,
     this.customNthValue,
+    this.contact,
+    this.venueNotes, // <<< NEW
+    this.venueNotesUrl, // <<< NEW
   });
 
   Map<String, dynamic> toJson() => {
@@ -58,61 +61,34 @@ class StoredLocation {
     'isArchived': isArchived,
     'hasJamOpenMic': hasJamOpenMic,
     'jamOpenMicDay': jamOpenMicDay?.toString(),
-    'jamOpenMicTime': jamOpenMicTime != null
-        ? {'hour': jamOpenMicTime!.hour, 'minute': jamOpenMicTime!.minute}
-        : null,
+    'jamOpenMicTime': jamOpenMicTime != null ? {'hour': jamOpenMicTime!.hour, 'minute': jamOpenMicTime!.minute} : null,
     'addJamToGigs': addJamToGigs,
-    'jamFrequencyType': jamFrequencyType.toString(), // <<< ADDED
-    'customNthValue': customNthValue,             // <<< ADDED
+    'jamFrequencyType': jamFrequencyType.toString(),
+    'customNthValue': customNthValue,
+    'contact': contact?.toJson(),
+    // <<< NEW: Serialize venue notes >>>
+    'venueNotes': venueNotes,
+    'venueNotesUrl': venueNotesUrl,
   };
 
   factory StoredLocation.fromJson(Map<String, dynamic> json) {
+    // ... (parsing logic for time, day, contact etc. is unchanged)
     TimeOfDay? parsedTime;
     if (json['jamOpenMicTime'] != null && json['jamOpenMicTime'] is Map) {
       final timeMap = json['jamOpenMicTime'] as Map<String, dynamic>;
       if (timeMap['hour'] != null && timeMap['minute'] != null) {
-        parsedTime = TimeOfDay(
-          hour: timeMap['hour'] as int,
-          minute: timeMap['minute'] as int,
-        );
+        parsedTime = TimeOfDay(hour: timeMap['hour'] as int, minute: timeMap['minute'] as int);
       }
     }
-
     DayOfWeek? parsedDay;
     if (json['jamOpenMicDay'] != null && json['jamOpenMicDay'] is String) {
       try {
-        parsedDay = DayOfWeek.values.firstWhere(
-              (e) => e.toString() == json['jamOpenMicDay'],
-        );
+        parsedDay = DayOfWeek.values.byName((json['jamOpenMicDay'] as String).split('.').last);
       } catch (e) {
-        String dayString = (json['jamOpenMicDay'] as String).split('.').last;
-        try {
-          parsedDay = DayOfWeek.values.byName(dayString.toLowerCase());
-        } catch (e) {
-          print("Could not parse DayOfWeek from string: ${json['jamOpenMicDay']}");
-          parsedDay = null;
-        }
+        parsedDay = null;
       }
     }
-
-    JamFrequencyType parsedFrequency = JamFrequencyType.weekly; // Default
-    if (json['jamFrequencyType'] != null && json['jamFrequencyType'] is String) {
-      try {
-        parsedFrequency = JamFrequencyType.values.firstWhere(
-                (e) => e.toString() == json['jamFrequencyType'],
-            orElse: () { // Add orElse to handle cases where the string doesn't match any enum value
-              print("Unknown JamFrequencyType string: ${json['jamFrequencyType']}. Defaulting to weekly.");
-              return JamFrequencyType.weekly;
-            }
-        );
-      } catch (e) { // Catch broader errors from firstWhere if needed, though orElse handles missing
-        print("Error parsing JamFrequencyType: ${json['jamFrequencyType']}. Defaulting to weekly. Error: $e");
-        parsedFrequency = JamFrequencyType.weekly;
-      }
-    }
-
-
-    int? parsedNthValue = json['customNthValue'] as int?;
+    JamFrequencyType parsedFrequency = JamFrequencyType.values.firstWhere((e) => e.toString() == json['jamFrequencyType'], orElse: () => JamFrequencyType.weekly);
 
     return StoredLocation(
       placeId: json['placeId'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
@@ -129,8 +105,12 @@ class StoredLocation {
       jamOpenMicDay: parsedDay,
       jamOpenMicTime: parsedTime,
       addJamToGigs: json['addJamToGigs'] as bool? ?? false,
-      jamFrequencyType: parsedFrequency,   // <<< ASSIGNED
-      customNthValue: parsedNthValue,     // <<< ASSIGNED
+      jamFrequencyType: parsedFrequency,
+      customNthValue: json['customNthValue'] as int?,
+      contact: json['contact'] != null ? VenueContact.fromJson(json['contact']) : null,
+      // <<< NEW: Deserialize venue notes >>>
+      venueNotes: json['venueNotes'] as String?,
+      venueNotesUrl: json['venueNotesUrl'] as String?,
     );
   }
 
@@ -148,6 +128,9 @@ class StoredLocation {
     bool? addJamToGigs,
     JamFrequencyType? jamFrequencyType,
     int? customNthValue,
+    VenueContact? contact,
+    String? venueNotes, // <<< NEW
+    String? venueNotesUrl, // <<< NEW
   }) {
     return StoredLocation(
       placeId: placeId ?? this.placeId,
@@ -158,14 +141,19 @@ class StoredLocation {
       comment: comment ?? this.comment,
       isArchived: isArchived ?? this.isArchived,
       hasJamOpenMic: hasJamOpenMic ?? this.hasJamOpenMic,
-      jamOpenMicDay: jamOpenMicDay, // Passed value from dialog is already correct (or null)
-      jamOpenMicTime: jamOpenMicTime, // Passed value from dialog is already correct (or null)
+      jamOpenMicDay: jamOpenMicDay,
+      jamOpenMicTime: jamOpenMicTime,
       addJamToGigs: addJamToGigs ?? this.addJamToGigs,
       jamFrequencyType: jamFrequencyType ?? this.jamFrequencyType,
-      customNthValue: customNthValue, // Passed value from dialog is already correct (int or null)
+      customNthValue: customNthValue,
+      contact: contact ?? this.contact,
+      // <<< NEW >>>
+      venueNotes: venueNotes ?? this.venueNotes,
+      venueNotesUrl: venueNotesUrl ?? this.venueNotesUrl,
     );
   }
 
+  // ... (operator ==, hashCode, addNewVenuePlaceholder etc. remain the same)
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -182,8 +170,11 @@ class StoredLocation {
               jamOpenMicDay == other.jamOpenMicDay &&
               jamOpenMicTime == other.jamOpenMicTime &&
               addJamToGigs == other.addJamToGigs &&
-              jamFrequencyType == other.jamFrequencyType && // <<< ADDED
-              customNthValue == other.customNthValue;     // <<< ADDED
+              jamFrequencyType == other.jamFrequencyType &&
+              customNthValue == other.customNthValue &&
+              contact == other.contact &&
+              venueNotes == other.venueNotes &&
+              venueNotesUrl == other.venueNotesUrl;
 
   @override
   int get hashCode =>
@@ -198,61 +189,29 @@ class StoredLocation {
       jamOpenMicDay.hashCode ^
       jamOpenMicTime.hashCode ^
       addJamToGigs.hashCode ^
-      jamFrequencyType.hashCode ^ // <<< ADDED
-      customNthValue.hashCode;   // <<< ADDED
+      jamFrequencyType.hashCode ^
+      customNthValue.hashCode ^
+      contact.hashCode ^
+      venueNotes.hashCode ^
+      venueNotesUrl.hashCode;
 
   static StoredLocation get addNewVenuePlaceholder => StoredLocation(
-    placeId: 'add_new_venue_placeholder',
-    name: '--- Add New Venue ---',
-    address: '',
-    coordinates: const LatLng(0, 0),
-    isArchived: false,
-    hasJamOpenMic: false,
-    jamOpenMicDay: null,
-    jamOpenMicTime: null,
-    addJamToGigs: false,
-    jamFrequencyType: JamFrequencyType.weekly,
-    customNthValue: null,
-  );
+      placeId: 'add_new_venue_placeholder',
+      name: '--- Add New Venue ---',
+      address: '',
+      coordinates: const LatLng(0, 0));
 
   String jamOpenMicDisplayString(BuildContext context) {
     if (!hasJamOpenMic || jamOpenMicDay == null || jamOpenMicTime == null) {
       return 'Not set up';
     }
-    String dayString = toBeginningOfSentenceCase(jamOpenMicDay.toString().split('.').last) ?? jamOpenMicDay.toString().split('.').last ;
-    String freqString = "";
-
-    switch (jamFrequencyType) {
-      case JamFrequencyType.weekly:
-        freqString = "Weekly, ";
-        break;
-      case JamFrequencyType.biWeekly:
-        freqString = "Bi-Weekly, ";
-        break;
-      case JamFrequencyType.customNthDay:
-        if (customNthValue != null && customNthValue! > 0) {
-          freqString = "Every ${customNthValue == 1 ? '' : '${_ordinal(customNthValue!)} '}";
-        } else {
-          freqString = "Weekly, "; // Fallback if customNthValue is missing
-        }
-        break;
-      case JamFrequencyType.monthlySameDay:
-        if (customNthValue != null && customNthValue! > 0) {
-          freqString = "${_ordinal(customNthValue!)} "; // e.g., "2nd "
-        } else {
-          freqString = "Monthly, "; // Fallback if customNthValue is missing
-        }
-        break;
-      case JamFrequencyType.monthlySameDate:
-        freqString = "Monthly (Date Based), "; // Simple label for this less common type
-        break;
-    }
-    return '$freqString$dayString at ${jamOpenMicTime!.format(context)}';
+    String dayString =
+        toBeginningOfSentenceCase(jamOpenMicDay.toString().split('.').last) ?? '';
+    return '$dayString at ${jamOpenMicTime!.format(context)}';
   }
 
-  // Helper for ordinal numbers (1st, 2nd, 3rd)
   String _ordinal(int number) {
-    if (number <= 0) return number.toString(); // Should not happen with validation
+    if (number <= 0) return number.toString();
     if (number % 100 >= 11 && number % 100 <= 13) {
       return '${number}th';
     }

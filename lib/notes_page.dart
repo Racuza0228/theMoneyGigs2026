@@ -1,80 +1,133 @@
 // lib/notes_page.dart
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // Import for date formatting
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/gig_model.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
+import 'package:the_money_gigs/venue_model.dart'; // Import Venue model
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:convert';
 
 class NotesPage extends StatefulWidget {
-  // Now only needs the ID. It will fetch the rest.
-  final String editingGigId;
+  // Can edit notes for a gig OR a venue. One of these must be provided.
+  final String? editingGigId;
+  final String? editingVenueId;
 
   const NotesPage({
     super.key,
-    required this.editingGigId,
-  });
+    this.editingGigId,
+    this.editingVenueId,
+  }) : assert(editingGigId != null || editingVenueId != null,
+  'Either editingGigId or editingVenueId must be provided.');
 
   @override
   State<NotesPage> createState() => _NotesPageState();
 }
 
 class _NotesPageState extends State<NotesPage> {
-  // Controllers are initialized later
   late final TextEditingController _notesController;
   late final TextEditingController _urlController;
 
-  // State for holding the fetched data
-  Gig? _gig;
+  // Generic properties to hold the data, regardless of source
+  String _displayName = '';
+  String? _displaySubtext;
+  String? _initialNotes;
+  String? _initialUrl;
+
+  // <<< NEW: List to hold historical gig notes for the venue >>>
+  List<Gig> _historicalGigsForVenue = [];
+
   bool _isLoading = true;
   String _errorMessage = '';
 
-  // State for UI and saving logic
   bool _isEditingUrl = false;
   bool _isSaving = false;
   bool _hasChanges = false;
 
+  bool get _isEditingGig => widget.editingGigId != null;
+
   @override
   void initState() {
     super.initState();
-    // Initialize controllers empty, they will be populated after loading.
     _notesController = TextEditingController();
     _urlController = TextEditingController();
-    _loadGigDetails();
+    _loadDetails();
   }
 
-  /// NEW: Fetches the specific gig's details from SharedPreferences on start.
-  Future<void> _loadGigDetails() async {
+  Future<void> _loadDetails() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final gigsJsonString = prefs.getString('gigs_list') ?? '[]';
-      final List<Gig> allGigs = Gig.decode(gigsJsonString);
-      final gigIndex = allGigs.indexWhere((g) => g.id == widget.editingGigId);
-
-      if (gigIndex != -1) {
-        if (mounted) {
-          setState(() {
-            _gig = allGigs[gigIndex];
-            _notesController.text = _gig!.notes ?? '';
-            _urlController.text = _gig!.notesUrl ?? '';
-            _isEditingUrl = _gig!.notesUrl == null || _gig!.notesUrl!.isEmpty;
-            _isLoading = false;
-
-            // Add listeners after controllers are populated
-            _notesController.addListener(_onTextChanged);
-            _urlController.addListener(_onTextChanged);
-          });
-        }
+      if (_isEditingGig) {
+        await _loadGigDetails();
       } else {
-        throw Exception("Gig not found.");
+        await _loadVenueDetails();
+      }
+
+      if (mounted) {
+        setState(() {
+          _notesController.text = _initialNotes ?? '';
+          _urlController.text = _initialUrl ?? '';
+          _isEditingUrl = _initialUrl == null || _initialUrl!.isEmpty;
+          _isLoading = false;
+
+          _notesController.addListener(_onTextChanged);
+          _urlController.addListener(_onTextChanged);
+        });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = "Error loading gig details: $e";
+          _errorMessage = "Error loading details: $e";
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _loadGigDetails() async {
+    final prefs = await SharedPreferences.getInstance();
+    final gigsJsonString = prefs.getString('gigs_list') ?? '[]';
+    final List<Gig> allGigs = Gig.decode(gigsJsonString);
+    final gigIndex = allGigs.indexWhere((g) => g.id == widget.editingGigId);
+
+    if (gigIndex != -1) {
+      final gig = allGigs[gigIndex];
+      _displayName = gig.venueName;
+      _displaySubtext = DateFormat.yMMMEd().add_jm().format(gig.dateTime);
+      _initialNotes = gig.notes;
+      _initialUrl = gig.notesUrl;
+    } else {
+      throw Exception("Gig not found.");
+    }
+  }
+
+  /// REVISED: Now also loads historical gigs for the venue.
+  Future<void> _loadVenueDetails() async {
+    final prefs = await SharedPreferences.getInstance();
+    final venuesJson = prefs.getStringList('saved_locations') ?? [];
+    final allVenues = venuesJson.map((v) => StoredLocation.fromJson(jsonDecode(v))).toList();
+    final venueIndex = allVenues.indexWhere((v) => v.placeId == widget.editingVenueId);
+
+    if (venueIndex != -1) {
+      final venue = allVenues[venueIndex];
+      _displayName = venue.name;
+      _displaySubtext = venue.address;
+      _initialNotes = venue.venueNotes;
+      _initialUrl = venue.venueNotesUrl;
+
+      // <<< NEW: Load and filter gigs for historical notes >>>
+      final gigsJsonString = prefs.getString('gigs_list') ?? '[]';
+      final List<Gig> allGigs = Gig.decode(gigsJsonString);
+
+      _historicalGigsForVenue = allGigs
+          .where((gig) =>
+      gig.placeId == widget.editingVenueId && (gig.notes?.isNotEmpty ?? false))
+          .toList();
+
+      // Sort in reverse chronological order
+      _historicalGigsForVenue.sort((a, b) => b.dateTime.compareTo(a.dateTime));
+
+    } else {
+      throw Exception("Venue not found.");
     }
   }
 
@@ -88,9 +141,8 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   void _onTextChanged() {
-    if (_gig == null) return;
-    final bool notesChanged = _notesController.text != (_gig!.notes ?? '');
-    final bool urlChanged = _urlController.text != (_gig!.notesUrl ?? '');
+    final bool notesChanged = _notesController.text.trim() != (_initialNotes ?? '');
+    final bool urlChanged = _urlController.text.trim() != (_initialUrl ?? '');
 
     if (mounted && (notesChanged || urlChanged) != _hasChanges) {
       setState(() {
@@ -99,47 +151,22 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
-  Future<void> _launchUrl() async {
-    // This method remains unchanged
-    final urlString = _urlController.text.trim();
-    if (urlString.isEmpty) return;
-    final Uri? uri = Uri.tryParse(
-        urlString.startsWith('http') ? urlString : 'https://$urlString');
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open link: $urlString'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
   Future<void> _saveNotesAndClose() async {
-    // This method remains unchanged and is already robust
     if (!mounted) return;
     setState(() => _isSaving = true);
+
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final String gigsJsonString = prefs.getString('gigs_list') ?? '[]';
-      List<Gig> currentGigs = Gig.decode(gigsJsonString);
-      final gigIndex = currentGigs.indexWhere((g) => g.id == widget.editingGigId);
-      if (gigIndex != -1) {
-        final newNotes = _notesController.text.trim();
-        final newUrl = _urlController.text.trim();
-        currentGigs[gigIndex] = currentGigs[gigIndex].copyWith(
-          notes: newNotes.isEmpty ? null : newNotes,
-          notesUrl: newUrl.isEmpty ? null : newUrl,
-        );
-        await prefs.setString('gigs_list', Gig.encode(currentGigs));
-        globalRefreshNotifier.notify();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Notes saved successfully!'), backgroundColor: Colors.green),
-          );
-          Navigator.of(context).pop();
-        }
+      if (_isEditingGig) {
+        await _saveGigNotes();
       } else {
-        throw Exception("Could not find the gig to update. It may have been deleted.");
+        await _saveVenueNotes();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Notes saved successfully!'), backgroundColor: Colors.green),
+        );
+        Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
@@ -152,8 +179,67 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
+  Future<void> _saveGigNotes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String gigsJsonString = prefs.getString('gigs_list') ?? '[]';
+    List<Gig> currentGigs = Gig.decode(gigsJsonString);
+    final gigIndex = currentGigs.indexWhere((g) => g.id == widget.editingGigId);
+
+    if (gigIndex != -1) {
+      final newNotes = _notesController.text.trim();
+      final newUrl = _urlController.text.trim();
+      currentGigs[gigIndex] = currentGigs[gigIndex].copyWith(
+        notes: newNotes.isEmpty ? null : newNotes,
+        notesUrl: newUrl.isEmpty ? null : newUrl,
+      );
+      await prefs.setString('gigs_list', Gig.encode(currentGigs));
+      globalRefreshNotifier.notify();
+    } else {
+      throw Exception("Could not find gig to update.");
+    }
+  }
+
+  Future<void> _saveVenueNotes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> venuesJson = prefs.getStringList('saved_locations') ?? [];
+    List<StoredLocation> currentVenues = venuesJson.map((v) => StoredLocation.fromJson(jsonDecode(v))).toList();
+    final venueIndex = currentVenues.indexWhere((v) => v.placeId == widget.editingVenueId);
+
+    if (venueIndex != -1) {
+      final newNotes = _notesController.text.trim();
+      final newUrl = _urlController.text.trim();
+      currentVenues[venueIndex] = currentVenues[venueIndex].copyWith(
+        venueNotes: newNotes.isEmpty ? null : newNotes,
+        venueNotesUrl: newUrl.isEmpty ? null : newUrl,
+      );
+      final List<String> updatedVenuesJson = currentVenues.map((v) => jsonEncode(v.toJson())).toList();
+      await prefs.setStringList('saved_locations', updatedVenuesJson);
+      globalRefreshNotifier.notify();
+    } else {
+      throw Exception("Could not find venue to update.");
+    }
+  }
+
+  Future<void> _launchUrl() async {
+    final urlString = _urlController.text.trim();
+    if (urlString.isEmpty) return;
+    final Uri? uri = Uri.tryParse(urlString.startsWith('http') ? urlString : 'https://$urlString');
+    if (uri != null && await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open link: $urlString'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final String labelText = _isEditingGig ? 'Gig-Specific Notes' : 'Venue Notes';
+    final String hintText = _isEditingGig
+        ? 'Load-in details, sound engineer name, etc.'
+        : 'Gate codes, parking info, regular contact...';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('NOTES'),
@@ -170,23 +256,27 @@ class _NotesPageState extends State<NotesPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              _gig!.venueName, // Use data from the fetched _gig object
+              _displayName,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
-            Text(
-              DateFormat.yMMMEd().add_jm().format(_gig!.dateTime), // Use data from _gig
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.grey.shade600),
-            ),
+            if(_displaySubtext != null && _displaySubtext!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2.0),
+                child: Text(
+                  _displaySubtext!,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.grey.shade600),
+                ),
+              ),
             const SizedBox(height: 20),
             TextField(
               controller: _notesController,
               autofocus: true,
               maxLines: 8,
               minLines: 5,
-              decoration: const InputDecoration(
-                labelText: 'Gig-Specific Notes',
-                hintText: 'Load-in details, sound engineer name, etc.',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: labelText,
+                hintText: hintText,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 24),
@@ -197,7 +287,7 @@ class _NotesPageState extends State<NotesPage> {
                 controller: _urlController,
                 decoration: const InputDecoration(
                   labelText: 'URL (Optional)',
-                  hintText: 'e.g., docs.google.com/setlist',
+                  hintText: 'e.g., venue-tech-specs.pdf',
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.url,
@@ -209,10 +299,10 @@ class _NotesPageState extends State<NotesPage> {
                     child: InkWell(
                       onTap: _launchUrl,
                       child: Text(
-                        _urlController.text,
+                        _urlController.text.isEmpty ? '(No link)' : _urlController.text,
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.primary,
-                          decoration: TextDecoration.underline,
+                          color: _urlController.text.isEmpty ? Colors.grey : Theme.of(context).colorScheme.primary,
+                          decoration: _urlController.text.isEmpty ? TextDecoration.none : TextDecoration.underline,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -230,6 +320,35 @@ class _NotesPageState extends State<NotesPage> {
                   )
                 ],
               ),
+
+            // <<< NEW: Historical Gig Notes Section >>>
+            if (!_isEditingGig && _historicalGigsForVenue.isNotEmpty) ...[
+              const SizedBox(height: 32),
+              const Text('Past Gig Notes at this Venue', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Divider(),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _historicalGigsForVenue.length,
+                itemBuilder: (context, index) {
+                  final gig = _historicalGigsForVenue[index];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          DateFormat.yMMMEd().format(gig.dateTime),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(gig.notes!),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ]
           ],
         ),
       ),

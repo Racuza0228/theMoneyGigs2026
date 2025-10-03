@@ -11,11 +11,13 @@ import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the noti
 import 'package:url_launcher/url_launcher.dart';
 
 // Import your models
-import 'gig_model.dart';    // For Gigs (ensure isJamOpenMic exists)
-import 'venue_model.dart'; // For StoredLocation and DayOfWeek enum
-import 'booking_dialog.dart'; // Make sure this is imported
+import 'gig_model.dart';
+import 'venue_model.dart';
+import 'booking_dialog.dart';
 import 'jam_open_mic_dialog.dart';
-import 'notes_page.dart'; // Import the NotesPage
+import 'notes_page.dart';
+import 'venue_contact.dart';
+import 'venue_contact_dialog.dart';
 
 // Enum for Gigs view type
 enum GigsViewType { list, calendar }
@@ -52,8 +54,16 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     _tabController = TabController(length: 2, vsync: this);
     _selectedDay = _focusedDay;
     _tabController.addListener(_handleTabSelection);
-    _loadAllDataForGigsPage(); // This will call _loadVenues first, then _loadGigs
+    _loadAllDataForGigsPage();
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
+  }
+
+  @override
+  void dispose() {
+    globalRefreshNotifier.removeListener(_handleGlobalRefresh);
+    _tabController.removeListener(_handleTabSelection);
+    _tabController.dispose();
+    super.dispose();
   }
 
   void _handleGlobalRefresh() {
@@ -67,27 +77,11 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     await _loadGigs();
   }
 
-
   void _handleTabSelection() {
     if (_tabController.indexIsChanging ||
         (_tabController.animation != null && _tabController.animation!.value != _tabController.index.toDouble())) {
       return;
     }
-    if (mounted) {
-      if (_tabController.index == 0) {
-        // Gigs tab selected
-      } else if (_tabController.index == 1) {
-        // Venues tab selected
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    globalRefreshNotifier.removeListener(_handleGlobalRefresh);
-    _tabController.removeListener(_handleTabSelection);
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadGigs() async {
@@ -103,11 +97,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading actual gigs: $e')));
       }
     }
-
     List<Gig> jamOpenMicGigs = _generateJamOpenMicGigs();
     List<Gig> allDisplayGigs = [...actualGigs, ...jamOpenMicGigs];
     allDisplayGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
-
     if (mounted) {
       setState(() {
         _loadedGigs = allDisplayGigs;
@@ -121,16 +113,14 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   List<Gig> _generateJamOpenMicGigs() {
     List<Gig> jamGigs = [];
     DateTime today = DateTime.now();
-    DateTime calculationStartDate = DateTime(today.year, today.month, today.day); // Start from the beginning of today
-    DateTime rangeEndDate = DateTime(today.year, today.month + 6, today.day); // Generate for next 6 months
+    DateTime calculationStartDate = DateTime(today.year, today.month, today.day);
+    DateTime rangeEndDate = DateTime(today.year, today.month + 6, today.day);
 
     for (var venue in _allKnownVenues) {
       if (!venue.hasJamOpenMic || !venue.addJamToGigs || venue.jamOpenMicDay == null || venue.jamOpenMicTime == null || venue.isArchived) {
         continue;
       }
-
-      int targetWeekday = venue.jamOpenMicDay!.index + 1; // 1=Monday, ..., 7=Sunday
-
+      int targetWeekday = venue.jamOpenMicDay!.index + 1;
       if (venue.jamFrequencyType == JamFrequencyType.weekly) {
         DateTime currentDate = calculationStartDate;
         while (currentDate.isBefore(rangeEndDate) || isSameDay(currentDate, rangeEndDate)) {
@@ -141,13 +131,12 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         }
       } else if (venue.jamFrequencyType == JamFrequencyType.biWeekly) {
         DateTime firstPossibleOccurrence = _findNextDayOfWeek(calculationStartDate, targetWeekday);
-        DateTime cycleAnchorDate = _findNextDayOfWeek(DateTime(2020,1,1), targetWeekday); // Arbitrary old date
-
+        DateTime cycleAnchorDate = _findNextDayOfWeek(DateTime(2020, 1, 1), targetWeekday);
         DateTime currentTestDate = firstPossibleOccurrence;
         while (currentTestDate.isBefore(rangeEndDate) || isSameDay(currentTestDate, rangeEndDate)) {
           if (currentTestDate.weekday == targetWeekday) {
             int weeksDifference = currentTestDate.difference(cycleAnchorDate).inDays ~/ 7;
-            if (weeksDifference % 2 == 0) { // Every other week relative to the anchor
+            if (weeksDifference % 2 == 0) {
               _addJamGigIfApplicable(jamGigs, venue, currentTestDate);
             }
           }
@@ -155,19 +144,18 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             currentTestDate = currentTestDate.add(const Duration(days: 7));
           } else {
             currentTestDate = currentTestDate.add(const Duration(days: 1));
-            currentTestDate = _findNextDayOfWeek(currentTestDate, targetWeekday); // Jump to next target weekday
+            currentTestDate = _findNextDayOfWeek(currentTestDate, targetWeekday);
           }
         }
       } else if (venue.jamFrequencyType == JamFrequencyType.customNthDay && venue.customNthValue != null && venue.customNthValue! > 0) {
         int nth = venue.customNthValue!;
         DateTime firstPossibleOccurrence = _findNextDayOfWeek(calculationStartDate, targetWeekday);
-        DateTime cycleAnchorDate = _findNextDayOfWeek(DateTime(2020,1,1), targetWeekday); // Arbitrary old date for cycle anchor
-
+        DateTime cycleAnchorDate = _findNextDayOfWeek(DateTime(2020, 1, 1), targetWeekday);
         DateTime currentTestDate = firstPossibleOccurrence;
         while (currentTestDate.isBefore(rangeEndDate) || isSameDay(currentTestDate, rangeEndDate)) {
           if (currentTestDate.weekday == targetWeekday) {
             int weeksDifference = currentTestDate.difference(cycleAnchorDate).inDays ~/ 7;
-            if (weeksDifference % nth == 0) { // Every Nth week
+            if (weeksDifference % nth == 0) {
               _addJamGigIfApplicable(jamGigs, venue, currentTestDate);
             }
           }
@@ -181,7 +169,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       } else if (venue.jamFrequencyType == JamFrequencyType.monthlySameDay && venue.customNthValue != null && venue.customNthValue! > 0) {
         int nthOccurrence = venue.customNthValue!;
         DateTime monthIterator = DateTime(calculationStartDate.year, calculationStartDate.month, 1);
-        while(monthIterator.isBefore(rangeEndDate) || (monthIterator.year == rangeEndDate.year && monthIterator.month == rangeEndDate.month)) {
+        while (monthIterator.isBefore(rangeEndDate) || (monthIterator.year == rangeEndDate.year && monthIterator.month == rangeEndDate.month)) {
           DateTime? nthDayInMonth = _findNthSpecificWeekdayOfMonth(monthIterator.year, monthIterator.month, targetWeekday, nthOccurrence);
           if (nthDayInMonth != null) {
             if (!nthDayInMonth.isBefore(calculationStartDate)) {
@@ -203,7 +191,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       venue.jamOpenMicTime!.hour,
       venue.jamOpenMicTime!.minute,
     );
-
     DateTime now = DateTime.now();
     if (jamDateTime.isAfter(now)) {
       bool alreadyExists = jamGigs.any((g) => g.placeId == venue.placeId && isSameDay(g.dateTime, jamDateTime) && g.dateTime.hour == jamDateTime.hour && g.dateTime.minute == jamDateTime.minute);
@@ -270,7 +257,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   void _onDaySelected(DateTime selectedDay, DateTime focusedDay) {
     final normalizedNewSelectedDay = DateTime.utc(selectedDay.year, selectedDay.month, selectedDay.day);
     final normalizedCurrentSelectedDay = _selectedDay != null ? DateTime.utc(_selectedDay!.year, _selectedDay!.month, _selectedDay!.day) : null;
-
     if (!isSameDay(normalizedCurrentSelectedDay, normalizedNewSelectedDay)) {
       if (!mounted) return;
       setState(() {
@@ -312,12 +298,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-  /// <<< REVISED: This method is now much simpler >>>
   void _launchNotesPageForGig(Gig gig) {
     if (gig.isJamOpenMic) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        // Pass only the ID. NotesPage will fetch the rest.
         builder: (context) => NotesPage(editingGigId: gig.id),
       ),
     );
@@ -328,16 +312,14 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Jam/Open Mic details are viewed via Venue Settings.'), backgroundColor: Colors.blueAccent),
       );
-      final venue = _allKnownVenues.firstWhere((v) => v.placeId == gigToEdit.placeId, orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0,0)));
+      final venue = _allKnownVenues.firstWhere((v) => v.placeId == gigToEdit.placeId, orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0, 0)));
       if (venue.placeId.isNotEmpty) {
         _showVenueDetailsDialog(venue);
       }
       return;
     }
     if (!mounted) return;
-
     const String googleApiKey = String.fromEnvironment('GOOGLE_API_KEY');
-
     final result = await showDialog<dynamic>(
       context: context,
       barrierDismissible: false,
@@ -349,49 +331,38 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         );
       },
     );
-
     if (result is GigEditResult && result.action != GigEditResultAction.noChange) {
       if (result.action == GigEditResultAction.updated && result.gig != null) {
-        if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" updated.'), backgroundColor: Colors.green));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" updated.'), backgroundColor: Colors.green));
       } else if (result.action == GigEditResultAction.deleted && result.gig != null) {
-        if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" cancelled.'), backgroundColor: Colors.orange));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" cancelled.'), backgroundColor: Colors.orange));
       }
     } else if (result is Gig) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('New gig "${result.venueName}" booked.'), backgroundColor: Colors.green));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('New gig "${result.venueName}" booked.'), backgroundColor: Colors.green));
     }
   }
 
   Future<void> _deleteGig(Gig gigToDelete) async {
-    if (gigToDelete.isJamOpenMic) {
-      return;
-    }
+    if (gigToDelete.isJamOpenMic) return;
     if (!mounted) return;
-
     final prefs = await SharedPreferences.getInstance();
     final String? gigsJsonString = prefs.getString(_keyGigsList);
     List<Gig> currentActualGigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
-
     currentActualGigs.removeWhere((gig) => gig.id == gigToDelete.id);
-
     await prefs.setString(_keyGigsList, Gig.encode(currentActualGigs));
-
     globalRefreshNotifier.notify();
   }
 
 
   Future<void> _archiveVenue(StoredLocation venueToArchive) async {
     if (!mounted) return;
-
-    List<Gig> upcomingActualGigsAtVenue = _getGigsForVenue(venueToArchive, futureOnly: true)
-        .where((gig) => !gig.isJamOpenMic)
-        .toList();
+    List<Gig> upcomingActualGigsAtVenue = _getGigsForVenue(venueToArchive, futureOnly: true).where((gig) => !gig.isJamOpenMic).toList();
     String dialogMessage = 'Are you sure you want to archive "${venueToArchive.name}"?';
     if (upcomingActualGigsAtVenue.isNotEmpty) {
       dialogMessage += '\n\nThis will also DELETE ${upcomingActualGigsAtVenue.length} upcoming actual gig(s) scheduled here.';
     } else {
-      dialogMessage += '\nIt will be hidden from lists but not permanently deleted. Jam night settings will be preserved but not shown for archived venues.';
+      dialogMessage += '\nIt will be hidden from lists but not permanently deleted.';
     }
-
     final bool confirmArchive = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -407,18 +378,15 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         );
       },
     ) ?? false;
-
     if (confirmArchive) {
       setState(() { _isLoadingVenues = true; _isLoadingGigs = true; });
       final prefs = await SharedPreferences.getInstance();
-
       if (upcomingActualGigsAtVenue.isNotEmpty) {
         List<String> gigIdsToDelete = upcomingActualGigsAtVenue.map((gig) => gig.id).toList();
         List<Gig> currentAllActualGigs = _loadedGigs.where((g) => !g.isJamOpenMic).toList();
         currentAllActualGigs.removeWhere((gig) => gigIdsToDelete.contains(gig.id));
         await prefs.setString(_keyGigsList, Gig.encode(currentAllActualGigs));
       }
-
       int index = _allKnownVenues.indexWhere((v) => v.placeId == venueToArchive.placeId);
       if (index != -1) {
         List<StoredLocation> updatedAllVenues = List.from(_allKnownVenues);
@@ -426,9 +394,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         final List<String> updatedVenuesJson = updatedAllVenues.map((v) => jsonEncode(v.toJson())).toList();
         await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
       }
-
       globalRefreshNotifier.notify();
-
       if (mounted) {
         String snackbarMessage = 'Venue "${venueToArchive.name}" archived.';
         if (upcomingActualGigsAtVenue.isNotEmpty) {
@@ -441,19 +407,38 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
+  Future<void> _editVenueContact(StoredLocation venue) async {
+    final updatedContact = await showDialog<VenueContact>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => VenueContactDialog(venue: venue),
+    );
+    if (updatedContact != null && mounted) {
+      final int index = _allKnownVenues.indexWhere((v) => v.placeId == venue.placeId);
+      if (index != -1) {
+        _allKnownVenues[index] = _allKnownVenues[index].copyWith(contact: updatedContact);
+        final prefs = await SharedPreferences.getInstance();
+        final List<String> updatedVenuesJson = _allKnownVenues.map((v) => jsonEncode(v.toJson())).toList();
+        await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
+        globalRefreshNotifier.notify();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Contact updated for ${venue.name}.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _updateVenueJamNightSettings(StoredLocation updatedVenue) async {
     final prefs = await SharedPreferences.getInstance();
     int index = _allKnownVenues.indexWhere((v) => v.placeId == updatedVenue.placeId);
-
     if (index != -1) {
       List<StoredLocation> updatedAllVenuesList = List.from(_allKnownVenues);
       updatedAllVenuesList[index] = updatedVenue;
-
-      final List<String> updatedVenuesJson = updatedAllVenuesList
-          .map((v) => jsonEncode(v.toJson()))
-          .toList();
+      final List<String> updatedVenuesJson = updatedAllVenuesList.map((v) => jsonEncode(v.toJson())).toList();
       await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
-
       if (mounted) {
         globalRefreshNotifier.notify();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -463,13 +448,11 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-
   List<Gig> _getGigsForVenue(StoredLocation venue, {bool futureOnly = false}) {
     DateTime comparisonDate = DateTime.now();
     return _loadedGigs.where((gig) {
       bool venueMatch = (gig.placeId != null && gig.placeId!.isNotEmpty && gig.placeId == venue.placeId) ||
           (gig.placeId == null && gig.venueName.toLowerCase() == venue.name.toLowerCase());
-
       bool dateMatch = true;
       if (futureOnly) {
         DateTime gigDayStart = DateTime(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day);
@@ -480,23 +463,16 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }).toList();
   }
 
-
+  /// ****** CORRECTED METHOD ******
   Future<void> _showVenueDetailsDialog(StoredLocation venue) async {
     if (!mounted) return;
 
+    // Correctly find and sort the list of upcoming gigs
     List<Gig> upcomingGigsAtVenue = _getGigsForVenue(venue, futureOnly: true)
         .where((g) => !g.isJamOpenMic)
         .toList();
-    upcomingGigsAtVenue.sort((a,b) => a.dateTime.compareTo(b.dateTime));
+    upcomingGigsAtVenue.sort((a, b) => a.dateTime.compareTo(b.dateTime));
     Gig? nextUpcomingGig = upcomingGigsAtVenue.isNotEmpty ? upcomingGigsAtVenue.first : null;
-
-    String jamDisplay = "Not set up";
-    if (venue.hasJamOpenMic && venue.jamOpenMicDay != null && venue.jamOpenMicTime != null) {
-      jamDisplay = "${toBeginningOfSentenceCase(venue.jamOpenMicDay.toString().split('.').last)} at ${venue.jamOpenMicTime!.format(context)}";
-      if (venue.addJamToGigs) {
-        jamDisplay += " (shown in gigs)";
-      }
-    }
 
     await showDialog(
       context: context,
@@ -506,25 +482,53 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           content: SingleChildScrollView(
             child: ListBody(
               children: <Widget>[
-                Text("Address: ${venue.address.isNotEmpty ? venue.address : 'Not specified'}"),
-                const SizedBox(height: 8),
-                if (venue.rating > 0)
+                // --- CONTACT SECTION ---
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Contact:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      iconSize: 20.0,
+                      color: Theme.of(context).colorScheme.primary,
+                      tooltip: 'Edit Contact Info',
+                      onPressed: () {
+                        Navigator.of(dialogContext).pop(); // Close details
+                        _editVenueContact(venue); // Open edit dialog
+                      },
+                    )
+                  ],
+                ),
+                if (venue.contact != null && venue.contact!.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(top: 4.0),
-                    child: Row(children: [
-                      const Text("Rating: "),
-                      Icon(Icons.star, color: Colors.amber, size: 20),
-                      const SizedBox(width: 4),
-                      Text('${venue.rating.toStringAsFixed(1)} / 5.0'),
-                    ]),
+                    padding: const EdgeInsets.only(left: 8.0, bottom: 8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (venue.contact!.name.isNotEmpty) Text(venue.contact!.name),
+                        if (venue.contact!.phone.isNotEmpty)
+                          InkWell(
+                            child: Text(venue.contact!.phone, style: TextStyle(color: Theme.of(context).colorScheme.primary, decoration: TextDecoration.underline)),
+                            onTap: () => launchUrl(Uri.parse('tel:${venue.contact!.phone}')),
+                          ),
+                        if (venue.contact!.email.isNotEmpty)
+                          InkWell(
+                            child: Text(venue.contact!.email, style: TextStyle(color: Theme.of(context).colorScheme.primary, decoration: TextDecoration.underline)),
+                            onTap: () => launchUrl(Uri.parse('mailto:${venue.contact!.email}')),
+                          ),
+                      ],
+                    ),
+                  )
+                else
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8.0, bottom: 8.0),
+                    child: Text('No contact saved.', style: TextStyle(fontStyle: FontStyle.italic)),
                   ),
-                if (venue.comment != null && venue.comment!.isNotEmpty)
-                  Padding(padding: const EdgeInsets.only(top: 4.0), child: Text("Comment: ${venue.comment!}")),
                 const Divider(height: 20, thickness: 1),
 
                 // --- JAM/OPEN MIC SECTION ---
                 const Text('Jam/Open Mic:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(jamDisplay),
+                Text(venue.jamOpenMicDisplayString(context)),
                 Padding(
                   padding: const EdgeInsets.only(top: 4.0, bottom: 8.0),
                   child: TextButton(
@@ -543,24 +547,19 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                 ),
                 const Divider(height: 20, thickness: 1),
 
+                // --- REST OF DIALOG ---
+                Text("Address: ${venue.address.isNotEmpty ? venue.address : 'Not specified'}"),
+                const SizedBox(height: 8),
+
                 if (nextUpcomingGig != null) ...[
-                  const Text('Next Actual Gig Here:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4.0),
-                  Text(
-                    '${DateFormat.MMMEd().format(nextUpcomingGig.dateTime)} at ${DateFormat.jm().format(nextUpcomingGig.dateTime)}',
-                    style: Theme.of(dialogContext).textTheme.bodyMedium,
-                  ),
-                ] else ...[
-                  const Text("No upcoming actual gigs scheduled here.", style: TextStyle(fontStyle: FontStyle.italic)),
+                  const SizedBox(height: 16),
+                  const Text('Next Gig Here:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text('${DateFormat.yMMMEd().format(nextUpcomingGig.dateTime)} at ${DateFormat.jm().format(nextUpcomingGig.dateTime)}'),
                 ],
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.map_outlined),
                   label: const Text('Open in Maps'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(dialogContext).colorScheme.secondary,
-                    foregroundColor: Theme.of(dialogContext).colorScheme.onSecondary,
-                  ),
                   onPressed: () async {
                     Navigator.of(dialogContext).pop();
                     await _openVenueInMap(venue);
@@ -573,7 +572,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           actions: <Widget>[
             TextButton(
               child: Text('ARCHIVE', style: TextStyle(color: Theme.of(dialogContext).colorScheme.error)),
-              onPressed: () { Navigator.of(dialogContext).pop(); _archiveVenue(venue); },
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _archiveVenue(venue);
+              },
             ),
             TextButton(child: const Text('Close'), onPressed: () => Navigator.of(dialogContext).pop()),
           ],
@@ -587,7 +589,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     final lng = venue.coordinates.longitude;
     final String query = Uri.encodeComponent(venue.address.isNotEmpty ? venue.address : venue.name);
     Uri mapUri = Uri.parse('https://maps.google.com/maps?q=$query&ll=$lat,$lng');
-
     if (await canLaunchUrl(mapUri)) {
       await launchUrl(mapUri, mode: LaunchMode.externalApplication);
     } else {
@@ -595,13 +596,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       if (await canLaunchUrl(fallbackMapUri)) {
         await launchUrl(fallbackMapUri, mode: LaunchMode.externalApplication);
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open map application.')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open map application.')));
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -665,7 +663,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           ),
         ),
         if (_isLoadingGigs && _loadedGigs.isNotEmpty)
-          const Padding(padding: EdgeInsets.all(8.0), child: Center(child: SizedBox(width:24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)))),
+          const Padding(padding: EdgeInsets.all(8.0), child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)))),
         Expanded(child: _gigsViewType == GigsViewType.list ? _buildGigsListView() : _buildGigsCalendarView()),
       ],
     );
@@ -751,9 +749,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     );
   }
 
-
-// In gigs.dart, inside _GigsPageState
-
   Widget _buildGigsCalendarView() {
     if (_isLoadingGigs && _calendarEvents.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -783,7 +778,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                 color: Theme.of(context).colorScheme.primary, shape: BoxShape.circle),
             selectedTextStyle: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
             markerDecoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondary, // Fallback color
+              color: Theme.of(context).colorScheme.secondary,
               shape: BoxShape.circle,
             ),
           ),
@@ -807,17 +802,13 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           onFormatChanged: (format) {
             if (_calendarFormat != format) {
               if (!mounted) return;
-              setState(() {
-                _calendarFormat = format;
-              });
+              setState(() { _calendarFormat = format; });
             }
           },
           onPageChanged: (focusedDay) {
             if (!mounted) return;
-            setState(() {
-              _focusedDay = focusedDay;
-            });
-            _onDaySelected(focusedDay, focusedDay); // Also update selected day gigs on page change
+            setState(() { _focusedDay = focusedDay; });
+            _onDaySelected(focusedDay, focusedDay);
           },
           calendarBuilders: CalendarBuilders<Gig>(
             markerBuilder: (context, date, events) {
@@ -826,27 +817,15 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
               final List<Gig> gigEvents = events.cast<Gig>();
               bool hasActualGig = gigEvents.any((gig) => !gig.isJamOpenMic);
               bool hasJam = gigEvents.any((gig) => gig.isJamOpenMic);
-
               List<Widget> markers = [];
-
               if (hasActualGig) {
-                markers.add(
-                  _buildEventsMarker(
-                    Theme.of(context).colorScheme.secondary, // Color for actual gigs
-                  ),
-                );
+                markers.add(_buildEventsMarker(Theme.of(context).colorScheme.secondary));
               }
               if (hasJam) {
                 if (markers.isNotEmpty) markers.add(SizedBox(width: markers.length * 1.5));
-                markers.add(
-                  _buildEventsMarker(
-                    Theme.of(context).colorScheme.tertiary, // Different color for jams
-                  ),
-                );
+                markers.add(_buildEventsMarker(Theme.of(context).colorScheme.tertiary));
               }
-
               if (markers.isEmpty) return null;
-
               return Positioned(
                 bottom: 1,
                 child: Row(
@@ -873,7 +852,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
               isPast = gig.dateTime.isBefore(DateTime.now());
             }
             bool isJam = gig.isJamOpenMic;
-
             return Card(
               elevation: isPast ? 0.5 : (isJam ? 1.0 : 1.5),
               color: isPast
@@ -883,21 +861,14 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                   : Colors.white),
               margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
               child: ListTile(
-                leading: isJam
-                    ? Icon(Icons.music_note, color: isPast ? Colors.grey.shade500 : Theme.of(context).colorScheme.tertiary)
-                    : Icon(Icons.event, color: isPast ? Colors.grey.shade500 : Theme.of(context).colorScheme.primary),
+                leading: isJam ? Icon(Icons.music_note, color: isPast ? Colors.grey.shade500 : Theme.of(context).colorScheme.tertiary) : Icon(Icons.event, color: isPast ? Colors.grey.shade500 : Theme.of(context).colorScheme.primary),
                 title: Text(
-                  gig.venueName, // Already prefixed with [JAM]
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isPast ? Colors.grey.shade600 : Colors.black87),
+                  gig.venueName,
+                  style: TextStyle(fontWeight: FontWeight.bold, color: isPast ? Colors.grey.shade600 : Colors.black87),
                 ),
                 subtitle: Text(
-                  isJam
-                      ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic'
-                      : '${DateFormat.jm().format(gig.dateTime)} - \$${gig.pay.toStringAsFixed(0)}',
-                  style: TextStyle(
-                      color: isPast ? Colors.grey.shade500 : Colors.black54),
+                  isJam ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic' : '${DateFormat.jm().format(gig.dateTime)} - \$${gig.pay.toStringAsFixed(0)}',
+                  style: TextStyle(color: isPast ? Colors.grey.shade500 : Colors.black54),
                 ),
                 onTap: () => _launchBookingDialogForGig(gig),
               ),
@@ -905,32 +876,28 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           },
         )
             : Center(
-            child: Text(
-                _selectedDay != null
-                    ? 'No events for ${DateFormat.yMMMEd().format(_selectedDay!)}.'
-                    : 'Select a day to see events.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white70
-                        : Colors.black87))),
+          child: Text(
+            _selectedDay != null ? 'No events for ${DateFormat.yMMMEd().format(_selectedDay!)}.' : 'Select a day to see events.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87),
+          ),
+        ),
       ),
     ]);
   }
 
-// Helper for calendar event markers (adjust this if you removed parameters)
-  Widget _buildEventsMarker(Color markerColor) { // Simplified this based on usage
-    return Container( // AnimatedContainer might be overkill if not changing dynamically here
-      // duration: const Duration(milliseconds: 300),
+  Widget _buildEventsMarker(Color markerColor) {
+    return Container(
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: markerColor,
       ),
       width: 7.0,
       height: 7.0,
-      margin: const EdgeInsets.symmetric(horizontal: 0.5), // Add a little space between markers in a row
+      margin: const EdgeInsets.symmetric(horizontal: 0.5),
     );
   }
 
+  /// ****** CORRECTED METHOD ******
   Widget _buildVenuesList() {
     if (_isLoadingVenues && _displayableVenues.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -938,27 +905,14 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     if (_displayableVenues.isEmpty) {
       return const Center( child: Text("No venues saved yet. Add a new venue when booking a gig!", textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey)) );
     }
-
-    List<StoredLocation> sortedDisplayableVenues = List.from(_displayableVenues)
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
+    List<StoredLocation> sortedDisplayableVenues = List.from(_displayableVenues)..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return ListView.builder(
       itemCount: sortedDisplayableVenues.length,
       itemBuilder: (context, index) {
         final venue = sortedDisplayableVenues[index];
-        // Get count of *actual* future gigs for this venue
-        final List<Gig> futureActualGigsForVenue = _getGigsForVenue(venue, futureOnly: true)
-            .where((g) => !g.isJamOpenMic)
-            .toList();
+        final List<Gig> futureActualGigsForVenue = _getGigsForVenue(venue, futureOnly: true).where((g) => !g.isJamOpenMic).toList();
         final int futureGigsCount = futureActualGigsForVenue.length;
-
-        String jamInfo = "";
-        if (venue.hasJamOpenMic && venue.jamOpenMicDay != null && venue.jamOpenMicTime != null) {
-          jamInfo = "Jam: ${toBeginningOfSentenceCase(venue.jamOpenMicDay.toString().split('.').last)} at ${venue.jamOpenMicTime!.format(context)}";
-          if (venue.addJamToGigs) {
-            jamInfo += " (in gigs)";
-          }
-        }
+        final bool hasVenueNotes = (venue.venueNotes?.isNotEmpty ?? false) || (venue.venueNotesUrl?.isNotEmpty ?? false);
 
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
@@ -975,25 +929,18 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                   ),
               ],
             ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(venue.address.isNotEmpty ? venue.address : 'Address not specified'),
-                if (venue.rating > 0)
-                  Row(children: [
-                    Icon(Icons.star, color: Colors.amber, size: 16), const SizedBox(width: 4), Text('${venue.rating.toStringAsFixed(1)} ★ ${venue.comment != null && venue.comment!.isNotEmpty ? "(${venue.comment})" : ""}', style: const TextStyle(fontSize: 12))
-                  ])
-                else if (venue.comment != null && venue.comment!.isNotEmpty)
-                  Text("Comment: ${venue.comment}", style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic))
-                else
-                  const Text("Not yet rated or commented", style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
-
-                if (jamInfo.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4.0),
-                    child: Text(jamInfo, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.tertiary, fontStyle: FontStyle.italic)),
-                  ),
-              ],
+            subtitle: Text(venue.address.isNotEmpty ? venue.address : 'Address not specified', style: TextStyle(color: Colors.grey.shade600)),
+            trailing: IconButton(
+              icon: Icon(
+                hasVenueNotes ? Icons.speaker_notes : Icons.speaker_notes_off_outlined,
+                color: hasVenueNotes ? Theme.of(context).colorScheme.primary : Colors.grey,
+              ),
+              tooltip: 'View/Edit Venue Notes',
+              onPressed: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (context) => NotesPage(editingVenueId: venue.placeId),
+                ));
+              },
             ),
             onTap: () => _showVenueDetailsDialog(venue),
           ),
