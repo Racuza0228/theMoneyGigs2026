@@ -51,7 +51,6 @@ app.*.map.json
 /ios/Flutter/.ios_tags
 /ios/Flutter/.last_build_id
 /ios/Flutter/.last_build_id.json
-/ios/Flutter/Generated.xcconfig
 /ios/Pods/
 /ios/Runner.xcworkspace/xcuserdata/
 /ios/Runner.xcworkspace/xcshareddata/
