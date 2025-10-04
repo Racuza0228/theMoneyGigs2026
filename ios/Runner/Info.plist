@@ -36,8 +36,8 @@
 	<array>
 		<string>mailto</string>
 		<string>https</string>
-    		<string>http</string>
-    		<string>tel</string>
+        <string>http</string>
+        <string>tel</string>
 	</array>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Your app needs access to your location to help you find nearby gigs.</string>
