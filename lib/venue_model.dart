@@ -1,5 +1,5 @@
 // lib/venue_model.dart
-import 'package:flutter/material.dart'; // For TimeOfDay
+import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:the_money_gigs/venue_contact.dart';
@@ -7,7 +7,6 @@ import 'package:the_money_gigs/venue_contact.dart';
 // ... (Enums DayOfWeek and JamFrequencyType remain unchanged)
 enum DayOfWeek { monday, tuesday, wednesday, thursday, friday, saturday, sunday }
 enum JamFrequencyType { weekly, biWeekly, monthlySameDay, monthlySameDate, customNthDay }
-
 
 class StoredLocation {
   final String placeId;
@@ -25,9 +24,11 @@ class StoredLocation {
   final bool addJamToGigs;
   final JamFrequencyType jamFrequencyType;
   final int? customNthValue;
-  final VenueContact? contact;
 
-  // <<< NEW: Venue-specific notes and URL >>>
+  // <<< NEW: Flag to hide jam sessions from the gigs list >>>
+  final bool isMuted;
+
+  final VenueContact? contact;
   final String? venueNotes;
   final String? venueNotesUrl;
 
@@ -45,9 +46,10 @@ class StoredLocation {
     this.addJamToGigs = false,
     this.jamFrequencyType = JamFrequencyType.weekly,
     this.customNthValue,
+    this.isMuted = false, // <<< NEW
     this.contact,
-    this.venueNotes, // <<< NEW
-    this.venueNotesUrl, // <<< NEW
+    this.venueNotes,
+    this.venueNotesUrl,
   });
 
   Map<String, dynamic> toJson() => {
@@ -61,12 +63,14 @@ class StoredLocation {
     'isArchived': isArchived,
     'hasJamOpenMic': hasJamOpenMic,
     'jamOpenMicDay': jamOpenMicDay?.toString(),
-    'jamOpenMicTime': jamOpenMicTime != null ? {'hour': jamOpenMicTime!.hour, 'minute': jamOpenMicTime!.minute} : null,
+    'jamOpenMicTime': jamOpenMicTime != null
+        ? {'hour': jamOpenMicTime!.hour, 'minute': jamOpenMicTime!.minute}
+        : null,
     'addJamToGigs': addJamToGigs,
     'jamFrequencyType': jamFrequencyType.toString(),
     'customNthValue': customNthValue,
+    'isMuted': isMuted, // <<< NEW
     'contact': contact?.toJson(),
-    // <<< NEW: Serialize venue notes >>>
     'venueNotes': venueNotes,
     'venueNotesUrl': venueNotesUrl,
   };
@@ -88,7 +92,9 @@ class StoredLocation {
         parsedDay = null;
       }
     }
-    JamFrequencyType parsedFrequency = JamFrequencyType.values.firstWhere((e) => e.toString() == json['jamFrequencyType'], orElse: () => JamFrequencyType.weekly);
+    JamFrequencyType parsedFrequency = JamFrequencyType.values.firstWhere(
+            (e) => e.toString() == json['jamFrequencyType'],
+        orElse: () => JamFrequencyType.weekly);
 
     return StoredLocation(
       placeId: json['placeId'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
@@ -107,8 +113,8 @@ class StoredLocation {
       addJamToGigs: json['addJamToGigs'] as bool? ?? false,
       jamFrequencyType: parsedFrequency,
       customNthValue: json['customNthValue'] as int?,
+      isMuted: json['isMuted'] as bool? ?? false, // <<< NEW
       contact: json['contact'] != null ? VenueContact.fromJson(json['contact']) : null,
-      // <<< NEW: Deserialize venue notes >>>
       venueNotes: json['venueNotes'] as String?,
       venueNotesUrl: json['venueNotesUrl'] as String?,
     );
@@ -128,9 +134,10 @@ class StoredLocation {
     bool? addJamToGigs,
     JamFrequencyType? jamFrequencyType,
     int? customNthValue,
+    bool? isMuted, // <<< NEW
     VenueContact? contact,
-    String? venueNotes, // <<< NEW
-    String? venueNotesUrl, // <<< NEW
+    String? venueNotes,
+    String? venueNotesUrl,
   }) {
     return StoredLocation(
       placeId: placeId ?? this.placeId,
@@ -146,14 +153,13 @@ class StoredLocation {
       addJamToGigs: addJamToGigs ?? this.addJamToGigs,
       jamFrequencyType: jamFrequencyType ?? this.jamFrequencyType,
       customNthValue: customNthValue,
+      isMuted: isMuted ?? this.isMuted, // <<< NEW
       contact: contact ?? this.contact,
-      // <<< NEW >>>
       venueNotes: venueNotes ?? this.venueNotes,
       venueNotesUrl: venueNotesUrl ?? this.venueNotesUrl,
     );
   }
 
-  // ... (operator ==, hashCode, addNewVenuePlaceholder etc. remain the same)
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -172,6 +178,7 @@ class StoredLocation {
               addJamToGigs == other.addJamToGigs &&
               jamFrequencyType == other.jamFrequencyType &&
               customNthValue == other.customNthValue &&
+              isMuted == other.isMuted && // <<< NEW
               contact == other.contact &&
               venueNotes == other.venueNotes &&
               venueNotesUrl == other.venueNotesUrl;
@@ -191,39 +198,35 @@ class StoredLocation {
       addJamToGigs.hashCode ^
       jamFrequencyType.hashCode ^
       customNthValue.hashCode ^
+      isMuted.hashCode ^ // <<< NEW
       contact.hashCode ^
       venueNotes.hashCode ^
       venueNotesUrl.hashCode;
 
   static StoredLocation get addNewVenuePlaceholder => StoredLocation(
-      placeId: 'add_new_venue_placeholder',
-      name: '--- Add New Venue ---',
-      address: '',
-      coordinates: const LatLng(0, 0));
+    placeId: 'add_new_venue_placeholder',
+    name: '--- Add New Venue ---',
+    address: '',
+    coordinates: const LatLng(0, 0),
+  );
 
   String jamOpenMicDisplayString(BuildContext context) {
     if (!hasJamOpenMic || jamOpenMicDay == null || jamOpenMicTime == null) {
       return 'Not set up';
     }
-    String dayString =
-        toBeginningOfSentenceCase(jamOpenMicDay.toString().split('.').last) ?? '';
+    String dayString = toBeginningOfSentenceCase(jamOpenMicDay.toString().split('.').last) ?? '';
     return '$dayString at ${jamOpenMicTime!.format(context)}';
   }
 
   String _ordinal(int number) {
     if (number <= 0) return number.toString();
-    if (number % 100 >= 11 && number % 100 <= 13) {
-      return '${number}th';
-    }
+    if (number % 100 >= 11 && number % 100 <= 13) return '${number}th';
     switch (number % 10) {
-      case 1:
-        return '${number}st';
-      case 2:
-        return '${number}nd';
-      case 3:
-        return '${number}rd';
-      default:
-        return '${number}th';
+      case 1: return '${number}st';
+      case 2: return '${number}nd';
+      case 3: return '${number}rd';
+      default: return '${number}th';
     }
   }
 }
+

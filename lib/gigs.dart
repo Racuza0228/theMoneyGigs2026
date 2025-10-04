@@ -309,13 +309,41 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   Future<void> _launchBookingDialogForGig(Gig gigToEdit) async {
     if (gigToEdit.isJamOpenMic) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Jam/Open Mic details are viewed via Venue Settings.'), backgroundColor: Colors.blueAccent),
+      final sourceVenue = _allKnownVenues.firstWhere(
+            (v) => v.placeId == gigToEdit.placeId,
+        orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0,0)),
       );
-      final venue = _allKnownVenues.firstWhere((v) => v.placeId == gigToEdit.placeId, orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0, 0)));
-      if (venue.placeId.isNotEmpty) {
-        _showVenueDetailsDialog(venue);
-      }
+      if (sourceVenue.placeId.isEmpty) return;
+      await showDialog(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: Text(sourceVenue.name),
+            content: const Text('This is a recurring Jam/Open Mic session.'),
+            actions: <Widget>[
+              TextButton(
+                child: const Text('CLOSE'),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+              TextButton(
+                child: const Text('VIEW VENUE DETAILS'),
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _showVenueDetailsDialog(sourceVenue);
+                },
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.errorContainer),
+                child: Text('REMOVE FROM MY GIGS', style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer)),
+                onPressed: () async {
+                  Navigator.of(dialogContext).pop();
+                  await _setVenueMutedState(sourceVenue, true);
+                },
+              ),
+            ],
+          );
+        },
+      );
       return;
     }
     if (!mounted) return;
@@ -342,6 +370,25 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
+  Future<void> _setVenueMutedState(StoredLocation venue, bool isMuted) async {
+    final int index = _allKnownVenues.indexWhere((v) => v.placeId == venue.placeId);
+    if (index != -1) {
+      _allKnownVenues[index] = _allKnownVenues[index].copyWith(isMuted: isMuted);
+      final prefs = await SharedPreferences.getInstance();
+      final List<String> updatedVenuesJson = _allKnownVenues.map((v) => jsonEncode(v.toJson())).toList();
+      await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
+      globalRefreshNotifier.notify();
+      if(mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isMuted ? 'Jam sessions for ${venue.name} will be hidden from the gigs list.' : 'Jam sessions for ${venue.name} will now be shown in the gigs list.'),
+            backgroundColor: Colors.blueAccent,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _deleteGig(Gig gigToDelete) async {
     if (gigToDelete.isJamOpenMic) return;
     if (!mounted) return;
@@ -353,16 +400,21 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     globalRefreshNotifier.notify();
   }
 
-
+  /// ****** CORRECTED METHOD ******
   Future<void> _archiveVenue(StoredLocation venueToArchive) async {
     if (!mounted) return;
-    List<Gig> upcomingActualGigsAtVenue = _getGigsForVenue(venueToArchive, futureOnly: true).where((gig) => !gig.isJamOpenMic).toList();
+    // CORRECTED: Only check for REAL, non-jam gigs.
+    List<Gig> upcomingActualGigsAtVenue = _getGigsForVenue(venueToArchive, futureOnly: true)
+        .where((gig) => !gig.isJamOpenMic)
+        .toList();
+
     String dialogMessage = 'Are you sure you want to archive "${venueToArchive.name}"?';
     if (upcomingActualGigsAtVenue.isNotEmpty) {
       dialogMessage += '\n\nThis will also DELETE ${upcomingActualGigsAtVenue.length} upcoming actual gig(s) scheduled here.';
     } else {
       dialogMessage += '\nIt will be hidden from lists but not permanently deleted.';
     }
+
     final bool confirmArchive = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -372,18 +424,20 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           actions: <Widget>[
             TextButton(child: const Text('CANCEL'), onPressed: () => Navigator.of(dialogContext).pop(false)),
             TextButton(
-                child: Text('ARCHIVE & DELETE GIGS', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                child: Text('ARCHIVE', style: TextStyle(color: Theme.of(context).colorScheme.error)),
                 onPressed: () => Navigator.of(dialogContext).pop(true)),
           ],
         );
       },
     ) ?? false;
+
     if (confirmArchive) {
       setState(() { _isLoadingVenues = true; _isLoadingGigs = true; });
       final prefs = await SharedPreferences.getInstance();
       if (upcomingActualGigsAtVenue.isNotEmpty) {
         List<String> gigIdsToDelete = upcomingActualGigsAtVenue.map((gig) => gig.id).toList();
-        List<Gig> currentAllActualGigs = _loadedGigs.where((g) => !g.isJamOpenMic).toList();
+        final String? gigsJsonString = prefs.getString(_keyGigsList);
+        List<Gig> currentAllActualGigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
         currentAllActualGigs.removeWhere((gig) => gigIdsToDelete.contains(gig.id));
         await prefs.setString(_keyGigsList, Gig.encode(currentAllActualGigs));
       }
@@ -463,11 +517,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }).toList();
   }
 
-  /// ****** CORRECTED METHOD ******
   Future<void> _showVenueDetailsDialog(StoredLocation venue) async {
     if (!mounted) return;
-
-    // Correctly find and sort the list of upcoming gigs
     List<Gig> upcomingGigsAtVenue = _getGigsForVenue(venue, futureOnly: true)
         .where((g) => !g.isJamOpenMic)
         .toList();
@@ -482,7 +533,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           content: SingleChildScrollView(
             child: ListBody(
               children: <Widget>[
-                // --- CONTACT SECTION ---
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -493,8 +543,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                       color: Theme.of(context).colorScheme.primary,
                       tooltip: 'Edit Contact Info',
                       onPressed: () {
-                        Navigator.of(dialogContext).pop(); // Close details
-                        _editVenueContact(venue); // Open edit dialog
+                        Navigator.of(dialogContext).pop();
+                        _editVenueContact(venue);
                       },
                     )
                   ],
@@ -525,8 +575,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                     child: Text('No contact saved.', style: TextStyle(fontStyle: FontStyle.italic)),
                   ),
                 const Divider(height: 20, thickness: 1),
-
-                // --- JAM/OPEN MIC SECTION ---
                 const Text('Jam/Open Mic:', style: TextStyle(fontWeight: FontWeight.bold)),
                 Text(venue.jamOpenMicDisplayString(context)),
                 Padding(
@@ -546,11 +594,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                   ),
                 ),
                 const Divider(height: 20, thickness: 1),
-
-                // --- REST OF DIALOG ---
                 Text("Address: ${venue.address.isNotEmpty ? venue.address : 'Not specified'}"),
                 const SizedBox(height: 8),
-
                 if (nextUpcomingGig != null) ...[
                   const SizedBox(height: 16),
                   const Text('Next Gig Here:', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -910,9 +955,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       itemCount: sortedDisplayableVenues.length,
       itemBuilder: (context, index) {
         final venue = sortedDisplayableVenues[index];
-        final List<Gig> futureActualGigsForVenue = _getGigsForVenue(venue, futureOnly: true).where((g) => !g.isJamOpenMic).toList();
-        final int futureGigsCount = futureActualGigsForVenue.length;
+        final int futureGigsCount = _getGigsForVenue(venue, futureOnly: true).where((g) => !g.isJamOpenMic).toList().length;
         final bool hasVenueNotes = (venue.venueNotes?.isNotEmpty ?? false) || (venue.venueNotesUrl?.isNotEmpty ?? false);
+        final venueContact = venue.contact;
 
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
@@ -929,7 +974,24 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                   ),
               ],
             ),
-            subtitle: Text(venue.address.isNotEmpty ? venue.address : 'Address not specified', style: TextStyle(color: Colors.grey.shade600)),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(venue.address.isNotEmpty ? venue.address : 'Address not specified', style: TextStyle(color: Colors.grey.shade600)),
+                if (venueContact != null && venueContact.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${venueContact.name} ${venueContact.phone}'.trim(),
+                    style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                  ),
+                  if (venueContact.email.isNotEmpty)
+                    Text(
+                      venueContact.email,
+                      style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                    ),
+                ]
+              ],
+            ),
             trailing: IconButton(
               icon: Icon(
                 hasVenueNotes ? Icons.speaker_notes : Icons.speaker_notes_off_outlined,

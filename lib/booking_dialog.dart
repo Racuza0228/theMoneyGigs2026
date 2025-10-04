@@ -152,7 +152,6 @@ class _BookingDialogState extends State<BookingDialog> {
       _selectedDate = currentGig.dateTime;
       _selectedTime = TimeOfDay.fromDateTime(currentGig.dateTime);
 
-      // Update local state for the notes icon
       _gigNotes = currentGig.notes;
       _gigNotesUrl = currentGig.notesUrl;
 
@@ -204,9 +203,10 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  /// <<< REVISED: This method is now much simpler >>>
+  /// Launches the independent NotesPage.
   void _showNotesPage() {
     if (widget.editingGig == null) return;
+
     Navigator.of(context).push(
       MaterialPageRoute(
         // Pass only the ID. NotesPage will fetch the rest.
@@ -705,19 +705,36 @@ class _BookingDialogState extends State<BookingDialog> {
       actionsAlignment: MainAxisAlignment.spaceBetween,
       actionsPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       actions: <Widget>[
-        if (_isEditingMode) TextButton( child: const Text('CLOSE'), onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange)), )
-        else TextButton( child: const Text('CANCEL'), onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(), ),
-        Row( mainAxisSize: MainAxisSize.min, children: [
-          if (_isEditingMode) ...[
-            TextButton( child: Text('CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)), onPressed: isDialogProcessing ? null : _handleGigCancellation, ),
-            const SizedBox(width: 8),
-          ],
-          ElevatedButton(
-            style: ElevatedButton.styleFrom( backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary ),
-            onPressed: isDialogProcessing ? null : _confirmAction,
-            child: isDialogProcessing ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))) : Text(confirmButtonText),
+        // <<< CORRECTED: The destructive 'CANCEL GIG' button is now on the left. >>>
+        if (_isEditingMode)
+          TextButton(
+            child: Text('CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            onPressed: isDialogProcessing ? null : _handleGigCancellation,
+          )
+        else
+        // Non-editing mode just has a simple cancel button
+          TextButton(
+            child: const Text('CANCEL'),
+            onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(),
           ),
-        ],
+
+        // This Row contains the buttons on the right side.
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // <<< CORRECTED: The non-destructive 'CLOSE' button is now here. >>>
+            if (_isEditingMode)
+              TextButton(
+                child: const Text('CLOSE'),
+                onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange)),
+              ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom( backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary ),
+              onPressed: isDialogProcessing ? null : _confirmAction,
+              child: isDialogProcessing ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))) : Text(confirmButtonText),
+            ),
+          ],
         ),
       ],
     );
