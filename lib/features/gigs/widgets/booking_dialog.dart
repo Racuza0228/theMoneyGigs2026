@@ -1,4 +1,4 @@
-// lib/booking_dialog.dart
+// lib/features/gigs/widgets/booking_dialog.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,18 +6,18 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
-
+import 'package:the_money_gigs/core/services/drive_time_service.dart';
+import 'package:the_money_gigs/core/widgets/drive_time_display.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
-
-// Feature-Specific Models and Pages
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
-import 'package:the_money_gigs/features/map_venues/models/venue_model.dart'; // This defines StoredLocation
+import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/notes/views/notes_page.dart';
-
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/services/drive_time_service.dart';
-import '../../../core/widgets/drive_time_display.dart';
+// --- NEW IMPORTS FOR REFACTORED UI WIDGETS ---
+import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/calculator_summary_view.dart';
+import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/financial_inputs_view.dart';
+import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/venue_selection_view.dart';
 
 enum GigEditResultAction { updated, deleted, noChange }
 
@@ -91,9 +91,8 @@ class _BookingDialogState extends State<BookingDialog> {
 
   final TextEditingController _newVenueNameController = TextEditingController();
   final TextEditingController _newVenueAddressController = TextEditingController();
-  final FocusNode _newVenueAddressFocusNode = FocusNode(); // NEW: FocusNode for address field
+  final FocusNode _newVenueAddressFocusNode = FocusNode();
 
-  // NEW: State for manual address drive time
   String? _manualDriveDurationString;
   String? _manualDriveDistance;
 
@@ -110,7 +109,6 @@ class _BookingDialogState extends State<BookingDialog> {
   String? _userProfileAddress;
   bool _isFetchingDriveTime = false;
 
-  // NEW: Late-initialized service for handling drive time logic
   late final DriveTimeService _driveTimeService;
 
   bool get _isEditingMode => widget.editingGig != null;
@@ -119,12 +117,13 @@ class _BookingDialogState extends State<BookingDialog> {
 
   final TimeOfDay _defaultGigTime = const TimeOfDay(hour: 20, minute: 0);
 
+  // --- METHODS from initState down to _handleGigCancellation remain unchanged ---
+  // --- (No changes needed in the logic part for this refactoring step) ---
   @override
   void initState() {
     super.initState();
     _initializeDialogState();
     globalRefreshNotifier.addListener(_onGlobalRefresh);
-    // NEW: Add listener for the address field focus changes
     _newVenueAddressFocusNode.addListener(_onAddressFocusChange);
   }
 
@@ -133,8 +132,8 @@ class _BookingDialogState extends State<BookingDialog> {
     globalRefreshNotifier.removeListener(_onGlobalRefresh);
     _newVenueNameController.dispose();
     _newVenueAddressController.dispose();
-    _newVenueAddressFocusNode.removeListener(_onAddressFocusChange); // NEW: Remove listener
-    _newVenueAddressFocusNode.dispose(); // NEW: Dispose FocusNode
+    _newVenueAddressFocusNode.removeListener(_onAddressFocusChange);
+    _newVenueAddressFocusNode.dispose();
     _payController.dispose();
     _gigLengthController.dispose();
     _driveSetupController.dispose();
@@ -148,9 +147,7 @@ class _BookingDialogState extends State<BookingDialog> {
     super.dispose();
   }
 
-  // NEW: Handle focus change on the address field
   void _onAddressFocusChange() {
-    // If the field loses focus, is for a new venue, and has text, fetch drive time
     if (!_newVenueAddressFocusNode.hasFocus &&
         _isAddNewVenue &&
         _newVenueAddressController.text.trim().isNotEmpty) {
@@ -254,7 +251,6 @@ class _BookingDialogState extends State<BookingDialog> {
   }
 
   Future<void> _handleVenueSelection(StoredLocation? venue) async {
-    // Reset manual drive time info when selection changes
     setState(() {
       _manualDriveDistance = null;
       _manualDriveDurationString = null;
@@ -287,7 +283,6 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  // CORRECTED: Method to fetch drive time for a manually entered address
   Future<void> _fetchDriveTimeForManualAddress() async {
     if (_userProfileAddress == null) return;
 
@@ -305,12 +300,10 @@ class _BookingDialogState extends State<BookingDialog> {
         placeId: 'temp_manual_place_id_${DateTime.now().millisecondsSinceEpoch}',
       );
 
-      // Use the correct service method which returns a StoredLocation
       final resultVenue = await _driveTimeService.fetchAndCacheDriveTime(tempVenue);
 
       if (mounted) {
         setState(() {
-          // Assign properties from the returned StoredLocation object to the correct state variables
           _manualDriveDurationString = resultVenue?.driveDuration;
           _manualDriveDistance = resultVenue?.driveDistance;
         });
@@ -492,7 +485,7 @@ class _BookingDialogState extends State<BookingDialog> {
       StoredLocation? initialSelection;
       if (defaultToAddVenue) {
         initialSelection = _addNewVenuePlaceholder;
-      } else if (_selectableVenuesForDropdown.length > 1) { // Default to the first non-archived, non-placeholder venue
+      } else if (_selectableVenuesForDropdown.length > 1) {
         initialSelection = _selectableVenuesForDropdown.firstWhere((v) => v.placeId != _addNewVenuePlaceholder.placeId && !v.isArchived, orElse: () => _selectableVenuesForDropdown.first);
       } else {
         _selectableVenuesForDropdown = [_addNewVenuePlaceholder];
@@ -643,101 +636,11 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  Widget _buildVenueDropdown() {
-    if (_isEditingMode || _isMapModeNewGig) {
-      StoredLocation? venueToShow = _selectedVenue;
-      if (venueToShow == null) return const Text("Venue information missing.", style: TextStyle(color: Colors.red, fontStyle: FontStyle.italic));
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(venueToShow.name, style: Theme.of(context).textTheme.titleMedium),
-          Text(venueToShow.address, style: Theme.of(context).textTheme.bodySmall ?? const TextStyle()),
-          if (venueToShow.isArchived)
-            Padding(
-              padding: const EdgeInsets.only(top: 4.0),
-              child: Text("(This venue is archived)", style: TextStyle(color: Colors.orange.shade700, fontStyle: FontStyle.italic, fontSize: 12)),
-            ),
-          const SizedBox(height: 8),
-        ],
-      );
-    }
-
-    if (_isLoadingVenues) {
-      return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()));
-    }
-
-    return DropdownButtonFormField<StoredLocation>(
-      decoration: const InputDecoration(labelText: 'Select or Add Venue', border: OutlineInputBorder()),
-      value: _selectedVenue,
-      isExpanded: true,
-      items: _selectableVenuesForDropdown.map<DropdownMenuItem<StoredLocation>>((StoredLocation venue) {
-        bool isEnabled = !venue.isArchived || venue.placeId == _addNewVenuePlaceholder.placeId;
-        return DropdownMenuItem<StoredLocation>(
-          value: venue,
-          enabled: isEnabled,
-          child: Text(
-            venue.name + (venue.isArchived && venue.placeId != _addNewVenuePlaceholder.placeId ? " (Archived)" : ""),
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: isEnabled ? null : Colors.grey.shade500),
-          ),
-        );
-      }).toList(),
-      onChanged: (StoredLocation? newValue) {
-        if (newValue == null) return;
-        if (newValue.isArchived && newValue.placeId != _addNewVenuePlaceholder.placeId) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("${newValue.name} is archived and cannot be selected."), backgroundColor: Colors.orange),
-            );
-          }
-          return;
-        }
-        _handleVenueSelection(newValue);
-      },
-      validator: (value) {
-        if (value == null) return 'Please select a venue option.';
-        if (value.isArchived && value.placeId != _addNewVenuePlaceholder.placeId) {
-          return 'Archived venues cannot be booked.';
-        }
-        return null;
-      },
-    );
-  }
-
-  Widget _buildFinancialInputs() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextFormField( controller: _payController, decoration: const InputDecoration(labelText: 'Total Pay (\$)*', border: OutlineInputBorder(), prefixText: '\$'), keyboardType: const TextInputType.numberWithOptions(decimal: false),
-          validator: (value) { if (value == null || value.isEmpty) return 'Pay is required'; final pay = double.tryParse(value); if (pay == null) return 'Invalid number for pay'; if (pay <= 0) return 'Pay must be positive'; return null; },
-        ),
-        const SizedBox(height: 12),
-        TextFormField( controller: _gigLengthController, decoration: const InputDecoration(labelText: 'Gig Length (hours)*', border: OutlineInputBorder(), suffixText: 'hrs'), keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) { if (value == null || value.isEmpty) return 'Gig length is required'; final length = double.tryParse(value); if (length == null) return 'Invalid number for length'; if (length <= 0) return 'Length must be positive'; return null; },
-        ),
-        const SizedBox(height: 12),
-        TextFormField( controller: _driveSetupController, decoration: const InputDecoration(labelText: 'Drive/Setup (hours)', border: OutlineInputBorder(), suffixText: 'hrs'), keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) { if (value != null && value.isNotEmpty) { final driveTime = double.tryParse(value); if (driveTime == null) return 'Invalid number for drive/setup'; if (driveTime < 0) return 'Drive/Setup cannot be negative'; } return null; },
-        ),
-        const SizedBox(height: 12),
-        TextFormField( controller: _rehearsalController, decoration: const InputDecoration(labelText: 'Rehearsal (hours)', border: OutlineInputBorder(), suffixText: 'hrs'), keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) { if (value != null && value.isNotEmpty) { final rehearsalTime = double.tryParse(value); if (rehearsalTime == null) return 'Invalid number for rehearsal'; if (rehearsalTime < 0) return 'Rehearsal cannot be negative'; } return null; },
-        ),
-        if ((_isMapModeNewGig || _isEditingMode) && _dynamicRateString.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Align( alignment: Alignment.centerRight, child: Text( _dynamicRateString, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _dynamicRateResultColor),),
-          ),
-        ],
-      ],
-    );
-  }
+  // --- BUILDER METHODS REMOVED ---
+  // The _buildVenueDropdown and _buildFinancialInputs methods have been deleted.
 
   @override
   Widget build(BuildContext context) {
-    TextStyle detailLabelStyle = const TextStyle(fontWeight: FontWeight.bold);
-    TextStyle detailValueStyle = TextStyle(color: Colors.grey.shade700, fontSize: 14);
-    TextStyle rateValueStyle = const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16);
     bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode) || _isFetchingDriveTime;
 
     String dialogTitle = "Book New Gig";
@@ -759,27 +662,42 @@ class _BookingDialogState extends State<BookingDialog> {
             child: SingleChildScrollView(
               child: ListBody(
                 children: <Widget>[
-                  if (_isCalculatorMode) ...[
-                    const Text("Review Calculated Details:", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    const Divider(height: 20, thickness: 1),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Total Pay:', style: detailLabelStyle), Text('\$${widget.totalPay?.toStringAsFixed(0) ?? 'N/A'}', style: detailValueStyle)]),
-                    const SizedBox(height: 4),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Gig Length:', style: detailLabelStyle), Text('${widget.gigLengthHours?.toStringAsFixed(1) ?? 'N/A'} hrs', style: detailValueStyle)]),
-                    const SizedBox(height: 4),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Drive/Setup:', style: detailLabelStyle), Text('${widget.driveSetupTimeHours?.toStringAsFixed(1) ?? 'N/A'} hrs', style: detailValueStyle)]),
-                    const SizedBox(height: 4),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Rehearsal:', style: detailLabelStyle), Text('${widget.rehearsalTimeHours?.toStringAsFixed(1) ?? 'N/A'} hrs', style: detailValueStyle)]),
-                    const SizedBox(height: 8),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Hourly Rate:', style: detailLabelStyle), Text(widget.calculatedHourlyRate ?? 'N/A', style: rateValueStyle)]),
-                    const Divider(height: 24, thickness: 1),
-                  ] else ...[
-                    _buildFinancialInputs(),
+                  // --- START OF REFACTORED UI SECTION ---
+                  if (_isCalculatorMode)
+                    CalculatorSummaryView(
+                      totalPay: widget.totalPay,
+                      gigLengthHours: widget.gigLengthHours,
+                      driveSetupTimeHours: widget.driveSetupTimeHours,
+                      rehearsalTimeHours: widget.rehearsalTimeHours,
+                      calculatedHourlyRate: widget.calculatedHourlyRate,
+                    )
+                  else ...[
+                    FinancialInputsView(
+                      payController: _payController,
+                      gigLengthController: _gigLengthController,
+                      driveSetupController: _driveSetupController,
+                      rehearsalController: _rehearsalController,
+                      showDynamicRate: _isMapModeNewGig || _isEditingMode,
+                      dynamicRateString: _dynamicRateString,
+                      dynamicRateResultColor: _dynamicRateResultColor,
+                    ),
                     const Divider(height: 24, thickness: 1),
                   ],
 
                   Text( _isEditingMode ? "Venue & Schedule:" : (_isMapModeNewGig ? "Confirm Venue & Schedule:" : "Venue & Schedule:"), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
-                  _buildVenueDropdown(),
+
+                  VenueSelectionView(
+                    isStaticDisplay: _isEditingMode || _isMapModeNewGig,
+                    isLoading: _isLoadingVenues,
+                    selectedVenue: _selectedVenue,
+                    selectableVenues: _selectableVenuesForDropdown,
+                    addNewVenuePlaceholder: _addNewVenuePlaceholder,
+                    onVenueSelected: (venue) {
+                      _handleVenueSelection(venue);
+                    },
+                  ),
+                  // --- END OF REFACTORED UI SECTION ---
 
                   if (_isAddNewVenue) ...[
                     const SizedBox(height: 8),
@@ -791,18 +709,16 @@ class _BookingDialogState extends State<BookingDialog> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _newVenueAddressController,
-                      focusNode: _newVenueAddressFocusNode, // CORRECTED: Assign FocusNode
+                      focusNode: _newVenueAddressFocusNode,
                       decoration: const InputDecoration(labelText: 'New Venue Address*', hintText: 'e.g., 1600 Amphitheatre Pkwy, MV, CA', border: OutlineInputBorder()),
-                      onFieldSubmitted: (_) => _fetchDriveTimeForManualAddress(), // Also trigger on submit
+                      onFieldSubmitted: (_) => _fetchDriveTimeForManualAddress(),
                       validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue address is required'; } return null; },
                     ),
                     const SizedBox(height: 4),
                   ],
 
-                  // CORRECTED: Use the DriveTimeDisplay widget and show it for both manual and selected venues
                   DriveTimeDisplay(
                     isFetching: _isFetchingDriveTime,
-                    // Use manual values if adding new, otherwise use selected venue's values
                     duration: _isAddNewVenue ? _manualDriveDurationString : _selectedVenue?.driveDuration,
                     distance: _isAddNewVenue ? _manualDriveDistance : _selectedVenue?.driveDistance,
                     userProfileAddress: _userProfileAddress,
