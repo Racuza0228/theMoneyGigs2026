@@ -6,11 +6,18 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
+
 import 'package:the_money_gigs/global_refresh_notifier.dart';
-import 'package:the_money_gigs/gig_model.dart';
-import 'package:the_money_gigs/venue_model.dart';
-import 'package:the_money_gigs/notes_page.dart';
+
+// Feature-Specific Models and Pages
+import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
+import 'package:the_money_gigs/features/map_venues/models/venue_model.dart'; // This defines StoredLocation
+import 'package:the_money_gigs/features/notes/views/notes_page.dart';
+
 import 'package:url_launcher/url_launcher.dart';
+
+import '../../../core/services/drive_time_service.dart';
+import '../../../core/widgets/drive_time_display.dart';
 
 enum GigEditResultAction { updated, deleted, noChange }
 
@@ -59,9 +66,6 @@ class BookingDialog extends StatefulWidget {
 }
 
 class _BookingDialogState extends State<BookingDialog> {
-  // <<< FIXED: Define a local constant for the placeholder >>>
-  // This removes the dependency on the static getter from venue_model.dart
-  // and resolves the 'addNewVenuePlaceholder isn't defined' error.
   static final StoredLocation _addNewVenuePlaceholder = StoredLocation(
     placeId: 'add_new_venue_placeholder',
     name: '--- Add New Venue ---',
@@ -87,6 +91,11 @@ class _BookingDialogState extends State<BookingDialog> {
 
   final TextEditingController _newVenueNameController = TextEditingController();
   final TextEditingController _newVenueAddressController = TextEditingController();
+  final FocusNode _newVenueAddressFocusNode = FocusNode(); // NEW: FocusNode for address field
+
+  // NEW: State for manual address drive time
+  String? _manualDriveDurationString;
+  String? _manualDriveDistance;
 
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
@@ -97,6 +106,12 @@ class _BookingDialogState extends State<BookingDialog> {
 
   String? _gigNotes;
   String? _gigNotesUrl;
+
+  String? _userProfileAddress;
+  bool _isFetchingDriveTime = false;
+
+  // NEW: Late-initialized service for handling drive time logic
+  late final DriveTimeService _driveTimeService;
 
   bool get _isEditingMode => widget.editingGig != null;
   bool get _isCalculatorMode => widget.calculatedHourlyRate != null && !_isEditingMode && widget.preselectedVenue == null;
@@ -109,6 +124,8 @@ class _BookingDialogState extends State<BookingDialog> {
     super.initState();
     _initializeDialogState();
     globalRefreshNotifier.addListener(_onGlobalRefresh);
+    // NEW: Add listener for the address field focus changes
+    _newVenueAddressFocusNode.addListener(_onAddressFocusChange);
   }
 
   @override
@@ -116,6 +133,8 @@ class _BookingDialogState extends State<BookingDialog> {
     globalRefreshNotifier.removeListener(_onGlobalRefresh);
     _newVenueNameController.dispose();
     _newVenueAddressController.dispose();
+    _newVenueAddressFocusNode.removeListener(_onAddressFocusChange); // NEW: Remove listener
+    _newVenueAddressFocusNode.dispose(); // NEW: Dispose FocusNode
     _payController.dispose();
     _gigLengthController.dispose();
     _driveSetupController.dispose();
@@ -129,13 +148,40 @@ class _BookingDialogState extends State<BookingDialog> {
     super.dispose();
   }
 
+  // NEW: Handle focus change on the address field
+  void _onAddressFocusChange() {
+    // If the field loses focus, is for a new venue, and has text, fetch drive time
+    if (!_newVenueAddressFocusNode.hasFocus &&
+        _isAddNewVenue &&
+        _newVenueAddressController.text.trim().isNotEmpty) {
+      _fetchDriveTimeForManualAddress();
+    }
+  }
+
+
   void _onGlobalRefresh() {
-    if (widget.editingGig != null && mounted) {
+    if (mounted) {
       _initializeDialogState();
     }
   }
 
+  Future<void> _loadProfileAddress() async {
+    final prefs = await SharedPreferences.getInstance();
+    final address1 = prefs.getString('profile_address1');
+    final city = prefs.getString('profile_city');
+    final state = prefs.getString('profile_state');
+    final zip = prefs.getString('profile_zip_code');
+
+    if (address1 != null && address1.isNotEmpty && city != null && city.isNotEmpty && state != null && state.isNotEmpty) {
+      _userProfileAddress = '$address1, $city, $state $zip';
+    } else {
+      _userProfileAddress = null;
+    }
+  }
+
   Future<void> _initializeDialogState() async {
+    await _loadProfileAddress();
+
     final prefs = await SharedPreferences.getInstance();
     final allGigsJson = prefs.getString('gigs_list') ?? '[]';
     final allGigs = Gig.decode(allGigsJson);
@@ -143,12 +189,14 @@ class _BookingDialogState extends State<BookingDialog> {
     await _loadAllKnownVenuesInternal();
     if (!mounted) return;
 
-    if (_isEditingMode) {
-      final currentGig = allGigs.firstWhere(
-            (g) => g.id == widget.editingGig!.id,
-        orElse: () => widget.editingGig!,
-      );
+    _driveTimeService = DriveTimeService(
+      googleApiKey: widget.googleApiKey,
+      userProfileAddress: _userProfileAddress,
+      allKnownVenues: _allKnownVenuesInternal,
+    );
 
+    if (_isEditingMode) {
+      final currentGig = allGigs.firstWhere((g) => g.id == widget.editingGig!.id, orElse: () => widget.editingGig!,);
       _payController = TextEditingController(text: currentGig.pay.toStringAsFixed(0));
       _gigLengthController = TextEditingController(text: currentGig.gigLengthHours.toStringAsFixed(1));
       _driveSetupController = TextEditingController(text: currentGig.driveSetupTimeHours.toStringAsFixed(1));
@@ -160,18 +208,12 @@ class _BookingDialogState extends State<BookingDialog> {
 
       _selectedVenue = _allKnownVenuesInternal.firstWhere(
             (v) => (currentGig.placeId != null && v.placeId == currentGig.placeId) || (v.name == currentGig.venueName && v.address == currentGig.address),
-        orElse: () => StoredLocation(
-            placeId: currentGig.placeId ?? 'edited_${currentGig.id}',
-            name: currentGig.venueName,
-            address: currentGig.address,
-            coordinates: LatLng(currentGig.latitude, currentGig.longitude),
-            isArchived: true,
-            hasJamOpenMic: false,
-            jamStyle: null
-        ),
+        orElse: () => StoredLocation( placeId: currentGig.placeId ?? 'edited_${currentGig.id}', name: currentGig.venueName, address: currentGig.address, coordinates: LatLng(currentGig.latitude, currentGig.longitude), isArchived: true, hasJamOpenMic: false, jamStyle: null),
       );
       _isAddNewVenue = false;
       _isLoadingVenues = false;
+
+      await _handleVenueSelection(_selectedVenue);
 
       if (!_payController.hasListeners) {
         _payController.addListener(_calculateDynamicRate);
@@ -190,6 +232,9 @@ class _BookingDialogState extends State<BookingDialog> {
         _selectedVenue = widget.preselectedVenue;
         _isAddNewVenue = false;
         _isLoadingVenues = false;
+
+        await _handleVenueSelection(_selectedVenue);
+
         _payController.addListener(_calculateDynamicRate);
         _gigLengthController.addListener(_calculateDynamicRate);
         _driveSetupController.addListener(_calculateDynamicRate);
@@ -200,11 +245,80 @@ class _BookingDialogState extends State<BookingDialog> {
         _gigLengthController = TextEditingController(text: widget.gigLengthHours?.toStringAsFixed(1) ?? '');
         _driveSetupController = TextEditingController(text: widget.driveSetupTimeHours?.toStringAsFixed(1) ?? '');
         _rehearsalController = TextEditingController(text: widget.rehearsalTimeHours?.toStringAsFixed(1) ?? '');
-        await _loadSelectableVenuesForDropdown();
+        await _loadSelectableVenuesForDropdown(defaultToAddVenue: true);
       }
     }
     if (mounted) {
       setState(() {});
+    }
+  }
+
+  Future<void> _handleVenueSelection(StoredLocation? venue) async {
+    // Reset manual drive time info when selection changes
+    setState(() {
+      _manualDriveDistance = null;
+      _manualDriveDurationString = null;
+    });
+
+    if (venue == null || venue.placeId == _addNewVenuePlaceholder.placeId) {
+      setState(() {
+        _selectedVenue = venue;
+        _isAddNewVenue = (venue?.placeId == _addNewVenuePlaceholder.placeId);
+      });
+      return;
+    }
+
+    setState(() {
+      _selectedVenue = venue;
+      _isAddNewVenue = false;
+    });
+
+    if (venue.driveDuration == null) {
+      setState(() => _isFetchingDriveTime = true);
+      final updatedVenue = await _driveTimeService.fetchAndCacheDriveTime(venue);
+      if (mounted) {
+        setState(() {
+          if (updatedVenue != null) {
+            _selectedVenue = updatedVenue;
+          }
+          _isFetchingDriveTime = false;
+        });
+      }
+    }
+  }
+
+  // CORRECTED: Method to fetch drive time for a manually entered address
+  Future<void> _fetchDriveTimeForManualAddress() async {
+    if (_userProfileAddress == null) return;
+
+    final address = _newVenueAddressController.text.trim();
+    if (address.isEmpty) return;
+
+    setState(() => _isFetchingDriveTime = true);
+
+    LatLng? coords = await _geocodeAddress(address);
+    if (coords != null && mounted) {
+      final tempVenue = StoredLocation(
+        name: 'temp',
+        address: address,
+        coordinates: coords,
+        placeId: 'temp_manual_place_id_${DateTime.now().millisecondsSinceEpoch}',
+      );
+
+      // Use the correct service method which returns a StoredLocation
+      final resultVenue = await _driveTimeService.fetchAndCacheDriveTime(tempVenue);
+
+      if (mounted) {
+        setState(() {
+          // Assign properties from the returned StoredLocation object to the correct state variables
+          _manualDriveDurationString = resultVenue?.driveDuration;
+          _manualDriveDistance = resultVenue?.driveDistance;
+        });
+      }
+    }
+
+    if (mounted) {
+      setState(() => _isFetchingDriveTime = false);
     }
   }
 
@@ -360,7 +474,7 @@ class _BookingDialogState extends State<BookingDialog> {
     if (mounted) setState(() { _dynamicRateString = newRateString; _dynamicRateResultColor = newColor; });
   }
 
-  Future<void> _loadSelectableVenuesForDropdown() async {
+  Future<void> _loadSelectableVenuesForDropdown({bool defaultToAddVenue = false}) async {
     if (!_isCalculatorMode) {
       if(mounted) setState(() => _isLoadingVenues = false );
       return;
@@ -371,26 +485,37 @@ class _BookingDialogState extends State<BookingDialog> {
       List<StoredLocation> activeVenues = _allKnownVenuesInternal.where((v) => !v.isArchived).toList();
       _selectableVenuesForDropdown = [];
       _selectableVenuesForDropdown.addAll(activeVenues);
-      _selectableVenuesForDropdown.removeWhere((v) => v.placeId == _addNewVenuePlaceholder.placeId); // FIXED
+      _selectableVenuesForDropdown.removeWhere((v) => v.placeId == _addNewVenuePlaceholder.placeId);
       _selectableVenuesForDropdown.sort((a,b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-      _selectableVenuesForDropdown.insert(0, _addNewVenuePlaceholder); // FIXED
+      _selectableVenuesForDropdown.insert(0, _addNewVenuePlaceholder);
 
-      if (_selectableVenuesForDropdown.length == 1 && _selectableVenuesForDropdown.first.placeId == _addNewVenuePlaceholder.placeId) { // FIXED
-        _selectedVenue = _selectableVenuesForDropdown.first;
-        _isAddNewVenue = true;
-      } else if (_selectableVenuesForDropdown.length > 1) {
-        _selectedVenue = _selectableVenuesForDropdown.firstWhere((v) => v.placeId != _addNewVenuePlaceholder.placeId && !v.isArchived, orElse: () => _selectableVenuesForDropdown.first); // FIXED
-        _isAddNewVenue = (_selectedVenue?.placeId == _addNewVenuePlaceholder.placeId); // FIXED
+      StoredLocation? initialSelection;
+      if (defaultToAddVenue) {
+        initialSelection = _addNewVenuePlaceholder;
+      } else if (_selectableVenuesForDropdown.length > 1) { // Default to the first non-archived, non-placeholder venue
+        initialSelection = _selectableVenuesForDropdown.firstWhere((v) => v.placeId != _addNewVenuePlaceholder.placeId && !v.isArchived, orElse: () => _selectableVenuesForDropdown.first);
       } else {
-        _selectableVenuesForDropdown = [_addNewVenuePlaceholder]; // FIXED
-        _selectedVenue = _selectableVenuesForDropdown.first;
-        _isAddNewVenue = true;
+        _selectableVenuesForDropdown = [_addNewVenuePlaceholder];
+
+        initialSelection = _selectableVenuesForDropdown.first;
       }
+
+      await _handleVenueSelection(initialSelection);
+      if(mounted) {
+        setState(() {
+          _isAddNewVenue = (initialSelection?.placeId == _addNewVenuePlaceholder.placeId);
+        });
+      }
+
     } catch (e) {
       print("Error filtering/setting up venues for dropdown: $e");
-      _selectableVenuesForDropdown = [_addNewVenuePlaceholder]; // FIXED
-      _selectedVenue = _addNewVenuePlaceholder; // FIXED
-      _isAddNewVenue = true;
+      if (mounted) {
+        setState(() {
+          _selectableVenuesForDropdown = [_addNewVenuePlaceholder];
+          _selectedVenue = _addNewVenuePlaceholder;
+          _isAddNewVenue = true;
+        });
+      }
     } finally {
       if (mounted) setState(() { _isLoadingVenues = false; });
     }
@@ -449,7 +574,7 @@ class _BookingDialogState extends State<BookingDialog> {
     final StoredLocation venueWithCorrectArchiveStatus = venueToSave.copyWith(isArchived: venueToSave.placeId.startsWith('manual_') ? false : venueToSave.isArchived);
     List<StoredLocation> currentSavedVenues = List.from(_allKnownVenuesInternal);
     int existingIndex = -1;
-    if(venueWithCorrectArchiveStatus.placeId != _addNewVenuePlaceholder.placeId && venueWithCorrectArchiveStatus.placeId.isNotEmpty) { // FIXED
+    if(venueWithCorrectArchiveStatus.placeId != _addNewVenuePlaceholder.placeId && venueWithCorrectArchiveStatus.placeId.isNotEmpty) {
       existingIndex = currentSavedVenues.indexWhere((v) => v.placeId == venueWithCorrectArchiveStatus.placeId);
     }
     bool wasActuallyAddedOrUpdated = false;
@@ -458,21 +583,21 @@ class _BookingDialogState extends State<BookingDialog> {
         currentSavedVenues[existingIndex] = venueWithCorrectArchiveStatus;
         wasActuallyAddedOrUpdated = true;
       }
-    } else if (venueWithCorrectArchiveStatus.placeId != _addNewVenuePlaceholder.placeId && !currentSavedVenues.any((v) =>(v.placeId.isNotEmpty && venueWithCorrectArchiveStatus.placeId.isNotEmpty && v.placeId == venueWithCorrectArchiveStatus.placeId) ||(v.name.toLowerCase() == venueWithCorrectArchiveStatus.name.toLowerCase() && v.address.toLowerCase() == venueWithCorrectArchiveStatus.address.toLowerCase()))) { // FIXED
+    } else if (venueWithCorrectArchiveStatus.placeId != _addNewVenuePlaceholder.placeId && !currentSavedVenues.any((v) =>(v.placeId.isNotEmpty && venueWithCorrectArchiveStatus.placeId.isNotEmpty && v.placeId == venueWithCorrectArchiveStatus.placeId) ||(v.name.toLowerCase() == venueWithCorrectArchiveStatus.name.toLowerCase() && v.address.toLowerCase() == venueWithCorrectArchiveStatus.address.toLowerCase()))) {
       currentSavedVenues.add(venueWithCorrectArchiveStatus);
       wasActuallyAddedOrUpdated = true;
     }
     if (wasActuallyAddedOrUpdated) {
       _allKnownVenuesInternal = List.from(currentSavedVenues);
-      final List<String> updatedLocationsJson = _allKnownVenuesInternal.where((loc) => loc.placeId != _addNewVenuePlaceholder.placeId).map((loc) => jsonEncode(loc.toJson())).toList(); // FIXED
+      final List<String> updatedLocationsJson = _allKnownVenuesInternal.where((loc) => loc.placeId != _addNewVenuePlaceholder.placeId).map((loc) => jsonEncode(loc.toJson())).toList();
       await prefs.setStringList('saved_locations', updatedLocationsJson);
       globalRefreshNotifier.notify();
       if (_isCalculatorMode && mounted) {
         await _loadSelectableVenuesForDropdown();
-        final newVenueInList = _allKnownVenuesInternal.firstWhere((v) => v.placeId == venueToSave.placeId, orElse: () => _selectedVenue ?? _addNewVenuePlaceholder); // FIXED
+        final newVenueInList = _allKnownVenuesInternal.firstWhere((v) => v.placeId == venueToSave.placeId, orElse: () => _selectedVenue ?? _addNewVenuePlaceholder);
         if(mounted) {
+          await _handleVenueSelection(newVenueInList);
           setState(() {
-            _selectedVenue = newVenueInList;
             _isAddNewVenue = false;
           });
         }
@@ -519,60 +644,67 @@ class _BookingDialogState extends State<BookingDialog> {
   }
 
   Widget _buildVenueDropdown() {
-    // ... This method is unchanged ...
-    if (_isEditingMode) {
+    if (_isEditingMode || _isMapModeNewGig) {
       StoredLocation? venueToShow = _selectedVenue;
       if (venueToShow == null) return const Text("Venue information missing.", style: TextStyle(color: Colors.red, fontStyle: FontStyle.italic));
-      return Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(venueToShow.name, style: Theme.of(context).textTheme.titleMedium),
-        Text(venueToShow.address, style: Theme.of(context).textTheme.bodySmall ?? const TextStyle()),
-        if (venueToShow.isArchived) Padding( padding: const EdgeInsets.only(top: 4.0), child: Text("(This venue is archived)", style: TextStyle(color: Colors.orange.shade700, fontStyle: FontStyle.italic, fontSize: 12)),),
-        const SizedBox(height: 8),
-      ]);
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(venueToShow.name, style: Theme.of(context).textTheme.titleMedium),
+          Text(venueToShow.address, style: Theme.of(context).textTheme.bodySmall ?? const TextStyle()),
+          if (venueToShow.isArchived)
+            Padding(
+              padding: const EdgeInsets.only(top: 4.0),
+              child: Text("(This venue is archived)", style: TextStyle(color: Colors.orange.shade700, fontStyle: FontStyle.italic, fontSize: 12)),
+            ),
+          const SizedBox(height: 8),
+        ],
+      );
     }
-    if (_isMapModeNewGig) {
-      StoredLocation? venueToShow = widget.preselectedVenue;
-      if (venueToShow == null) return const Text("Preselected venue missing.", style: TextStyle(color: Colors.red, fontStyle: FontStyle.italic));
-      return Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(venueToShow.name, style: Theme.of(context).textTheme.titleMedium),
-        Text(venueToShow.address, style: Theme.of(context).textTheme.bodySmall ?? const TextStyle()),
-        if (venueToShow.isArchived) Padding( padding: const EdgeInsets.only(top: 4.0), child: Text("(This venue is archived)", style: TextStyle(color: Colors.orange.shade700, fontStyle: FontStyle.italic, fontSize: 12)),),
-        const SizedBox(height: 8),
-      ]);
-    }
+
     if (_isLoadingVenues) {
       return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()));
     }
+
     return DropdownButtonFormField<StoredLocation>(
       decoration: const InputDecoration(labelText: 'Select or Add Venue', border: OutlineInputBorder()),
       value: _selectedVenue,
       isExpanded: true,
       items: _selectableVenuesForDropdown.map<DropdownMenuItem<StoredLocation>>((StoredLocation venue) {
-        bool isEnabled = !venue.isArchived || venue.placeId == _addNewVenuePlaceholder.placeId; // FIXED
+        bool isEnabled = !venue.isArchived || venue.placeId == _addNewVenuePlaceholder.placeId;
         return DropdownMenuItem<StoredLocation>(
           value: venue,
           enabled: isEnabled,
-          child: Text( venue.name + (venue.isArchived && venue.placeId != _addNewVenuePlaceholder.placeId ? " (Archived)" : ""), overflow: TextOverflow.ellipsis, style: TextStyle( color: isEnabled ? null : Colors.grey.shade500, ),), // FIXED
+          child: Text(
+            venue.name + (venue.isArchived && venue.placeId != _addNewVenuePlaceholder.placeId ? " (Archived)" : ""),
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: isEnabled ? null : Colors.grey.shade500),
+          ),
         );
       }).toList(),
       onChanged: (StoredLocation? newValue) {
         if (newValue == null) return;
-        if (newValue.isArchived && newValue.placeId != _addNewVenuePlaceholder.placeId) { // FIXED
-          if(mounted) { ScaffoldMessenger.of(context).showSnackBar( SnackBar(content: Text("${newValue.name} is archived and cannot be selected."), backgroundColor: Colors.orange), ); }
+        if (newValue.isArchived && newValue.placeId != _addNewVenuePlaceholder.placeId) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("${newValue.name} is archived and cannot be selected."), backgroundColor: Colors.orange),
+            );
+          }
           return;
         }
-        if(mounted) { setState(() { _selectedVenue = newValue; _isAddNewVenue = (newValue.placeId == _addNewVenuePlaceholder.placeId); });} // FIXED
+        _handleVenueSelection(newValue);
       },
       validator: (value) {
         if (value == null) return 'Please select a venue option.';
-        if (value.isArchived && value.placeId != _addNewVenuePlaceholder.placeId) { return 'Archived venues cannot be booked.'; } // FIXED
+        if (value.isArchived && value.placeId != _addNewVenuePlaceholder.placeId) {
+          return 'Archived venues cannot be booked.';
+        }
         return null;
       },
     );
   }
 
-  // ... The rest of the file (_buildFinancialInputs, build method) is unchanged...
-  // ... but for completeness, it is included below ...
   Widget _buildFinancialInputs() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -606,7 +738,7 @@ class _BookingDialogState extends State<BookingDialog> {
     TextStyle detailLabelStyle = const TextStyle(fontWeight: FontWeight.bold);
     TextStyle detailValueStyle = TextStyle(color: Colors.grey.shade700, fontSize: 14);
     TextStyle rateValueStyle = const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16);
-    bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode && !_isAddNewVenue);
+    bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode) || _isFetchingDriveTime;
 
     String dialogTitle = "Book New Gig";
     String confirmButtonText = "CONFIRM & BOOK";
@@ -648,18 +780,35 @@ class _BookingDialogState extends State<BookingDialog> {
                   Text( _isEditingMode ? "Venue & Schedule:" : (_isMapModeNewGig ? "Confirm Venue & Schedule:" : "Venue & Schedule:"), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   _buildVenueDropdown(),
-                  const SizedBox(height: 12),
 
-                  if ((_isCalculatorMode || _isMapModeNewGig) && _isAddNewVenue) ...[
-                    TextFormField( controller: _newVenueNameController, decoration: const InputDecoration(labelText: 'New Venue Name*', border: OutlineInputBorder()),
+                  if (_isAddNewVenue) ...[
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _newVenueNameController,
+                      decoration: const InputDecoration(labelText: 'New Venue Name*', border: OutlineInputBorder()),
                       validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue name is required'; } return null; },
                     ),
                     const SizedBox(height: 12),
-                    TextFormField( controller: _newVenueAddressController, decoration: const InputDecoration(labelText: 'New Venue Address*', hintText: 'e.g., 1600 Amphitheatre Pkwy, MV, CA', border: OutlineInputBorder()),
+                    TextFormField(
+                      controller: _newVenueAddressController,
+                      focusNode: _newVenueAddressFocusNode, // CORRECTED: Assign FocusNode
+                      decoration: const InputDecoration(labelText: 'New Venue Address*', hintText: 'e.g., 1600 Amphitheatre Pkwy, MV, CA', border: OutlineInputBorder()),
+                      onFieldSubmitted: (_) => _fetchDriveTimeForManualAddress(), // Also trigger on submit
                       validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue address is required'; } return null; },
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 4),
                   ],
+
+                  // CORRECTED: Use the DriveTimeDisplay widget and show it for both manual and selected venues
+                  DriveTimeDisplay(
+                    isFetching: _isFetchingDriveTime,
+                    // Use manual values if adding new, otherwise use selected venue's values
+                    duration: _isAddNewVenue ? _manualDriveDurationString : _selectedVenue?.driveDuration,
+                    distance: _isAddNewVenue ? _manualDriveDistance : _selectedVenue?.driveDistance,
+                    userProfileAddress: _userProfileAddress,
+                  ),
+
+                  const SizedBox(height: 4),
 
                   Row( children: [ Expanded(child: Text(_selectedDate == null ? 'No date selected*' : 'Date: ${DateFormat.yMMMEd().format(_selectedDate!)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickDate(context), child: const Text('SELECT DATE')), ], ),
                   Row( children: [ Expanded(child: Text(_selectedTime == null ? 'No time selected*' : 'Time: ${_selectedTime!.format(context)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickTime(context), child: const Text('SELECT TIME')), ], ),

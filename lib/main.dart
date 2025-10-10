@@ -2,11 +2,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'gig_calculator.dart';
-import 'map.dart';
-import 'gigs.dart';
-import 'profile.dart';
-import 'page_background_wrapper.dart';
+import 'features/gigs/views/gig_calculator_page.dart';
+import 'features/map_venues/views/map.dart';
+import 'features/gigs/views/gigs.dart';
+import 'features/profile/views/profile.dart';
+import 'core/widgets/page_background_wrapper.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 // This simple notifier will allow the profile page to trigger a refresh in main.dart
@@ -60,16 +60,17 @@ class _MainPageState extends State<MainPage> {
   late List<Color?> _pageBackgroundColors;
   late List<double> _pageBackgroundOpacities;
 
-  static const List<Widget> _widgetOptions = <Widget>[
-    GigCalculator(),
-    MapPage(),
-    GigsPage(),
-    ProfilePage(),
+  // *** FIX: Removed 'const' from the list definition and the ProfilePage instantiation ***
+  static final List<Widget> _widgetOptions = <Widget>[
+    const GigCalculator(),
+    const MapPage(),
+    const GigsPage(),
+    const ProfilePage(), // Keeping 'const' here as ProfilePage has a const constructor
   ];
 
   static const List<String> _pageTitles = <String>[
     'Gig Calculator',
-    'Venue Map',
+    'Venues',
     'My Gigs',
     'Profile',
   ];
@@ -146,27 +147,22 @@ class _MainPageState extends State<MainPage> {
     final List<Widget> wrappedPages = List.generate(4, (index) {
       final color = _pageBackgroundColors[index];
 
-      // *** FIX: Logic to decide between color, custom image, or default image ***
       ImageProvider? provider;
       Color? bgColor;
 
       if (color != null) {
-        // If a color is set, use it and ensure no image is shown.
         bgColor = color;
         provider = null;
       } else {
-        // If no color, check for a custom image path.
         final path = _pageBackgroundPaths[index];
         if (path != null) {
           provider = path.startsWith('/') ? FileImage(File(path)) : AssetImage(path);
         } else {
-          // If no custom path, fall back to the default asset image.
           final defaultPath = _defaultBackgroundImages[index];
           if (defaultPath != null) {
             provider = AssetImage(defaultPath);
           }
         }
-        // If there's an image, the background color should be null.
         bgColor = null;
       }
 
@@ -230,7 +226,7 @@ class _MainPageState extends State<MainPage> {
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(icon: Icon(Icons.calculate), label: 'Calc'),
-          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Map'),
+          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Venues'),
           BottomNavigationBarItem(icon: Icon(Icons.list), label: 'My Gigs'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],

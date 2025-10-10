@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:convert'; // For jsonEncode, jsonDecode
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'booking_dialog.dart'; // Import the BookingDialog
-import 'gig_model.dart';      // Import your Gig model
+import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
+import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the notifier
 
 class GigCalculator extends StatefulWidget {
@@ -85,8 +85,6 @@ class _GigCalculatorState extends State<GigCalculator> {
     super.dispose();
   }
 
-  // This method is designed to reset results and form validation BUT keep input text
-  // It is NOT currently used by the "Clear All" button in your provided build method
   void _resetGigDetailsAndForm() {
     FocusScope.of(context).unfocus(); // Dismiss keyboard
     if (mounted) {
@@ -117,33 +115,13 @@ class _GigCalculatorState extends State<GigCalculator> {
     _gigTimeController.clear();
     _driveSetupTimeController.clear();
     _rehearsalTimeController.clear();
+    _hourlyRateResult = "";
+    _showTakeGigButton = false;
+
 
     if (mounted) {
-      // TEMPORARY: Minimal setState to force a rebuild and see if the controller's empty state is picked up
       setState(() {
-        // Just change one simple boolean to ensure setState itself is working
-        // _showTakeGigButton = !_showTakeGigButton; // Or some other trivial change
-        // OR even just an empty setState can sometimes be enough for controllers if their internal state changed
-        print("DEBUG: Minimal setState in _clearAllInputFields EXECUTED");
       });
-
-      // Optional: Call the full setState AFTER a short delay to see if it's a timing issue
-      // Future.delayed(const Duration(milliseconds: 100), () {
-      //   if (mounted) {
-      //     setState(() {
-      //       _showTakeGigButton = false;
-      //       _currentPay = 0.0;
-      //       _currentGigLengthHours = 0.0;
-      //       _currentDriveSetupHours = 0.0;
-      //       _currentRehearsalHours = 0.0;
-      //       _currentHourlyRateString = "";//       _hourlyRateResult = "";
-      //       _rateResultColor = Colors.greenAccent.shade400;
-      //       _formKey.currentState?.reset();
-      //       print("DEBUG: FULL setState in _clearAllInputFields EXECUTED after delay");
-      //     });
-      //   }
-      // });
-
     } else {
       print("DEBUG: _clearAllInputFields - NOT MOUNTED when setState was to be called");
     }
@@ -192,14 +170,14 @@ class _GigCalculatorState extends State<GigCalculator> {
         if (pay <= 0 && totalHoursForRateCalc > 0) {
           errorMessage = 'Please enter a valid pay amount.';
         } else if (pay > 0 && totalHoursForRateCalc <= 0) {
-          errorMessage = 'Total hours must be greater than zero.';
+          errorMessage = 'We need some hours to divide the pay to get your rate.';
         } else {
-          errorMessage = 'Please enter valid pay and time(s) for the gig calculation.';
+          errorMessage = 'Enter the pay and time(s) for the rate calculation.';
         }
         if (mounted) {
           setState(() {
             _hourlyRateResult = errorMessage;
-            _rateResultColor = Colors.redAccent.shade200;
+            _rateResultColor = Colors.lightBlue.shade200;
             _showTakeGigButton = false;
           });
         }
@@ -207,8 +185,8 @@ class _GigCalculatorState extends State<GigCalculator> {
     } else {
       if (mounted) {
         setState(() {
-          _hourlyRateResult = 'Please correct the errors above.';
-          _rateResultColor = Colors.redAccent.shade200;
+          _hourlyRateResult = 'Please provide the Pay for the Gig.';
+          _rateResultColor = Colors.lightBlue.shade200;
           _showTakeGigButton = false;
         });
       }
@@ -406,6 +384,17 @@ class _GigCalculatorState extends State<GigCalculator> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8.0, 0.0, 8.0, 24.0),
+                  child: Text(
+                    "Your data is stored on your device only and never shared.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.7),
+                        fontStyle: FontStyle.italic),
+                  ),
+                ),
                 TextFormField(
                   controller: _payController,
                   focusNode: _payFocusNode,

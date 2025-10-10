@@ -2,9 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:the_money_gigs/gig_model.dart';
+import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
-import 'package:the_money_gigs/venue_model.dart'; // Import Venue model
+import 'package:the_money_gigs/features/map_venues/models/venue_model.dart'; // Import Venue model
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 

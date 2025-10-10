@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'venue_model.dart'; // Make sure this path is correct
+import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
+
 
 class JamOpenMicDialogResult {
   final bool settingsChanged;

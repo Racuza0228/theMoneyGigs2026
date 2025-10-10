@@ -2,8 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:the_money_gigs/venue_contact.dart';
-
+import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 // ... (Enums remain the same)
 enum DayOfWeek { monday, tuesday, wednesday, thursday, friday, saturday, sunday }
 enum JamFrequencyType { weekly, biWeekly, monthlySameDay, monthlySameDate, customNthDay }
@@ -31,6 +30,10 @@ class StoredLocation {
   final String? venueNotes;
   final String? venueNotesUrl;
 
+  // NEW: Caching for drive time from Directions API
+  final String? driveDuration; // e.g., "35 mins"
+  final String? driveDistance; // e.g., "21.4 mi"
+
   StoredLocation({
     required this.placeId,
     required this.name,
@@ -50,6 +53,9 @@ class StoredLocation {
     this.contact,
     this.venueNotes,
     this.venueNotesUrl,
+    // NEW
+    this.driveDuration,
+    this.driveDistance,
   });
 
   Map<String, dynamic> toJson() => {
@@ -74,6 +80,9 @@ class StoredLocation {
     'contact': contact?.toJson(),
     'venueNotes': venueNotes,
     'venueNotesUrl': venueNotesUrl,
+    // NEW
+    'driveDuration': driveDuration,
+    'driveDistance': driveDistance,
   };
 
   factory StoredLocation.fromJson(Map<String, dynamic> json) {
@@ -122,6 +131,9 @@ class StoredLocation {
       contact: json['contact'] != null ? VenueContact.fromJson(json['contact']) : null,
       venueNotes: json['venueNotes'] as String?,
       venueNotesUrl: json['venueNotesUrl'] as String?,
+      // NEW
+      driveDuration: json['driveDuration'] as String?,
+      driveDistance: json['driveDistance'] as String?,
     );
   }
 
@@ -144,6 +156,9 @@ class StoredLocation {
     VenueContact? contact,
     String? venueNotes,
     String? venueNotesUrl,
+    // NEW - Use ValueGetter to allow explicitly setting to null if needed
+    ValueGetter<String?>? driveDuration,
+    ValueGetter<String?>? driveDistance,
   }) {
     return StoredLocation(
       placeId: placeId ?? this.placeId,
@@ -164,6 +179,9 @@ class StoredLocation {
       contact: contact ?? this.contact,
       venueNotes: venueNotes ?? this.venueNotes,
       venueNotesUrl: venueNotesUrl ?? this.venueNotesUrl,
+      // NEW
+      driveDuration: driveDuration != null ? driveDuration() : this.driveDuration,
+      driveDistance: driveDistance != null ? driveDistance() : this.driveDistance,
     );
   }
 
@@ -172,23 +190,21 @@ class StoredLocation {
   // The ValueGetter is a robust way to handle explicitly setting a value to null.
 
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-          other is StoredLocation &&
-              runtimeType == other.runtimeType &&
-              placeId == other.placeId &&
-              jamStyle == other.jamStyle && // <<< NEW
-              // ... other properties
-              isMuted == other.isMuted;
+  bool operator ==(Object other) {
+    // If the objects are the exact same instance in memory, they are equal.
+    if (identical(this, other)) return true;
+
+    // If the other object is a StoredLocation and its placeId is the same as this one's,
+    // they represent the same venue, so they are equal.
+    // We IGNORE other fields like driveDuration, name, address, etc., for the purpose of identity.
+    return other is StoredLocation && other.placeId == placeId;
+  }
 
   @override
-  int get hashCode =>
-      placeId.hashCode ^
-      name.hashCode ^
-      // ... other properties
-      jamStyle.hashCode ^ // <<< NEW
-      isMuted.hashCode ^
-      contact.hashCode;
+  int get hashCode {
+    return placeId.hashCode;
+  }
+
 
   String jamOpenMicDisplayString(BuildContext context) {
     if (!hasJamOpenMic || jamOpenMicDay == null || jamOpenMicTime == null) {

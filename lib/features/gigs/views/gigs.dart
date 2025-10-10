@@ -11,13 +11,17 @@ import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the noti
 import 'package:url_launcher/url_launcher.dart';
 
 // Import your models
-import 'gig_model.dart';
-import 'venue_model.dart';
-import 'booking_dialog.dart';
-import 'jam_open_mic_dialog.dart';
-import 'notes_page.dart';
-import 'venue_contact.dart';
-import 'venue_contact_dialog.dart';
+import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
+import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
+import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
+import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.dart';
+import 'package:the_money_gigs/features/notes/views/notes_page.dart';
+import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
+import 'package:the_money_gigs/core/services/gig_embed_service.dart';
+// Add this line with your other imports
+import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.dart';
+
+
 
 // Enum for Gigs view type
 enum GigsViewType { list, calendar }
@@ -400,7 +404,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     globalRefreshNotifier.notify();
   }
 
-  /// ****** CORRECTED METHOD ******
   Future<void> _archiveVenue(StoredLocation venueToArchive) async {
     if (!mounted) return;
     // CORRECTED: Only check for REAL, non-jam gigs.
@@ -645,6 +648,62 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       }
     }
   }
+  void _showEmbedCodeDialog() {
+    // Generate the HTML code using the service
+    final String embedCode = GigEmbedService.generateEmbedCode(_loadedGigs);
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Embed Gigs on Your Website'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Copy the HTML code below and paste it into your website editor. This will display a list of your upcoming gigs.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  color: Colors.grey[200],
+                  child: SelectableText(
+                    embedCode,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.black),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Copy to Clipboard'),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: embedCode));
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Embed code copied to clipboard!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+            ),
+            TextButton(
+              child: const Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -678,6 +737,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   Widget _buildGigsTabContent() {
+    bool hasUpcomingGigs =
+    _loadedGigs.any((gig) => !gig.isJamOpenMic && gig.dateTime.isAfter(DateTime.now()));
+
     if (_isLoadingGigs && _loadedGigs.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -703,8 +765,23 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         Padding(
           padding: const EdgeInsets.only(top: 8.0, left: 8.0, right: 8.0, bottom: 8.0),
           child: Wrap(
-            spacing: 8.0, runSpacing: 8.0, alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center,
-            children: [ _buildGigsViewToggle(), ],
+            spacing: 8.0,
+            runSpacing: 8.0,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildGigsViewToggle(),
+              // <<< MODIFIED: Add the export button here
+              if (hasUpcomingGigs)
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.code, size: 18),
+                  label: const Text('Export Gigs'),
+                  onPressed: _showEmbedCodeDialog,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Theme.of(context).colorScheme.primary),
+                  ),
+                ),
+            ],
           ),
         ),
         if (_isLoadingGigs && _loadedGigs.isNotEmpty)
@@ -942,7 +1019,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     );
   }
 
-  /// ****** CORRECTED METHOD ******
+
   Widget _buildVenuesList() {
     if (_isLoadingVenues && _displayableVenues.isEmpty) {
       return const Center(child: CircularProgressIndicator());

@@ -1,7 +1,7 @@
 // lib/venue_contact_dialog.dart
 import 'package:flutter/material.dart';
-import 'package:the_money_gigs/venue_model.dart';
-import 'package:the_money_gigs/venue_contact.dart';
+import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
+import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 
 class VenueContactDialog extends StatefulWidget {
   final StoredLocation venue;
