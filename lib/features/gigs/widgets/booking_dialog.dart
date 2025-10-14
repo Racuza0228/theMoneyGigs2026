@@ -117,8 +117,6 @@ class _BookingDialogState extends State<BookingDialog> {
 
   final TimeOfDay _defaultGigTime = const TimeOfDay(hour: 20, minute: 0);
 
-  // --- METHODS from initState down to _handleGigCancellation remain unchanged ---
-  // --- (No changes needed in the logic part for this refactoring step) ---
   @override
   void initState() {
     super.initState();
@@ -205,7 +203,9 @@ class _BookingDialogState extends State<BookingDialog> {
 
       _selectedVenue = _allKnownVenuesInternal.firstWhere(
             (v) => (currentGig.placeId != null && v.placeId == currentGig.placeId) || (v.name == currentGig.venueName && v.address == currentGig.address),
-        orElse: () => StoredLocation( placeId: currentGig.placeId ?? 'edited_${currentGig.id}', name: currentGig.venueName, address: currentGig.address, coordinates: LatLng(currentGig.latitude, currentGig.longitude), isArchived: true, hasJamOpenMic: false, jamStyle: null),
+        // *** FIX #1 IS HERE ***
+        // Removed `hasJamOpenMic` and `jamStyle` as they no longer exist on the StoredLocation constructor.
+        orElse: () => StoredLocation( placeId: currentGig.placeId ?? 'edited_${currentGig.id}', name: currentGig.venueName, address: currentGig.address, coordinates: LatLng(currentGig.latitude, currentGig.longitude), isArchived: true),
       );
       _isAddNewVenue = false;
       _isLoadingVenues = false;
@@ -365,14 +365,14 @@ class _BookingDialogState extends State<BookingDialog> {
         if (mounted) setState(() => _isProcessing = false);
         return;
       }
+      // *** FIX #2 IS HERE ***
+      // Removed `hasJamOpenMic` and `jamStyle` as they no longer exist on the StoredLocation constructor.
       finalVenueDetails = StoredLocation(
         placeId: 'manual_${DateTime.now().millisecondsSinceEpoch}',
         name: newVenueName,
         address: newVenueAddress,
         coordinates: coords,
         isArchived: false,
-        hasJamOpenMic: false,
-        jamStyle: null,
       );
       await _saveNewVenueToPrefs(finalVenueDetails);
     } else {
@@ -636,9 +636,6 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  // --- BUILDER METHODS REMOVED ---
-  // The _buildVenueDropdown and _buildFinancialInputs methods have been deleted.
-
   @override
   Widget build(BuildContext context) {
     bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode) || _isFetchingDriveTime;
@@ -662,7 +659,6 @@ class _BookingDialogState extends State<BookingDialog> {
             child: SingleChildScrollView(
               child: ListBody(
                 children: <Widget>[
-                  // --- START OF REFACTORED UI SECTION ---
                   if (_isCalculatorMode)
                     CalculatorSummaryView(
                       totalPay: widget.totalPay,
@@ -697,7 +693,6 @@ class _BookingDialogState extends State<BookingDialog> {
                       _handleVenueSelection(venue);
                     },
                   ),
-                  // --- END OF REFACTORED UI SECTION ---
 
                   if (_isAddNewVenue) ...[
                     const SizedBox(height: 8),
@@ -729,7 +724,7 @@ class _BookingDialogState extends State<BookingDialog> {
                   Row( children: [ Expanded(child: Text(_selectedDate == null ? 'No date selected*' : 'Date: ${DateFormat.yMMMEd().format(_selectedDate!)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickDate(context), child: const Text('SELECT DATE')), ], ),
                   Row( children: [ Expanded(child: Text(_selectedTime == null ? 'No time selected*' : 'Time: ${_selectedTime!.format(context)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickTime(context), child: const Text('SELECT TIME')), ], ),
 
-                  if (_isEditingMode) ...[
+                  /*if (_isEditingMode) ...[
                     const SizedBox(height: 16),
                     Center(
                       child: OutlinedButton.icon(
@@ -742,7 +737,7 @@ class _BookingDialogState extends State<BookingDialog> {
                         ),
                       ),
                     ),
-                  ],
+                  ],*/
                   const SizedBox(height: 10),
                 ],
               ),

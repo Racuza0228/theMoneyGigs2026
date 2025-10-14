@@ -1,9 +1,10 @@
-// lib/venue_model.dart
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
-// ... (Enums remain the same)
+import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart'; // <<<--- IMPORT THE NEW MODEL
+
+// Enums can stay here
 enum DayOfWeek { monday, tuesday, wednesday, thursday, friday, saturday, sunday }
 enum JamFrequencyType { weekly, biWeekly, monthlySameDay, monthlySameDate, customNthDay }
 
@@ -15,24 +16,19 @@ class StoredLocation {
   double rating;
   String? comment;
   bool isArchived;
-
-  // Jam/Open Mic properties
-  final bool hasJamOpenMic;
-  final DayOfWeek? jamOpenMicDay;
-  final TimeOfDay? jamOpenMicTime;
-  final bool addJamToGigs;
-  final JamFrequencyType jamFrequencyType;
-  final int? customNthValue;
-  final String? jamStyle; // <<< NEW: Style of the jam (e.g., Bluegrass, Jazz)
   final bool isMuted;
+
+  // --- REPLACED ---
+  // The old single jam properties are removed.
+  // --- NEW ---
+  final List<JamSession> jamSessions; // <<<--- NEW LIST PROPERTY
 
   final VenueContact? contact;
   final String? venueNotes;
   final String? venueNotesUrl;
 
-  // NEW: Caching for drive time from Directions API
-  final String? driveDuration; // e.g., "35 mins"
-  final String? driveDistance; // e.g., "21.4 mi"
+  final String? driveDuration;
+  final String? driveDistance;
 
   StoredLocation({
     required this.placeId,
@@ -42,21 +38,17 @@ class StoredLocation {
     this.rating = 0.0,
     this.comment,
     this.isArchived = false,
-    this.hasJamOpenMic = false,
-    this.jamOpenMicDay,
-    this.jamOpenMicTime,
-    this.addJamToGigs = false,
-    this.jamFrequencyType = JamFrequencyType.weekly,
-    this.customNthValue,
-    this.jamStyle, // <<< NEW
+    this.jamSessions = const [], // <<<--- INITIALIZE THE LIST
     this.isMuted = false,
     this.contact,
     this.venueNotes,
     this.venueNotesUrl,
-    // NEW
     this.driveDuration,
     this.driveDistance,
   });
+
+  // Helper getter to determine if the venue has any jams
+  bool get hasJamOpenMic => jamSessions.isNotEmpty;
 
   Map<String, dynamic> toJson() => {
     'placeId': placeId,
@@ -67,47 +59,44 @@ class StoredLocation {
     'rating': rating,
     'comment': comment,
     'isArchived': isArchived,
-    'hasJamOpenMic': hasJamOpenMic,
-    'jamOpenMicDay': jamOpenMicDay?.toString(),
-    'jamOpenMicTime': jamOpenMicTime != null
-        ? {'hour': jamOpenMicTime!.hour, 'minute': jamOpenMicTime!.minute}
-        : null,
-    'addJamToGigs': addJamToGigs,
-    'jamFrequencyType': jamFrequencyType.toString(),
-    'customNthValue': customNthValue,
-    'jamStyle': jamStyle, // <<< NEW
+    // <<<--- SERIALIZE THE LIST OF JAMS
+    'jamSessions': jamSessions.map((js) => js.toJson()).toList(),
     'isMuted': isMuted,
     'contact': contact?.toJson(),
     'venueNotes': venueNotes,
     'venueNotesUrl': venueNotesUrl,
-    // NEW
     'driveDuration': driveDuration,
     'driveDistance': driveDistance,
   };
 
   factory StoredLocation.fromJson(Map<String, dynamic> json) {
-    // ... (parsing logic for time, day, etc. is unchanged)
-    TimeOfDay? parsedTime;
-    if (json['jamHour'] != null && json['jamMinute'] != null) {
-      // This handles the flat JSON structure from your CSV
-      parsedTime = TimeOfDay(hour: json['jamHour'] as int, minute: json['jamMinute'] as int);
-
-    } else if (json['jamOpenMicTime'] != null && json['jamOpenMicTime'] is Map) {
-      // This part is kept for backward compatibility with the old nested format
-      final timeMap = json['jamOpenMicTime'] as Map<String, dynamic>;
-      if (timeMap['hour'] != null && timeMap['minute'] != null) {
-        parsedTime = TimeOfDay(hour: timeMap['hour'] as int, minute: timeMap['minute'] as int);
+    List<JamSession> sessions = [];
+    if (json['jamSessions'] != null && json['jamSessions'] is List) {
+      // New format: Load from the list
+      sessions = (json['jamSessions'] as List)
+          .map((js) => JamSession.fromJson(js))
+          .toList();
+    } else if (json['hasJamOpenMic'] == true) {
+      // --- BACKWARD COMPATIBILITY ---
+      // If old data is found, convert it to a single JamSession object
+      try {
+        final timeMap = json['jamOpenMicTime'] as Map<String, dynamic>;
+        sessions.add(JamSession(
+          id: 'migrated_jam_1',
+          style: json['jamStyle'] as String?,
+          day: DayOfWeek.values.byName((json['jamOpenMicDay'] as String).split('.').last),
+          time: TimeOfDay(hour: timeMap['hour'], minute: timeMap['minute']),
+          frequency: JamFrequencyType.values.firstWhere(
+                (e) => e.toString() == json['jamFrequencyType'],
+            orElse: () => JamFrequencyType.weekly,
+          ),
+          nthValue: json['customNthValue'] as int?,
+          showInGigsList: json['addJamToGigs'] as bool? ?? false,
+        ));
+      } catch (_) {
+        // Could not migrate, so we'll have an empty list.
       }
     }
-    DayOfWeek? parsedDay;
-    if (json['jamOpenMicDay'] != null && json['jamOpenMicDay'] is String) {
-      try {
-        parsedDay = DayOfWeek.values.byName((json['jamOpenMicDay'] as String).split('.').last);
-      } catch (e) { parsedDay = null; }
-    }
-    JamFrequencyType parsedFrequency = JamFrequencyType.values.firstWhere(
-            (e) => e.toString() == json['jamFrequencyType'],
-        orElse: () => JamFrequencyType.weekly);
 
     return StoredLocation(
       placeId: json['placeId'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
@@ -120,18 +109,11 @@ class StoredLocation {
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
       comment: json['comment'] as String?,
       isArchived: json['isArchived'] as bool? ?? false,
-      hasJamOpenMic: json['hasJamOpenMic'] as bool? ?? false,
-      jamOpenMicDay: parsedDay,
-      jamOpenMicTime: parsedTime,
-      addJamToGigs: json['addJamToGigs'] as bool? ?? false,
-      jamFrequencyType: parsedFrequency,
-      customNthValue: json['customNthValue'] as int?,
-      jamStyle: json['jamStyle'] as String?, // <<< NEW
+      jamSessions: sessions, // <<<--- ASSIGN THE LIST
       isMuted: json['isMuted'] as bool? ?? false,
       contact: json['contact'] != null ? VenueContact.fromJson(json['contact']) : null,
       venueNotes: json['venueNotes'] as String?,
       venueNotesUrl: json['venueNotesUrl'] as String?,
-      // NEW
       driveDuration: json['driveDuration'] as String?,
       driveDistance: json['driveDistance'] as String?,
     );
@@ -145,18 +127,11 @@ class StoredLocation {
     double? rating,
     String? comment,
     bool? isArchived,
-    bool? hasJamOpenMic,
-    DayOfWeek? jamOpenMicDay,
-    TimeOfDay? jamOpenMicTime,
-    bool? addJamToGigs,
-    JamFrequencyType? jamFrequencyType,
-    int? customNthValue,
-    ValueGetter<String?>? jamStyle, // Use ValueGetter to allow setting to null
+    List<JamSession>? jamSessions, // <<<--- UPDATE TO LIST
     bool? isMuted,
     VenueContact? contact,
-    String? venueNotes,
-    String? venueNotesUrl,
-    // NEW - Use ValueGetter to allow explicitly setting to null if needed
+    ValueGetter<String?>? venueNotes,
+    ValueGetter<String?>? venueNotesUrl,
     ValueGetter<String?>? driveDuration,
     ValueGetter<String?>? driveDistance,
   }) {
@@ -168,35 +143,33 @@ class StoredLocation {
       rating: rating ?? this.rating,
       comment: comment ?? this.comment,
       isArchived: isArchived ?? this.isArchived,
-      hasJamOpenMic: hasJamOpenMic ?? this.hasJamOpenMic,
-      jamOpenMicDay: jamOpenMicDay ?? this.jamOpenMicDay,
-      jamOpenMicTime: jamOpenMicTime ?? this.jamOpenMicTime,
-      addJamToGigs: addJamToGigs ?? this.addJamToGigs,
-      jamFrequencyType: jamFrequencyType ?? this.jamFrequencyType,
-      customNthValue: customNthValue ?? this.customNthValue,
-      jamStyle: jamStyle != null ? jamStyle() : this.jamStyle, // <<< MODIFIED
+      jamSessions: jamSessions ?? this.jamSessions, // <<<--- COPY LIST
       isMuted: isMuted ?? this.isMuted,
       contact: contact ?? this.contact,
-      venueNotes: venueNotes ?? this.venueNotes,
-      venueNotesUrl: venueNotesUrl ?? this.venueNotesUrl,
-      // NEW
+      venueNotes: venueNotes != null ? venueNotes() : this.venueNotes,
+      venueNotesUrl: venueNotesUrl != null ? venueNotesUrl() : this.venueNotesUrl,
       driveDuration: driveDuration != null ? driveDuration() : this.driveDuration,
       driveDistance: driveDistance != null ? driveDistance() : this.driveDistance,
     );
   }
 
-  // NOTE: You can also choose to update the copyWith to be simpler if you don't need nullable value differentiation.
-  // For example: `String? jamStyle,` and then in the constructor `jamStyle: jamStyle ?? this.jamStyle,`.
-  // The ValueGetter is a robust way to handle explicitly setting a value to null.
+  String jamOpenMicDisplayString(BuildContext context) {
+    if (!hasJamOpenMic) {
+      return 'Not set up';
+    }
+    // Return a summary of all jams
+    return jamSessions.map((session) {
+      String dayString = toBeginningOfSentenceCase(session.day.toString().split('.').last) ?? '';
+      String timeString = session.time.format(context);
+      String styleString = (session.style != null && session.style!.isNotEmpty) ? ' (${session.style})' : '';
+      return '$dayString at $timeString$styleString';
+    }).join('\n'); // Separate each jam session with a new line
+  }
 
+  // Other methods like == and hashCode remain the same
   @override
   bool operator ==(Object other) {
-    // If the objects are the exact same instance in memory, they are equal.
     if (identical(this, other)) return true;
-
-    // If the other object is a StoredLocation and its placeId is the same as this one's,
-    // they represent the same venue, so they are equal.
-    // We IGNORE other fields like driveDuration, name, address, etc., for the purpose of identity.
     return other is StoredLocation && other.placeId == placeId;
   }
 
@@ -204,17 +177,4 @@ class StoredLocation {
   int get hashCode {
     return placeId.hashCode;
   }
-
-
-  String jamOpenMicDisplayString(BuildContext context) {
-    if (!hasJamOpenMic || jamOpenMicDay == null || jamOpenMicTime == null) {
-      return 'Not set up';
-    }
-    String dayString = toBeginningOfSentenceCase(jamOpenMicDay.toString().split('.').last) ?? '';
-    String timeString = jamOpenMicTime!.format(context);
-    // <<< NEW: Add style to the display string if it exists >>>
-    String styleString = (jamStyle != null && jamStyle!.isNotEmpty) ? ' ($jamStyle)' : '';
-    return '$dayString at $timeString$styleString';
-  }
-// ... rest of the file is unchanged
 }

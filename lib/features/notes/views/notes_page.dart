@@ -1,4 +1,4 @@
-// lib/notes_page.dart
+// lib/features/notes/views/notes_page.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -34,7 +34,7 @@ class _NotesPageState extends State<NotesPage> {
   String? _initialNotes;
   String? _initialUrl;
 
-  // <<< NEW: List to hold historical gig notes for the venue >>>
+  // List to hold historical gig notes for the venue
   List<Gig> _historicalGigsForVenue = [];
 
   bool _isLoading = true;
@@ -100,7 +100,6 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
-  /// REVISED: Now also loads historical gigs for the venue.
   Future<void> _loadVenueDetails() async {
     final prefs = await SharedPreferences.getInstance();
     final venuesJson = prefs.getStringList('saved_locations') ?? [];
@@ -114,7 +113,7 @@ class _NotesPageState extends State<NotesPage> {
       _initialNotes = venue.venueNotes;
       _initialUrl = venue.venueNotesUrl;
 
-      // <<< NEW: Load and filter gigs for historical notes >>>
+      // Load and filter gigs for historical notes
       final gigsJsonString = prefs.getString('gigs_list') ?? '[]';
       final List<Gig> allGigs = Gig.decode(gigsJsonString);
 
@@ -209,8 +208,8 @@ class _NotesPageState extends State<NotesPage> {
       final newNotes = _notesController.text.trim();
       final newUrl = _urlController.text.trim();
       currentVenues[venueIndex] = currentVenues[venueIndex].copyWith(
-        venueNotes: newNotes.isEmpty ? null : newNotes,
-        venueNotesUrl: newUrl.isEmpty ? null : newUrl,
+        venueNotes: () => newNotes.isEmpty ? null : newNotes,
+        venueNotesUrl: () => newUrl.isEmpty ? null : newUrl,
       );
       final List<String> updatedVenuesJson = currentVenues.map((v) => jsonEncode(v.toJson())).toList();
       await prefs.setStringList('saved_locations', updatedVenuesJson);
@@ -235,14 +234,18 @@ class _NotesPageState extends State<NotesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final String labelText = _isEditingGig ? 'Gig-Specific Notes' : 'Venue Notes';
+    // Determine the titles based on the mode
+    final String appBarTitle = _isEditingGig ? 'GIG NOTES' : 'VENUE NOTES';
+    final String labelText = _isEditingGig ? 'Gig-Specific Notes' : 'General Venue Notes';
     final String hintText = _isEditingGig
         ? 'Load-in details, sound engineer name, etc.'
         : 'Gate codes, parking info, regular contact...';
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('NOTES'),
+        // *** THE FIX IS HERE ***
+        // The title is now dynamic based on the context.
+        title: Text(appBarTitle),
         centerTitle: true,
         automaticallyImplyLeading: true,
       ),
@@ -321,7 +324,7 @@ class _NotesPageState extends State<NotesPage> {
                 ],
               ),
 
-            // <<< NEW: Historical Gig Notes Section >>>
+            // Historical Gig Notes Section
             if (!_isEditingGig && _historicalGigsForVenue.isNotEmpty) ...[
               const SizedBox(height: 32),
               const Text('Past Gig Notes at this Venue', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -342,7 +345,8 @@ class _NotesPageState extends State<NotesPage> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 4),
-                        Text(gig.notes!),
+                        // Ensure notes are not null before displaying
+                        Text(gig.notes ?? 'No notes for this gig.'),
                       ],
                     ),
                   );
@@ -361,7 +365,7 @@ class _NotesPageState extends State<NotesPage> {
             children: [
               TextButton(
                 onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-                child: const Text('CLOSE'),
+                child: const Text('CANCEL'),
               ),
               const SizedBox(width: 12),
               ElevatedButton(
@@ -383,7 +387,7 @@ class _NotesPageState extends State<NotesPage> {
                 ),
                 child: _isSaving
                     ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(_hasChanges ? 'Save Changes' : 'Notes Saved'),
+                    : Text(_hasChanges ? 'SAVE CHANGES' : 'Notes Saved'),
               ),
             ],
           ),

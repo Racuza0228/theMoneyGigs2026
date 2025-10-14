@@ -105,12 +105,9 @@ class _GigCalculatorState extends State<GigCalculator> {
   // This method is called by the "Clear All" button.
   // It clears TextFormFields and resets calculated results and form state.
   void _clearAllInputFields() {
-    print("DEBUG: _clearAllInputFields CALLED");
     FocusScope.of(context).unfocus();
 
-    print("DEBUG: _payController.text BEFORE clear(): '${_payController.text}'");
     _payController.clear();
-    print("DEBUG: _payController.text AFTER clear(): '${_payController.text}'");
 
     _gigTimeController.clear();
     _driveSetupTimeController.clear();
@@ -168,7 +165,7 @@ class _GigCalculatorState extends State<GigCalculator> {
       } else {
         String errorMessage = "";
         if (pay <= 0 && totalHoursForRateCalc > 0) {
-          errorMessage = 'Please enter a valid pay amount.';
+          errorMessage = 'Please provide the Pay for the Gig.';
         } else if (pay > 0 && totalHoursForRateCalc <= 0) {
           errorMessage = 'We need some hours to divide the pay to get your rate.';
         } else {

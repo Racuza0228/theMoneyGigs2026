@@ -1,4 +1,4 @@
-// lib/map.dart
+// lib/features/map_venues/views/map.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
@@ -7,16 +7,18 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 
-// --- <<< REFACTORED IMPORTS >>> ---
-import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
+// --- Project Imports ---
+import 'package:the_money_gigs/core/services/places_service.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
-// CORRECT
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
+import 'package:the_money_gigs/features/map_venues/models/place_models.dart';
+import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
+import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
+import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.dart';
+import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.dart';
+import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
-import 'package:the_money_gigs/features/map_venues/models/place_models.dart';   // Import the separated models
-import 'package:the_money_gigs/core/services/places_service.dart'; // Import the new service
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -35,7 +37,7 @@ class _MapPageState extends State<MapPage> {
   bool _showJamSessions = false;
   BitmapDescriptor _jamSessionMarkerIcon = BitmapDescriptor.defaultMarker;
 
-  // --- REFACTORED: Search UI State ---
+  // --- Search UI State ---
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
   bool _isSearchVisible = false;
@@ -51,14 +53,14 @@ class _MapPageState extends State<MapPage> {
   static const String _keyGigsList = 'gigs_list';
   static const String _keySavedLocations = 'saved_locations';
   static const CameraPosition _kInitialPosition = CameraPosition(
-    target: LatLng(39.103119, -84.512016),
+    target: LatLng(39.103119, -84.512016), // Cincinnati, OH
     zoom: 10.0,
   );
 
   @override
   void initState() {
     super.initState();
-    _placesService = PlacesService(apiKey: _googleApiKey); // Initialize the service
+    _placesService = PlacesService(apiKey: _googleApiKey);
 
     _loadAllMapData();
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
@@ -74,12 +76,12 @@ class _MapPageState extends State<MapPage> {
       });
     });
 
-    if (_googleApiKey.isEmpty || _googleApiKey == "YOUR_GOOGLE_PLACES_API_KEY_HERE") {
+    if (_googleApiKey.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Warning: Google API Key is missing. Search will fail.'),
+              content: Text('Warning: Google API Key is missing. Map search will fail.'),
               backgroundColor: Colors.red,
               duration: Duration(seconds: 7),
             ),
@@ -97,7 +99,7 @@ class _MapPageState extends State<MapPage> {
     super.dispose();
   }
 
-  // --- REFACTORED: Methods now use PlacesService ---
+  // --- Google Places API Methods ---
 
   Future<void> _fetchAutocompleteResults(String input) async {
     final results = await _placesService.fetchAutocompleteResults(input);
@@ -132,7 +134,7 @@ class _MapPageState extends State<MapPage> {
     if (mounted) setState(() => _isLoading = false);
   }
 
-  // --- ALL ORIGINAL HELPER METHODS ARE NOW INCLUDED ---
+  // --- Data Loading & Management ---
 
   void _handleGlobalRefresh() {
     if (mounted) {
@@ -179,15 +181,12 @@ class _MapPageState extends State<MapPage> {
       final prefs = await SharedPreferences.getInstance();
       final List<String>? locationsJson = prefs.getStringList(_keySavedLocations);
       List<StoredLocation> loadedFromPrefs = [];
-      if (locationsJson != null && locationsJson.isNotEmpty) {
-        loadedFromPrefs = locationsJson.map((jsonString) {
-          try { return StoredLocation.fromJson(jsonDecode(jsonString)); }
-          catch (e) { return null; }
-        }).whereType<StoredLocation>().toList();
+      if (locationsJson != null) {
+        loadedFromPrefs = locationsJson.map((jsonString) => StoredLocation.fromJson(jsonDecode(jsonString))).toList();
       }
       _allKnownMapVenues = loadedFromPrefs;
     } catch (e) {
-      print("MapPage: Critical error loading saved locations: $e");
+      // Handle error appropriately
     }
   }
 
@@ -200,7 +199,7 @@ class _MapPageState extends State<MapPage> {
       newMarkers.add(Marker(
         markerId: MarkerId('saved_${loc.placeId}'),
         position: loc.coordinates,
-        infoWindow: InfoWindow(title: loc.name, snippet: '${loc.address}${loc.rating > 0 ? " (${loc.rating.toStringAsFixed(1)} ★)" : ""}'),
+        infoWindow: InfoWindow(title: loc.name, snippet: loc.address),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         onTap: () => _showLocationDetailsDialog(loc),
       ));
@@ -226,13 +225,11 @@ class _MapPageState extends State<MapPage> {
   Future<void> _updateAndSaveLocationReview(StoredLocation updatedLocation) async {
     List<StoredLocation> updatedAllVenues = List.from(_allKnownMapVenues);
     int index = updatedAllVenues.indexWhere((loc) => loc.placeId == updatedLocation.placeId);
-
     if (index != -1) {
       updatedAllVenues[index] = updatedLocation;
     } else {
       updatedAllVenues.add(updatedLocation);
     }
-
     try {
       final prefs = await SharedPreferences.getInstance();
       final List<String> locationsJson = updatedAllVenues.map((loc) => jsonEncode(loc.toJson())).toList();
@@ -240,7 +237,7 @@ class _MapPageState extends State<MapPage> {
       globalRefreshNotifier.notify();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${updatedLocation.name} saved to your venues!'), backgroundColor: Colors.green),
+          SnackBar(content: Text('${updatedLocation.name} saved!'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
@@ -252,10 +249,8 @@ class _MapPageState extends State<MapPage> {
 
   Future<void> _saveLocation(PlaceApiResult placeToSave) async {
     if (_allKnownMapVenues.any((loc) => loc.placeId == placeToSave.placeId)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${placeToSave.name} is already saved.')));
-      StoredLocation? existingLoc = _allKnownMapVenues.cast<StoredLocation?>().firstWhere((l) => l?.placeId == placeToSave.placeId, orElse: () => null);
-      if (existingLoc != null) _showLocationDetailsDialog(existingLoc);
+      StoredLocation? existingLoc = _allKnownMapVenues.firstWhere((l) => l.placeId == placeToSave.placeId);
+      _showLocationDetailsDialog(existingLoc);
       return;
     }
     final newLocation = StoredLocation(
@@ -263,10 +258,8 @@ class _MapPageState extends State<MapPage> {
       name: placeToSave.name,
       address: placeToSave.address,
       coordinates: placeToSave.coordinates,
-      isArchived: false,
-      hasJamOpenMic: false,
-      jamStyle: null,
     );
+
     List<StoredLocation> updatedAllVenues = List.from(_allKnownMapVenues)..add(newLocation);
     final prefs = await SharedPreferences.getInstance();
     final List<String> locationsJson = updatedAllVenues.map((loc) => jsonEncode(loc.toJson())).toList();
@@ -279,63 +272,29 @@ class _MapPageState extends State<MapPage> {
   }
 
   Future<void> _handleMapTap(LatLng tappedPoint) async {
-    if (_googleApiKey.isEmpty || _googleApiKey == "YOUR_GOOGLE_PLACES_API_KEY_HERE") {
-      return;
-    }
-    if (!mounted) return;
+    if (_googleApiKey.isEmpty) return;
     setState(() { _isLoading = true; });
-    final String typesToSearch = "restaurant|bar|cafe|night_club|music_venue|performing_arts_theater|stadium";
-    final String url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${tappedPoint.latitude},${tappedPoint.longitude}&radius=75&type=$typesToSearch&key=$_googleApiKey';
+    final String url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${tappedPoint.latitude},${tappedPoint.longitude}&radius=50&type=establishment&key=$_googleApiKey';
     try {
       final response = await http.get(Uri.parse(url));
-      if (!mounted) { setState(() { _isLoading = false; }); return; }
+      if (!mounted) return;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['status'] == 'OK' && data['results'] is List) {
-          List<dynamic> results = data['results'];
-          List<PlaceApiResult> foundPlaces = results.map((p) => PlaceApiResult.fromJson(p)).where((p) => p.name.isNotEmpty && p.name != p.address && p.placeId.isNotEmpty).toList();
-          if (foundPlaces.isEmpty) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No specific places found.')));
-          } else if (foundPlaces.length == 1) {
-            _askToAddOrViewVenue(foundPlaces.first);
-          } else {
-            _showPlaceSelectionDialog(foundPlaces);
+        if (data['status'] == 'OK' && data['results'] is List && (data['results'] as List).isNotEmpty) {
+          final result = data['results'][0];
+          final placeDetails = await _placesService.fetchPlaceDetails(result['place_id']);
+          if (placeDetails != null) {
+            _askToAddOrViewVenue(placeDetails);
           }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No places found at this location.')));
         }
       }
     } catch (e) {
-      print('Search error: $e');
+      // Handle error
     } finally {
       if(mounted) setState(() { _isLoading = false; });
     }
-  }
-
-  Future<void> _showPlaceSelectionDialog(List<PlaceApiResult> selectablePlaces) async {
-    PlaceApiResult? userChoice = selectablePlaces.first;
-    PlaceApiResult? finalSelectedPlace = await showDialog<PlaceApiResult>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Select a Place Nearby'),
-              content: DropdownButtonFormField<PlaceApiResult>(
-                decoration: const InputDecoration(labelText: 'Choose a venue', border: OutlineInputBorder()),
-                value: userChoice,
-                isExpanded: true,
-                onChanged: (PlaceApiResult? newValue) => setDialogState(() => userChoice = newValue),
-                items: selectablePlaces.map<DropdownMenuItem<PlaceApiResult>>((p) => DropdownMenuItem<PlaceApiResult>(value: p, child: Tooltip(message: p.address, child: Text(p.name, overflow: TextOverflow.ellipsis)))).toList(),
-              ),
-              actions: [
-                TextButton(child: const Text('Cancel'), onPressed: () => Navigator.of(dialogContext).pop()),
-                TextButton(child: const Text('Confirm'), onPressed: () { if (userChoice != null) Navigator.of(dialogContext).pop(userChoice); }),
-              ],
-            );
-          },
-        );
-      },
-    );
-    if (finalSelectedPlace != null) { _askToAddOrViewVenue(finalSelectedPlace); }
   }
 
   Future<void> _askToAddOrViewVenue(PlaceApiResult place) async {
@@ -347,11 +306,11 @@ class _MapPageState extends State<MapPage> {
         context: context,
         builder: (BuildContext dialogContext) {
           return AlertDialog(
-            title: const Text('Add to MoneyGigs?'),
-            content: SingleChildScrollView(child: ListBody(children: [Text(place.name, style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 4), Text(place.address)])),
+            title: const Text('Add Venue?'),
+            content: Text(place.name),
             actions: [
               TextButton(child: const Text('Cancel'), onPressed: () => Navigator.of(dialogContext).pop()),
-              TextButton(child: const Text('Add Venue'), onPressed: () { Navigator.of(dialogContext).pop(); _saveLocation(place); }),
+              TextButton(child: const Text('Add'), onPressed: () { Navigator.of(dialogContext).pop(); _saveLocation(place); }),
             ],
           );
         },
@@ -360,151 +319,139 @@ class _MapPageState extends State<MapPage> {
   }
 
   Future<List<Gig>> _loadAllGigs() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final String? gigsJsonString = prefs.getString(_keyGigsList);
-      return (gigsJsonString != null && gigsJsonString.isNotEmpty) ? Gig.decode(gigsJsonString) : [];
-    } catch (e) {
-      return [];
-    }
+    final prefs = await SharedPreferences.getInstance();
+    final String? gigsJsonString = prefs.getString(_keyGigsList);
+    return (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
   }
 
   Future<void> _saveBookedGig(Gig newGig) async {
     if (!mounted) return;
-    final StoredLocation gigVenue = StoredLocation(
-      placeId: newGig.placeId!, name: newGig.venueName, address: newGig.address,
-      coordinates: LatLng(newGig.latitude, newGig.longitude), hasJamOpenMic: true,
-    );
-    await _updateAndSaveLocationReview(gigVenue);
     try {
       final prefs = await SharedPreferences.getInstance();
       List<Gig> existingGigs = await _loadAllGigs();
       existingGigs.add(newGig);
-      existingGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
       await prefs.setString(_keyGigsList, Gig.encode(existingGigs));
       globalRefreshNotifier.notify();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig booked at ${newGig.venueName}!'), backgroundColor: Colors.green));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving booked gig: $e'), backgroundColor: Colors.red));
+      // Handle error
     }
   }
 
-  Future<void> _launchBookingDialogForVenue(StoredLocation venueForBooking) async {
-    if (!mounted) return;
-    if (venueForBooking.isArchived) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${venueForBooking.name} is archived. Unarchive it first to book gigs.'), backgroundColor: Colors.orange));
-      return;
+  // --- DIALOG LAUNCHERS & HANDLERS ---
+
+  Future<Gig?> _launchBookingDialogForVenue(StoredLocation venue) async {
+    if (venue.isArchived) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${venue.name} is archived.'), backgroundColor: Colors.orange));
+      return null;
     }
-    setState(() { _isLoading = true; });
     List<Gig> existingGigs = await _loadAllGigs();
-    if (!mounted) { setState(() { _isLoading = false; }); return; }
-    setState(() { _isLoading = false; });
+    if (!mounted) return null;
+
     final Gig? bookedGig = await showDialog<Gig>(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
-        return BookingDialog(preselectedVenue: venueForBooking, googleApiKey: _googleApiKey, existingGigs: existingGigs, onNewVenuePotentiallyAdded: () async {});
-      },
+      builder: (_) => BookingDialog(preselectedVenue: venue, googleApiKey: _googleApiKey, existingGigs: existingGigs),
     );
+
     if (bookedGig != null) {
       await _saveBookedGig(bookedGig);
     }
+    return bookedGig; // Return the booked gig (or null)
+  }
+
+  Future<void> _archiveVenue(StoredLocation venueToArchive) async {
+    final index = _allKnownMapVenues.indexWhere((v) => v.placeId == venueToArchive.placeId);
+    if (index != -1) {
+      final updatedVenue = _allKnownMapVenues[index].copyWith(isArchived: true);
+      await _updateAndSaveLocationReview(updatedVenue);
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${venueToArchive.name} archived.')));
+    }
+  }
+
+  Future<void> _editVenueContact(StoredLocation venue) async {
+    final updatedContact = await showDialog<VenueContact>(
+      context: context,
+      builder: (_) => VenueContactDialog(venue: venue),
+    );
+    if (updatedContact != null && mounted) {
+      final index = _allKnownMapVenues.indexWhere((v) => v.placeId == venue.placeId);
+      if (index != -1) {
+        final updatedVenue = _allKnownMapVenues[index].copyWith(contact: updatedContact);
+        await _updateAndSaveLocationReview(updatedVenue);
+      }
+    }
+  }
+
+  Future<void> _updateVenueJamNightSettings(StoredLocation updatedVenue) async {
+    await _updateAndSaveLocationReview(updatedVenue);
   }
 
   Future<void> _showLocationDetailsDialog(StoredLocation passedInLocation) async {
+    // Find the most up-to-date version of the location from state
     final location = _allKnownMapVenues.firstWhere((loc) => loc.placeId == passedInLocation.placeId, orElse: () => passedInLocation);
-    double currentRating = location.rating;
-    TextEditingController commentController = TextEditingController(text: location.comment);
     if (!mounted) return;
+
     setState(() { _isLoading = true; });
     List<Gig> allGigs = await _loadAllGigs();
-    List<Gig> upcomingGigsForVenue = allGigs.where((gig) {
-      bool placeIdMatch = gig.placeId != null && gig.placeId!.isNotEmpty && gig.placeId == location.placeId;
-      bool nameMatch = (gig.placeId == null || gig.placeId!.isEmpty) && gig.venueName.toLowerCase() == location.name.toLowerCase();
-      return (placeIdMatch || nameMatch) && gig.dateTime.isAfter(DateTime.now().subtract(const Duration(hours: 1)));
-    }).toList();
+    List<Gig> upcomingGigsForVenue = allGigs.where((gig) => gig.placeId == location.placeId && gig.dateTime.isAfter(DateTime.now())).toList();
     upcomingGigsForVenue.sort((a, b) => a.dateTime.compareTo(b.dateTime));
     Gig? nextUpcomingGig = upcomingGigsForVenue.isNotEmpty ? upcomingGigsForVenue.first : null;
-    if (!mounted) { setState(() { _isLoading = false; }); return; }
     setState(() { _isLoading = false; });
+
+    if (!mounted) return;
 
     await showDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (BuildContext innerContext, StateSetter setDialogState) {
-            return AlertDialog(
-              title: Padding(padding: const EdgeInsets.only(top: 8.0), child: Text(location.name, textAlign: TextAlign.center)),
-              contentPadding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 0.0),
-              actionsPadding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 12.0),
-              content: SingleChildScrollView(
-                child: ListBody(
-                  children: <Widget>[
-                    Center(child: Text(location.address, style: Theme.of(innerContext).textTheme.bodySmall)),
-                    if (location.isArchived) Padding(padding: const EdgeInsets.symmetric(vertical: 8.0), child: Center(child: Text("(This venue is archived)", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.orange.shade700)))),
-                    if (location.hasJamOpenMic) ...[
-                      const Divider(height: 20, thickness: 1),
-                      const Text('Jam Session Info:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4.0),
-                      Text(location.jamOpenMicDisplayString(context), style: Theme.of(innerContext).textTheme.bodyMedium),
-                    ],
-                    if (nextUpcomingGig != null) ...[
-                      const Divider(height: 20, thickness: 1),
-                      const Text('Next Gig Here:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4.0),
-                      Text('${DateFormat.MMMEd().format(nextUpcomingGig.dateTime)} at ${DateFormat.jm().format(nextUpcomingGig.dateTime)} (\$${nextUpcomingGig.pay.toStringAsFixed(0)})', style: Theme.of(innerContext).textTheme.bodyMedium),
-                    ] else if (!location.hasJamOpenMic) ...[
-                      const Divider(height: 20, thickness: 1),
-                      const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 8.0), child: Text("No upcoming gigs scheduled here.", style: TextStyle(fontStyle: FontStyle.italic)))),
-                    ],
-                    const Divider(height: 20, thickness: 1),
-                    if (!location.isArchived) ...[
-                      const Text('Rate this Venue:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Center(child: RatingBar.builder(initialRating: currentRating, minRating: 0, direction: Axis.horizontal, allowHalfRating: true, itemCount: 5, itemPadding: const EdgeInsets.symmetric(horizontal: 4.0), itemBuilder: (context, _) => const Icon(Icons.star, color: Colors.amber), onRatingUpdate: (rating) => setDialogState(() => currentRating = rating))),
-                      const SizedBox(height: 4),
-                      Center(child: Text(currentRating == 0 ? "Not Rated" : "${currentRating.toStringAsFixed(1)} Stars", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Theme.of(innerContext).colorScheme.primary))),
-                      const SizedBox(height: 16),
-                      const Text('Your Comments:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      TextField(controller: commentController, decoration: const InputDecoration(hintText: 'e.g., Great sound, load-in info...', border: OutlineInputBorder()), maxLines: 3, textCapitalization: TextCapitalization.sentences),
-                    ],
-                  ],
-                ),
-              ),
-              actionsAlignment: MainAxisAlignment.spaceBetween,
-              actions: <Widget>[
-                TextButton(child: const Text('CLOSE'), onPressed: () => Navigator.of(dialogContext).pop()),
-                if (!location.isArchived)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      OutlinedButton(child: const Text('SAVE'), onPressed: () {
-                        final updatedLocationWithReview = location.copyWith(rating: currentRating, comment: commentController.text.trim().isNotEmpty ? commentController.text.trim() : null);
-                        _updateAndSaveLocationReview(updatedLocationWithReview);
-                        Navigator.of(dialogContext).pop();
-                      }),
-                      const SizedBox(width: 8),
-                      ElevatedButton.icon(icon: const Icon(Icons.calendar_today, size: 18), label: const Text('BOOK'), style: ElevatedButton.styleFrom(backgroundColor: Theme.of(innerContext).colorScheme.primary, foregroundColor: Theme.of(innerContext).colorScheme.onPrimary, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), textStyle: const TextStyle(fontSize: 14)), onPressed: () {
-                        final updatedLocationWithReview = location.copyWith(rating: currentRating, comment: commentController.text.trim().isNotEmpty ? commentController.text.trim() : null);
-                        _updateAndSaveLocationReview(updatedLocationWithReview);
-                        Navigator.of(dialogContext).pop();
-                        _launchBookingDialogForVenue(updatedLocationWithReview);
-                      }),
-                    ],
-                  ),
-                if (location.isArchived)
-                  ElevatedButton.icon(icon: const Icon(Icons.unarchive), label: const Text('UNARCHIVE'), style: ElevatedButton.styleFrom(backgroundColor: Colors.green), onPressed: () {
-                    final unarchivedLocation = location.copyWith(isArchived: false);
-                    _updateAndSaveLocationReview(unarchivedLocation);
-                    Navigator.of(dialogContext).pop();
-                  }),
-              ],
+        return VenueDetailsDialog(
+          venue: location,
+          nextGig: nextUpcomingGig,
+          onArchive: () {
+            Navigator.of(dialogContext).pop();
+            _archiveVenue(location);
+          },
+          // *** THE FIX IS HERE ***
+          onBook: (venueToSaveAndBook) async {
+            // 1. Save the venue immediately.
+            await _updateAndSaveLocationReview(venueToSaveAndBook);
+
+            // 2. Launch the booking dialog.
+            final newGig = await _launchBookingDialogForVenue(venueToSaveAndBook);
+
+            // 3. Close the current details dialog.
+            if(mounted) Navigator.of(dialogContext).pop();
+
+            // 4. If a gig was booked, re-show the details dialog with fresh data.
+            if (newGig != null) {
+              // The slight delay ensures the first dialog has time to close.
+              await Future.delayed(const Duration(milliseconds: 100));
+              _showLocationDetailsDialog(venueToSaveAndBook);
+            }
+          },
+          onSave: (updatedVenue) {
+            _updateAndSaveLocationReview(updatedVenue);
+          },
+          onEditContact: () {
+            Navigator.of(dialogContext).pop();
+            _editVenueContact(location);
+          },
+          onEditJamSettings: () async {
+            Navigator.of(dialogContext).pop();
+            final result = await showDialog<JamOpenMicDialogResult>(
+              context: context,
+              builder: (_) => JamOpenMicDialog(venue: location),
             );
+            if (result != null && result.settingsChanged && result.updatedVenue != null) {
+              await _updateVenueJamNightSettings(result.updatedVenue!);
+            }
           },
         );
       },
     );
   }
+
+  // --- BUILD METHOD ---
 
   @override
   Widget build(BuildContext context) {
@@ -533,11 +480,10 @@ class _MapPageState extends State<MapPage> {
           myLocationButtonEnabled: true,
           myLocationEnabled: true,
           padding: EdgeInsets.only(
-              top: _isSearchVisible ? 120 : 70,
-              bottom: Theme.of(context).platform == TargetPlatform.iOS ? 90 : 60
+            top: _isSearchVisible ? 120 : 70,
+            bottom: Theme.of(context).platform == TargetPlatform.iOS ? 90 : 60,
           ),
         ),
-
         Positioned(
           top: 12.0,
           left: 12.0,
@@ -555,11 +501,11 @@ class _MapPageState extends State<MapPage> {
                       onPressed: () {
                         setState(() {
                           _isSearchVisible = !_isSearchVisible;
-                          _autocompleteResults = [];
                           if (_isSearchVisible) {
                             _placesService.startSession();
                           } else {
                             _searchController.clear();
+                            _autocompleteResults = [];
                             _placesService.endSession();
                             FocusScope.of(context).unfocus();
                           }
@@ -577,14 +523,12 @@ class _MapPageState extends State<MapPage> {
                         ),
                       )
                           : GestureDetector(
-                          onTap: () => setState(() {
-                            _isSearchVisible = true;
-                            _placesService.startSession();
-                          }),
-                          child: const Text(
-                            'Search Map',
-                            style: TextStyle(fontSize: 16, color: Colors.black54),
-                          )),
+                        onTap: () => setState(() {
+                          _isSearchVisible = true;
+                          _placesService.startSession();
+                        }),
+                        child: const Text('Search Map', style: TextStyle(fontSize: 16, color: Colors.black54)),
+                      ),
                     ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -608,7 +552,6 @@ class _MapPageState extends State<MapPage> {
                   ],
                 ),
               ),
-
               if (_isSearchVisible && _autocompleteResults.isNotEmpty)
                 Card(
                   margin: const EdgeInsets.only(top: 8.0),
@@ -623,9 +566,7 @@ class _MapPageState extends State<MapPage> {
                         leading: const Icon(Icons.location_pin),
                         title: Text(result.mainText),
                         subtitle: Text(result.secondaryText),
-                        onTap: () {
-                          _selectPlaceAndMoveCamera(result);
-                        },
+                        onTap: () => _selectPlaceAndMoveCamera(result),
                       );
                     },
                   ),
@@ -633,7 +574,6 @@ class _MapPageState extends State<MapPage> {
             ],
           ),
         ),
-
         if (_isLoading)
           Positioned.fill(
             child: Container(

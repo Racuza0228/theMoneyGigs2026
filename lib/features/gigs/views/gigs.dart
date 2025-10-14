@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 // Import your models
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
+import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart'; // <<<--- IMPORT THE NEW MODEL
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.dart';
@@ -20,6 +21,7 @@ import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 import 'package:the_money_gigs/core/services/gig_embed_service.dart';
 // Add this line with your other imports
 import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.dart';
+import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
 
 
 
@@ -114,6 +116,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
+  // *** THE REFACTORED METHOD ***
+  // This method is now completely rewritten to support the new data model.
   List<Gig> _generateJamOpenMicGigs() {
     List<Gig> jamGigs = [];
     DateTime today = DateTime.now();
@@ -121,95 +125,103 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     DateTime rangeEndDate = DateTime(today.year, today.month + 6, today.day);
 
     for (var venue in _allKnownVenues) {
-      if (!venue.hasJamOpenMic || !venue.addJamToGigs || venue.jamOpenMicDay == null || venue.jamOpenMicTime == null || venue.isArchived) {
+      if (venue.isArchived || venue.isMuted) {
         continue;
       }
-      int targetWeekday = venue.jamOpenMicDay!.index + 1;
-      if (venue.jamFrequencyType == JamFrequencyType.weekly) {
-        DateTime currentDate = calculationStartDate;
-        while (currentDate.isBefore(rangeEndDate) || isSameDay(currentDate, rangeEndDate)) {
-          if (currentDate.weekday == targetWeekday) {
-            _addJamGigIfApplicable(jamGigs, venue, currentDate);
-          }
-          currentDate = currentDate.add(const Duration(days: 1));
+      // Iterate over each session configured for the venue
+      for (var session in venue.jamSessions) {
+        if (!session.showInGigsList) {
+          continue;
         }
-      } else if (venue.jamFrequencyType == JamFrequencyType.biWeekly) {
-        DateTime firstPossibleOccurrence = _findNextDayOfWeek(calculationStartDate, targetWeekday);
-        DateTime cycleAnchorDate = _findNextDayOfWeek(DateTime(2020, 1, 1), targetWeekday);
-        DateTime currentTestDate = firstPossibleOccurrence;
-        while (currentTestDate.isBefore(rangeEndDate) || isSameDay(currentTestDate, rangeEndDate)) {
-          if (currentTestDate.weekday == targetWeekday) {
-            int weeksDifference = currentTestDate.difference(cycleAnchorDate).inDays ~/ 7;
-            if (weeksDifference % 2 == 0) {
-              _addJamGigIfApplicable(jamGigs, venue, currentTestDate);
+
+        int targetWeekday = session.day.index + 1;
+
+        if (session.frequency == JamFrequencyType.weekly) {
+          DateTime currentDate = calculationStartDate;
+          while (currentDate.isBefore(rangeEndDate) || isSameDay(currentDate, rangeEndDate)) {
+            if (currentDate.weekday == targetWeekday) {
+              _addJamGigIfApplicable(jamGigs, venue, session, currentDate);
             }
+            currentDate = currentDate.add(const Duration(days: 1));
           }
-          if (currentTestDate.weekday == targetWeekday) {
+        } else if (session.frequency == JamFrequencyType.biWeekly) {
+          DateTime firstPossibleOccurrence = _findNextDayOfWeek(calculationStartDate, targetWeekday);
+          DateTime cycleAnchorDate = _findNextDayOfWeek(DateTime(2020, 1, 1), targetWeekday);
+          DateTime currentTestDate = firstPossibleOccurrence;
+          while (currentTestDate.isBefore(rangeEndDate) || isSameDay(currentTestDate, rangeEndDate)) {
+            if (currentTestDate.weekday == targetWeekday) {
+              int weeksDifference = currentTestDate.difference(cycleAnchorDate).inDays ~/ 7;
+              if (weeksDifference % 2 == 0) {
+                _addJamGigIfApplicable(jamGigs, venue, session, currentTestDate);
+              }
+            }
+            // Smartly jump to the next week's target day to optimize
             currentTestDate = currentTestDate.add(const Duration(days: 7));
-          } else {
-            currentTestDate = currentTestDate.add(const Duration(days: 1));
-            currentTestDate = _findNextDayOfWeek(currentTestDate, targetWeekday);
           }
-        }
-      } else if (venue.jamFrequencyType == JamFrequencyType.customNthDay && venue.customNthValue != null && venue.customNthValue! > 0) {
-        int nth = venue.customNthValue!;
-        DateTime firstPossibleOccurrence = _findNextDayOfWeek(calculationStartDate, targetWeekday);
-        DateTime cycleAnchorDate = _findNextDayOfWeek(DateTime(2020, 1, 1), targetWeekday);
-        DateTime currentTestDate = firstPossibleOccurrence;
-        while (currentTestDate.isBefore(rangeEndDate) || isSameDay(currentTestDate, rangeEndDate)) {
-          if (currentTestDate.weekday == targetWeekday) {
-            int weeksDifference = currentTestDate.difference(cycleAnchorDate).inDays ~/ 7;
-            if (weeksDifference % nth == 0) {
-              _addJamGigIfApplicable(jamGigs, venue, currentTestDate);
+        } else if (session.frequency == JamFrequencyType.customNthDay && session.nthValue != null && session.nthValue! > 0) {
+          int nth = session.nthValue!;
+          DateTime firstPossibleOccurrence = _findNextDayOfWeek(calculationStartDate, targetWeekday);
+          DateTime cycleAnchorDate = _findNextDayOfWeek(DateTime(2020, 1, 1), targetWeekday);
+          DateTime currentTestDate = firstPossibleOccurrence;
+          while (currentTestDate.isBefore(rangeEndDate) || isSameDay(currentTestDate, rangeEndDate)) {
+            if (currentTestDate.weekday == targetWeekday) {
+              int weeksDifference = currentTestDate.difference(cycleAnchorDate).inDays ~/ 7;
+              if (weeksDifference % nth == 0) {
+                _addJamGigIfApplicable(jamGigs, venue, session, currentTestDate);
+              }
             }
-          }
-          if (currentTestDate.weekday == targetWeekday) {
             currentTestDate = currentTestDate.add(const Duration(days: 7));
-          } else {
-            currentTestDate = currentTestDate.add(const Duration(days: 1));
-            currentTestDate = _findNextDayOfWeek(currentTestDate, targetWeekday);
           }
-        }
-      } else if (venue.jamFrequencyType == JamFrequencyType.monthlySameDay && venue.customNthValue != null && venue.customNthValue! > 0) {
-        int nthOccurrence = venue.customNthValue!;
-        DateTime monthIterator = DateTime(calculationStartDate.year, calculationStartDate.month, 1);
-        while (monthIterator.isBefore(rangeEndDate) || (monthIterator.year == rangeEndDate.year && monthIterator.month == rangeEndDate.month)) {
-          DateTime? nthDayInMonth = _findNthSpecificWeekdayOfMonth(monthIterator.year, monthIterator.month, targetWeekday, nthOccurrence);
-          if (nthDayInMonth != null) {
-            if (!nthDayInMonth.isBefore(calculationStartDate)) {
-              _addJamGigIfApplicable(jamGigs, venue, nthDayInMonth);
+        } else if (session.frequency == JamFrequencyType.monthlySameDay && session.nthValue != null && session.nthValue! > 0) {
+          int nthOccurrence = session.nthValue!;
+          DateTime monthIterator = DateTime(calculationStartDate.year, calculationStartDate.month, 1);
+          while (monthIterator.isBefore(rangeEndDate) || (monthIterator.year == rangeEndDate.year && monthIterator.month == rangeEndDate.month)) {
+            DateTime? nthDayInMonth = _findNthSpecificWeekdayOfMonth(monthIterator.year, monthIterator.month, targetWeekday, nthOccurrence);
+            if (nthDayInMonth != null) {
+              if (!nthDayInMonth.isBefore(calculationStartDate)) {
+                _addJamGigIfApplicable(jamGigs, venue, session, nthDayInMonth);
+              }
             }
+            monthIterator = DateTime(monthIterator.year, monthIterator.month + 1, 1);
           }
-          monthIterator = DateTime(monthIterator.year, monthIterator.month + 1, 1);
         }
       }
     }
     return jamGigs;
   }
 
-  void _addJamGigIfApplicable(List<Gig> jamGigs, StoredLocation venue, DateTime dateOfJam) {
+  // This method is updated to take a JamSession object as a parameter.
+  void _addJamGigIfApplicable(List<Gig> jamGigs, StoredLocation venue, JamSession session, DateTime dateOfJam) {
     DateTime jamDateTime = DateTime(
       dateOfJam.year,
       dateOfJam.month,
       dateOfJam.day,
-      venue.jamOpenMicTime!.hour,
-      venue.jamOpenMicTime!.minute,
+      session.time.hour,
+      session.time.minute,
     );
     DateTime now = DateTime.now();
+
     if (jamDateTime.isAfter(now)) {
-      bool alreadyExists = jamGigs.any((g) => g.placeId == venue.placeId && isSameDay(g.dateTime, jamDateTime) && g.dateTime.hour == jamDateTime.hour && g.dateTime.minute == jamDateTime.minute);
+      // Create a more unique ID that includes the session ID
+      final String uniqueId = 'jam_${venue.placeId}_${session.id}_${DateFormat('yyyyMMddHHmm').format(jamDateTime)}';
+      bool alreadyExists = jamGigs.any((g) => g.id == uniqueId);
+
       if (!alreadyExists) {
+        String venueName = "[JAM] ${venue.name}";
+        if(session.style != null && session.style!.isNotEmpty){
+          venueName += " (${session.style})";
+        }
         jamGigs.add(
           Gig(
-            id: 'jam_${venue.placeId}_${DateFormat('yyyyMMddHHmm').format(jamDateTime)}_${venue.jamFrequencyType.toString().split('.').last}',
-            venueName: "[JAM] ${venue.name}",
+            id: uniqueId,
+            venueName: venueName,
             latitude: venue.coordinates.latitude,
             longitude: venue.coordinates.longitude,
             address: venue.address,
             placeId: venue.placeId,
             dateTime: jamDateTime,
             pay: 0,
-            gigLengthHours: 2,
+            gigLengthHours: 2, // Assuming a default length
             driveSetupTimeHours: 0,
             rehearsalLengthHours: 0,
             isJamOpenMic: true,
@@ -218,6 +230,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       }
     }
   }
+  // *** END OF REFACTORED SECTION ***
 
   DateTime _findNextDayOfWeek(DateTime startDate, int targetWeekday) {
     DateTime date = DateTime(startDate.year, startDate.month, startDate.day);
@@ -338,7 +351,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.errorContainer),
-                child: Text('REMOVE FROM MY GIGS', style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer)),
+                child: Text('HIDE FROM MY GIGS', style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer)),
                 onPressed: () async {
                   Navigator.of(dialogContext).pop();
                   await _setVenueMutedState(sourceVenue, true);
@@ -522,6 +535,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   Future<void> _showVenueDetailsDialog(StoredLocation venue) async {
     if (!mounted) return;
+
+    // --- Data loading remains the same ---
     List<Gig> upcomingGigsAtVenue = _getGigsForVenue(venue, futureOnly: true)
         .where((g) => !g.isJamOpenMic)
         .toList();
@@ -529,104 +544,95 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     Gig? nextUpcomingGig = upcomingGigsAtVenue.isNotEmpty ? upcomingGigsAtVenue.first : null;
 
     await showDialog(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return VenueDetailsDialog(
+            venue: venue,
+            nextGig: nextUpcomingGig,
+            onArchive: () {
+              Navigator.of(dialogContext).pop();
+              _archiveVenue(venue);
+            },
+            // *** THE FIX IS HERE ***
+            // The onBook callback now accepts the venue object and implements the refresh logic.
+            onBook: (venueToSaveAndBook) async {
+              // 1. Save the venue immediately. This ensures it's in the user's stored list.
+              await _updateAndSaveLocationReview(venueToSaveAndBook);
+
+              // 2. Launch the booking dialog.
+              final newGig = await _launchBookingDialogForVenue(venueToSaveAndBook);
+
+              // 3. Close the current details dialog.
+              if(mounted) Navigator.of(dialogContext).pop();
+
+              // 4. If a gig was successfully booked, re-show the details dialog with fresh data.
+              if (newGig != null) {
+                // A slight delay ensures the first dialog has fully closed before opening the new one.
+                await Future.delayed(const Duration(milliseconds: 100));
+                // Call this method again to show a refreshed dialog.
+                _showVenueDetailsDialog(venueToSaveAndBook);
+              }
+            },
+            onSave: (updatedVenue) {
+              // This handles the "SAVE/CLOSE" button press.
+              _updateAndSaveLocationReview(updatedVenue);
+            },
+            onEditContact: () {
+              Navigator.of(dialogContext).pop();
+              _editVenueContact(venue);
+            },
+            onEditJamSettings: () async {
+              Navigator.of(dialogContext).pop();
+              final result = await showDialog<JamOpenMicDialogResult>(
+                context: context,
+                builder: (_) => JamOpenMicDialog(venue: venue),
+              );
+              if (result != null && result.settingsChanged && result.updatedVenue != null) {
+                await _updateVenueJamNightSettings(result.updatedVenue!);
+              }
+            },
+          );
+        });
+  }
+
+  Future<void> _updateAndSaveLocationReview(StoredLocation updatedLocation) async {
+    List<StoredLocation> updatedAllVenues = List.from(_allKnownVenues);
+    int index = updatedAllVenues.indexWhere((loc) => loc.placeId == updatedLocation.placeId);
+
+    if (index != -1) {
+      updatedAllVenues[index] = updatedLocation;
+    } else {
+      updatedAllVenues.add(updatedLocation);
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final List<String> locationsJson = updatedAllVenues.map((loc) => jsonEncode(loc.toJson())).toList();
+      await prefs.setStringList(_keySavedLocations, locationsJson);
+      globalRefreshNotifier.notify();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${updatedLocation.name} saved!'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving venue: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  Future<Gig?> _launchBookingDialogForVenue(StoredLocation venue) async {
+    const String googleApiKey = String.fromEnvironment('GOOGLE_API_KEY');
+    // Return the result of showDialog
+    return await showDialog<Gig>(
       context: context,
+      barrierDismissible: false,
       builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text(venue.name),
-          content: SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Contact:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      iconSize: 20.0,
-                      color: Theme.of(context).colorScheme.primary,
-                      tooltip: 'Edit Contact Info',
-                      onPressed: () {
-                        Navigator.of(dialogContext).pop();
-                        _editVenueContact(venue);
-                      },
-                    )
-                  ],
-                ),
-                if (venue.contact != null && venue.contact!.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8.0, bottom: 8.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (venue.contact!.name.isNotEmpty) Text(venue.contact!.name),
-                        if (venue.contact!.phone.isNotEmpty)
-                          InkWell(
-                            child: Text(venue.contact!.phone, style: TextStyle(color: Theme.of(context).colorScheme.primary, decoration: TextDecoration.underline)),
-                            onTap: () => launchUrl(Uri.parse('tel:${venue.contact!.phone}')),
-                          ),
-                        if (venue.contact!.email.isNotEmpty)
-                          InkWell(
-                            child: Text(venue.contact!.email, style: TextStyle(color: Theme.of(context).colorScheme.primary, decoration: TextDecoration.underline)),
-                            onTap: () => launchUrl(Uri.parse('mailto:${venue.contact!.email}')),
-                          ),
-                      ],
-                    ),
-                  )
-                else
-                  const Padding(
-                    padding: EdgeInsets.only(left: 8.0, bottom: 8.0),
-                    child: Text('No contact saved.', style: TextStyle(fontStyle: FontStyle.italic)),
-                  ),
-                const Divider(height: 20, thickness: 1),
-                const Text('Jam/Open Mic:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(venue.jamOpenMicDisplayString(context)),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4.0, bottom: 8.0),
-                  child: TextButton(
-                    child: const Text('Edit Jam/Open Mic Settings'),
-                    onPressed: () async {
-                      Navigator.of(dialogContext).pop();
-                      final result = await showDialog<JamOpenMicDialogResult>(
-                        context: context,
-                        builder: (_) => JamOpenMicDialog(venue: venue),
-                      );
-                      if (result != null && result.settingsChanged && result.updatedVenue != null) {
-                        await _updateVenueJamNightSettings(result.updatedVenue!);
-                      }
-                    },
-                  ),
-                ),
-                const Divider(height: 20, thickness: 1),
-                Text("Address: ${venue.address.isNotEmpty ? venue.address : 'Not specified'}"),
-                const SizedBox(height: 8),
-                if (nextUpcomingGig != null) ...[
-                  const SizedBox(height: 16),
-                  const Text('Next Gig Here:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text('${DateFormat.yMMMEd().format(nextUpcomingGig.dateTime)} at ${DateFormat.jm().format(nextUpcomingGig.dateTime)}'),
-                ],
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.map_outlined),
-                  label: const Text('Open in Maps'),
-                  onPressed: () async {
-                    Navigator.of(dialogContext).pop();
-                    await _openVenueInMap(venue);
-                  },
-                ),
-              ],
-            ),
-          ),
-          actionsAlignment: MainAxisAlignment.spaceBetween,
-          actions: <Widget>[
-            TextButton(
-              child: Text('ARCHIVE', style: TextStyle(color: Theme.of(dialogContext).colorScheme.error)),
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                _archiveVenue(venue);
-              },
-            ),
-            TextButton(child: const Text('Close'), onPressed: () => Navigator.of(dialogContext).pop()),
-          ],
+        return BookingDialog(
+          preselectedVenue: venue,
+          googleApiKey: googleApiKey,
+          existingGigs: _loadedGigs.where((g) => !g.isJamOpenMic).toList(),
         );
       },
     );

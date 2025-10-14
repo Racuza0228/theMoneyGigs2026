@@ -41,6 +41,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   image_picker: ^1.0.4
   flutter_colorpicker: ^1.0.3
+  collection: ^1.18.0
 
 dev_dependencies:
   flutter_test:
