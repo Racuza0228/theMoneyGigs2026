@@ -104,12 +104,13 @@ class _MapPageState extends State<MapPage> {
   Future<void> _loadCustomMarker() async {
     // This loads the icon from your assets and prepares it for the map.
     final icon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(48, 48)), // You can adjust the size
+      const ImageConfiguration(size: Size(12, 12)), // You can adjust the size
       'assets/mapmarker.png', // The path to your transparent icon
     );
     if (mounted) {
       setState(() {
         _gigMarkerIcon = icon;
+        _updateMarkers();
       });
     }
   }
@@ -158,6 +159,7 @@ class _MapPageState extends State<MapPage> {
   Future<void> _loadAllMapData() async {
     if (!mounted) return;
     setState(() { _isLoading = true; });
+
     await Future.wait([
       _loadSavedLocations(),
       _loadJamSessionAsset(),
@@ -167,8 +169,6 @@ class _MapPageState extends State<MapPage> {
 
     // This method is now only for the jam session marker
     _setJamSessionMarkerStyle();
-
-    _updateMarkers(); // This will now have all the data it needs
 
     if (mounted) { setState(() { _isLoading = false; }); }
   }
@@ -206,7 +206,12 @@ class _MapPageState extends State<MapPage> {
       if (locationsJson != null) {
         loadedFromPrefs = locationsJson.map((jsonString) => StoredLocation.fromJson(jsonDecode(jsonString))).toList();
       }
-      _allKnownMapVenues = loadedFromPrefs;
+      if (mounted) {
+        setState(() {
+          _allKnownMapVenues = loadedFromPrefs;
+          _updateMarkers(); // <-- ADD THIS
+        });
+      }
     } catch (e) {
       // Handle error appropriately
     }
@@ -358,7 +363,14 @@ class _MapPageState extends State<MapPage> {
   Future<List<Gig>> _loadAllGigs() async {
     final prefs = await SharedPreferences.getInstance();
     final String? gigsJsonString = prefs.getString(_keyGigsList);
-    return (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
+    final gigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : <Gig>[];
+    if (mounted) {
+      setState(() {
+        _allLoadedGigs = gigs;
+        _updateMarkers(); // <-- ADD THIS
+      });
+    }
+    return gigs;
   }
 
   Future<void> _saveBookedGig(Gig newGig) async {
