@@ -28,13 +28,16 @@ class MapPage extends StatefulWidget {
 
 class _MapPageState extends State<MapPage> {
   final Completer<GoogleMapController> _controller = Completer<GoogleMapController>();
+
   Set<Marker> _markers = {};
 
   // --- DATA SOURCE LISTS ---
+  List<Gig> _allLoadedGigs = []; // <-- ADD THIS TO STORE GIGS
   List<StoredLocation> _allKnownMapVenues = [];
   List<StoredLocation> _jamSessionVenues = [];
   bool _showJamSessions = false;
   BitmapDescriptor _jamSessionMarkerIcon = BitmapDescriptor.defaultMarker;
+  BitmapDescriptor? _gigMarkerIcon;
 
   // --- Search UI State ---
   final TextEditingController _searchController = TextEditingController();
@@ -98,7 +101,18 @@ class _MapPageState extends State<MapPage> {
     super.dispose();
   }
 
-  // --- Google Places API Methods ---
+  Future<void> _loadCustomMarker() async {
+    // This loads the icon from your assets and prepares it for the map.
+    final icon = await BitmapDescriptor.fromAssetImage(
+      const ImageConfiguration(size: Size(48, 48)), // You can adjust the size
+      'assets/mapmarker.png', // The path to your transparent icon
+    );
+    if (mounted) {
+      setState(() {
+        _gigMarkerIcon = icon;
+      });
+    }
+  }
 
   Future<void> _fetchAutocompleteResults(String input) async {
     final results = await _placesService.fetchAutocompleteResults(input);
@@ -144,9 +158,18 @@ class _MapPageState extends State<MapPage> {
   Future<void> _loadAllMapData() async {
     if (!mounted) return;
     setState(() { _isLoading = true; });
-    await Future.wait([_loadSavedLocations(), _loadJamSessionAsset()]);
-    _createCustomMarkers();
-    _updateMarkers();
+    await Future.wait([
+      _loadSavedLocations(),
+      _loadJamSessionAsset(),
+      _loadCustomMarker(), // <-- Call your new method
+      _loadAllGigs(),     // <-- Call the existing method to load gigs
+    ]);
+
+    // This method is now only for the jam session marker
+    _setJamSessionMarkerStyle();
+
+    _updateMarkers(); // This will now have all the data it needs
+
     if (mounted) { setState(() { _isLoading = false; }); }
   }
 
@@ -171,7 +194,7 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  void _createCustomMarkers() {
+  void _setJamSessionMarkerStyle() {
     _jamSessionMarkerIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
   }
 
@@ -190,16 +213,31 @@ class _MapPageState extends State<MapPage> {
   }
 
   void _updateMarkers() {
-    if (!mounted) return;
+    if (!mounted || _gigMarkerIcon == null) {
+      // Don't try to build markers until the custom icon is loaded.
+      return;
+    }
+
     final Set<Marker> newMarkers = {};
     final Set<String> placedMarkerIds = {};
+
+    final now = DateTime.now();
+    final upcomingGigVenuePlaceIds = _allLoadedGigs
+        .where((gig) => gig.dateTime.isAfter(now))
+        .map((gig) => gig.placeId)
+        .toSet();
+
     final currentDisplayableVenues = _allKnownMapVenues.where((v) => !v.isArchived).toList();
     for (var loc in currentDisplayableVenues) {
+      final bool hasUpcomingGig = upcomingGigVenuePlaceIds.contains(loc.placeId);
+
       newMarkers.add(Marker(
         markerId: MarkerId('saved_${loc.placeId}'),
         position: loc.coordinates,
         infoWindow: InfoWindow(title: loc.name, snippet: loc.address),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        icon: hasUpcomingGig
+            ? _gigMarkerIcon!
+            : BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         onTap: () => _showLocationDetailsDialog(loc),
       ));
       placedMarkerIds.add(loc.placeId);

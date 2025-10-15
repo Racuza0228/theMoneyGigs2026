@@ -1,5 +1,6 @@
 // lib/features/gigs/widgets/booking_dialog.dart
 import 'dart:convert';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -71,6 +72,8 @@ class _BookingDialogState extends State<BookingDialog> {
     coordinates: const LatLng(0, 0),
   );
 
+  final AudioPlayer _audioPlayer = AudioPlayer(); // <<< ADD THIS INSTANCE
+
   final _formKey = GlobalKey<FormState>();
 
   late TextEditingController _payController;
@@ -130,6 +133,7 @@ class _BookingDialogState extends State<BookingDialog> {
 
   @override
   void dispose() {
+    _audioPlayer.dispose();
     //globalRefreshNotifier.removeListener(_onGlobalRefresh);
     _newVenueNameController.dispose();
     _newVenueAddressController.dispose();
@@ -432,6 +436,12 @@ class _BookingDialogState extends State<BookingDialog> {
         return;
       }
     }
+
+    // Play the success tone just before closing the dialog with a success result.
+    await _audioPlayer.play(AssetSource('sounds/thetone.wav'));
+
+    // A brief delay can prevent the sound from being cut off by the dialog closing animation.
+    await Future.delayed(const Duration(milliseconds: 2500));
 
     if (mounted) setState(() => _isProcessing = false);
 
