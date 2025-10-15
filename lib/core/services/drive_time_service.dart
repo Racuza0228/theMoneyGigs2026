@@ -1,47 +1,111 @@
-// lib/drive_time_service.dart
+// lib/core/services/drive_time_service.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart'; // <<< NEW IMPORT
 import 'package:the_money_gigs/global_refresh_notifier.dart';
-import 'package:the_money_gigs/features/map_venues/models/venue_model.dart'; // This defines StoredLocation
+import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 
 class DriveTimeService {
-  // --- <<< CHANGE: REMOVED 'final' KEYWORD FROM THESE PROPERTIES >>> ---
-  String googleApiKey;
-  String? userProfileAddress;
-  List<StoredLocation> allKnownVenues;
+  final String googleApiKey;
+  final List<StoredLocation> allKnownVenues;
+  final String? address1;
+  final String? city;
+  final String? state;
+  final String? zipCode;
+
 
   DriveTimeService({
     required this.googleApiKey,
-    required this.userProfileAddress,
     required this.allKnownVenues,
-  });
+    this.address1,
+    this.city,
+    this.state,
+    this.zipCode,
+   });
 
-  // The rest of the file (fetchAndCacheDriveTime, _updateVenueInPrefs) is unchanged.
-  // ...
-// lib/drive_time_service.dart
-// ... (imports remain the same)
+  Future<String?> _getBestOrigin() async {
+    // --- CHANGE 2: Simplified and clarified logic ---
 
-// ... (class definition remains the same)
-  Future<StoredLocation?> fetchAndCacheDriveTime(StoredLocation venue) async {
-    // Condition 1: Don't fetch if we already have the data
-    if (venue.driveDuration != null && venue.driveDuration!.isNotEmpty) {
-      return null; // No update needed
+    // Clean up potentially null strings to avoid "null" in the final output
+    final cleanAddress = address1 ?? '';
+    final cleanCity = city ?? '';
+    final cleanState = state ?? '';
+    final cleanZip = zipCode ?? '';
+
+    // Priority 1: A specific street address is provided.
+    if (cleanAddress.trim().isNotEmpty) {
+      print("DriveTimeService: Using specific profile address as origin.");
+      return '$cleanAddress, $cleanCity, $cleanState $cleanZip'.trim();
     }
 
-    // Condition 2: Don't fetch if prerequisites are missing
-    if (userProfileAddress == null || userProfileAddress!.isEmpty) {
-      print("Cannot fetch drive time: User profile address is missing.");
+    // Priority 2: A partial, non-specific address (city, state, zip) is provided.
+    if (cleanCity.trim().isNotEmpty || cleanState.trim().isNotEmpty || cleanZip.trim().isNotEmpty) {
+      print("DriveTimeService: Using partial profile address as origin.");
+      return '$cleanCity, $cleanState $cleanZip'.trim();
+    }
+
+    // Priority 3: FINAL FALLBACK. If no address info exists at all, try current location.
+    print("DriveTimeService: No profile address found. Falling back to current device location.");
+
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      print('DriveTimeService: Location services are disabled.');
       return null;
     }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        print('DriveTimeService: Location permissions were denied.');
+        return null;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      print('DriveTimeService: Location permissions are permanently denied.');
+      return null;
+    }
+
+    try {
+      print("DriveTimeService: Attempting to get current GPS position...");
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      ).timeout(const Duration(seconds: 10));
+
+      print("DriveTimeService: Successfully retrieved GPS position.");
+      return '${position.latitude},${position.longitude}';
+    } catch (e) {
+      print("DriveTimeService: Error getting current location (or timed out): $e");
+      return null;
+    }
+  }
+
+  // ... no other changes are needed in the rest of the file ...
+  Future<StoredLocation?> fetchAndCacheDriveTime(StoredLocation venue) async {
+    if (venue.driveDuration != null && venue.driveDuration!.isNotEmpty) {
+      return null;
+    }
+
     if (googleApiKey.isEmpty || googleApiKey == "YOUR_GOOGLE_PLACES_API_KEY_HERE") {
       print("Cannot fetch drive time: Google API Key is not configured.");
       return null;
     }
 
-    final String origin = Uri.encodeComponent(userProfileAddress!);
+    final String? origin = await _getBestOrigin();
+
+    if (origin == null || origin.trim().isEmpty) {
+      print("Cannot fetch drive time: No valid origin (user address or current location) is available.");
+      return null;
+    }
+
+    final String encodedOrigin = Uri.encodeComponent(origin);
     final String destination = Uri.encodeComponent(venue.address);
-    final String url = 'https://maps.googleapis.com/maps/api/directions/json?origin=$origin&destination=$destination&key=$googleApiKey';
+    final String url = 'https://maps.googleapis.com/maps/api/directions/json?origin=$encodedOrigin&destination=$destination&key=$googleApiKey';
 
     try {
       final response = await http.get(Uri.parse(url));
@@ -58,9 +122,7 @@ class DriveTimeService {
             driveDistance: () => distance,
           );
 
-          // Save the updated venue back to SharedPreferences
           await _updateVenueInPrefs(updatedVenue);
-
           return updatedVenue;
         } else {
           print("Directions API Error: ${data['status']} - ${data['error_message'] ?? 'No routes found.'}");
@@ -71,7 +133,7 @@ class DriveTimeService {
     } catch (e) {
       print("An error occurred while fetching drive time: $e");
     }
-    return null; // Return null if fetch failed
+    return null;
   }
 
   Future<void> _updateVenueInPrefs(StoredLocation venueToUpdate) async {
@@ -85,5 +147,4 @@ class DriveTimeService {
       await prefs.setStringList('saved_locations', updatedLocationsJson);
       globalRefreshNotifier.notify();
     }
-  }
-}
+  }}

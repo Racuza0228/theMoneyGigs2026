@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:convert'; // For jsonEncode, jsonDecode
+// For jsonEncode, jsonDecode
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
@@ -85,7 +85,7 @@ class _GigCalculatorState extends State<GigCalculator> {
     super.dispose();
   }
 
-  void _resetGigDetailsAndForm() {
+  /*void _resetGigDetailsAndForm() {
     FocusScope.of(context).unfocus(); // Dismiss keyboard
     if (mounted) {
       setState(() {
@@ -100,7 +100,7 @@ class _GigCalculatorState extends State<GigCalculator> {
         _formKey.currentState?.reset(); // Resets validation state
       });
     }
-  }
+  }*/
 
   // This method is called by the "Clear All" button.
   // It clears TextFormFields and resets calculated results and form state.

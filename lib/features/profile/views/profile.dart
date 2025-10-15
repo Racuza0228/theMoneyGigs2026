@@ -1,13 +1,14 @@
 // lib/profile.dart
-import 'dart:convert'; // Kept for other potential uses, though not strictly needed by export anymore
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// import 'package:url_launcher/url_launcher.dart'; // <<< REMOVED: This is now handled by ExportService
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:the_money_gigs/main.dart';
 import 'package:the_money_gigs/core/services/export_service.dart';
+
+import '../../app_demo/providers/demo_provider.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -53,7 +54,6 @@ class _ProfilePageState extends State<ProfilePage> {
     super.dispose();
   }
 
-  // UNCHANGED: Your existing _loadProfileData method
   Future<void> _loadProfileData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -107,7 +107,6 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // UNCHANGED: Your existing _saveProfile method
   Future<void> _saveProfile() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
@@ -147,7 +146,6 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // <<< REFACTORED _exportAppData METHOD >>>
   Future<void> _exportAppData() async {
     if (!mounted) return;
     setState(() => _isExporting = true);
@@ -161,7 +159,6 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // UNCHANGED: All your build methods remain exactly the same
   InputDecoration _formInputDecoration({ required String labelText, String? hintText, IconData? icon, String? prefixText, }) {
     final formLabelColor = Colors.orangeAccent.shade100;
     final formHintColor = Colors.white70;
@@ -497,6 +494,28 @@ class _ProfilePageState extends State<ProfilePage> {
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
                 ),
               ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.replay_outlined),
+                label: const Text('Replay App Demo'),
+                onPressed: () {
+                  // Use the Provider to call the reset method
+                  context.read<DemoProvider>().resetDemoFlagForTesting();
+                  // Show a confirmation message
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Demo has been reset. It will run on the next app restart.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blueGrey.shade600,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12.0),
+                  textStyle: const TextStyle(fontSize: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                ),
+              ),
               const SizedBox(height: 20.0),
             ],
           ),
@@ -570,15 +589,21 @@ class BackgroundSettingsDialog extends StatelessWidget {
       await prefs.setInt(colorKey, color.value);
     }
 
-    refreshNotifier.notify();
-    if (context.mounted) Navigator.of(context).pop();
+    if (context.mounted) {
+      Provider.of<RefreshNotifier>(context, listen: false).notify();
+      Navigator.of(context).pop(); // Pop the parent dialog
+    }
   }
 
   Future<void> _pickImage(BuildContext context, int pageIndex) async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
     if (image != null && context.mounted) {
+      // Pass the context from the ListTile tap
       _setBackground(context, pageIndex, imagePath: image.path);
+    } else {
+      // If image picking was cancelled, we might need to pop the dialog
+      // depending on the flow. Here, since it's a sub-action, we do nothing.
     }
   }
 

@@ -11,8 +11,6 @@ import 'package:the_money_gigs/core/widgets/drive_time_display.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
-import 'package:the_money_gigs/features/notes/views/notes_page.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 // --- NEW IMPORTS FOR REFACTORED UI WIDGETS ---
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/calculator_summary_view.dart';
@@ -106,10 +104,15 @@ class _BookingDialogState extends State<BookingDialog> {
   String? _gigNotes;
   String? _gigNotesUrl;
 
-  String? _userProfileAddress;
   bool _isFetchingDriveTime = false;
 
-  late final DriveTimeService _driveTimeService;
+  // --- CHANGE #1: Store address components instead of a single string ---
+  String? _profileAddress1;
+  String? _profileCity;
+  String? _profileState;
+  String? _profileZipCode;
+  // A string to display in the UI that the user has an address set.
+  String? _userProfileAddressForDisplay;
 
   bool get _isEditingMode => widget.editingGig != null;
   bool get _isCalculatorMode => widget.calculatedHourlyRate != null && !_isEditingMode && widget.preselectedVenue == null;
@@ -121,13 +124,13 @@ class _BookingDialogState extends State<BookingDialog> {
   void initState() {
     super.initState();
     _initializeDialogState();
-    globalRefreshNotifier.addListener(_onGlobalRefresh);
+    //globalRefreshNotifier.addListener(_onGlobalRefresh);
     _newVenueAddressFocusNode.addListener(_onAddressFocusChange);
   }
 
   @override
   void dispose() {
-    globalRefreshNotifier.removeListener(_onGlobalRefresh);
+    //globalRefreshNotifier.removeListener(_onGlobalRefresh);
     _newVenueNameController.dispose();
     _newVenueAddressController.dispose();
     _newVenueAddressFocusNode.removeListener(_onAddressFocusChange);
@@ -154,44 +157,39 @@ class _BookingDialogState extends State<BookingDialog> {
   }
 
 
-  void _onGlobalRefresh() {
+  /*void _onGlobalRefresh() {
     if (mounted) {
       _initializeDialogState();
     }
-  }
+  }*/
 
+  // --- CHANGE #2: Load individual address components ---
   Future<void> _loadProfileAddress() async {
     final prefs = await SharedPreferences.getInstance();
-    final address1 = prefs.getString('profile_address1');
-    final city = prefs.getString('profile_city');
-    final state = prefs.getString('profile_state');
-    final zip = prefs.getString('profile_zip_code');
+    _profileAddress1 = prefs.getString('profile_address1');
+    _profileCity = prefs.getString('profile_city');
+    _profileState = prefs.getString('profile_state');
+    _profileZipCode = prefs.getString('profile_zip_code');
 
-    if (address1 != null && address1.isNotEmpty && city != null && city.isNotEmpty && state != null && state.isNotEmpty) {
-      _userProfileAddress = '$address1, $city, $state $zip';
+    // For UI display purposes only
+    if ((_profileCity != null && _profileCity!.isNotEmpty) || (_profileZipCode != null && _profileZipCode!.isNotEmpty)) {
+      _userProfileAddressForDisplay = '${_profileCity ?? ''}, ${_profileState ?? ''} ${_profileZipCode ?? ''}'.trim();
     } else {
-      _userProfileAddress = null;
+      _userProfileAddressForDisplay = null;
     }
   }
 
   Future<void> _initializeDialogState() async {
     await _loadProfileAddress();
 
-    final prefs = await SharedPreferences.getInstance();
-    final allGigsJson = prefs.getString('gigs_list') ?? '[]';
-    final allGigs = Gig.decode(allGigsJson);
-
     await _loadAllKnownVenuesInternal();
     if (!mounted) return;
 
-    _driveTimeService = DriveTimeService(
-      googleApiKey: widget.googleApiKey,
-      userProfileAddress: _userProfileAddress,
-      allKnownVenues: _allKnownVenuesInternal,
-    );
-
     if (_isEditingMode) {
-      final currentGig = allGigs.firstWhere((g) => g.id == widget.editingGig!.id, orElse: () => widget.editingGig!,);
+      final gigsJson = await SharedPreferences.getInstance().then((p) => p.getString('gigs_list') ?? '[]');
+      final allGigs = Gig.decode(gigsJson);
+      final currentGig = allGigs.firstWhere((g) => g.id == widget.editingGig!.id, orElse: () => widget.editingGig!);
+
       _payController = TextEditingController(text: currentGig.pay.toStringAsFixed(0));
       _gigLengthController = TextEditingController(text: currentGig.gigLengthHours.toStringAsFixed(1));
       _driveSetupController = TextEditingController(text: currentGig.driveSetupTimeHours.toStringAsFixed(1));
@@ -203,8 +201,6 @@ class _BookingDialogState extends State<BookingDialog> {
 
       _selectedVenue = _allKnownVenuesInternal.firstWhere(
             (v) => (currentGig.placeId != null && v.placeId == currentGig.placeId) || (v.name == currentGig.venueName && v.address == currentGig.address),
-        // *** FIX #1 IS HERE ***
-        // Removed `hasJamOpenMic` and `jamStyle` as they no longer exist on the StoredLocation constructor.
         orElse: () => StoredLocation( placeId: currentGig.placeId ?? 'edited_${currentGig.id}', name: currentGig.venueName, address: currentGig.address, coordinates: LatLng(currentGig.latitude, currentGig.longitude), isArchived: true),
       );
       _isAddNewVenue = false;
@@ -212,42 +208,49 @@ class _BookingDialogState extends State<BookingDialog> {
 
       await _handleVenueSelection(_selectedVenue);
 
-      if (!_payController.hasListeners) {
+      //if (!_payController.hasListeners) {
         _payController.addListener(_calculateDynamicRate);
         _gigLengthController.addListener(_calculateDynamicRate);
         _driveSetupController.addListener(_calculateDynamicRate);
         _rehearsalController.addListener(_calculateDynamicRate);
-      }
+      //}
       _calculateDynamicRate();
     } else {
       _selectedTime = _defaultGigTime;
+      _payController = TextEditingController(text: widget.totalPay?.toStringAsFixed(0) ?? '');
+      _gigLengthController = TextEditingController(text: widget.gigLengthHours?.toStringAsFixed(1) ?? '');
+      _driveSetupController = TextEditingController(text: widget.driveSetupTimeHours?.toStringAsFixed(1) ?? '');
+      _rehearsalController = TextEditingController(text: widget.rehearsalTimeHours?.toStringAsFixed(1) ?? '');
+
       if (_isMapModeNewGig) {
-        _payController = TextEditingController(text: widget.totalPay?.toStringAsFixed(0) ?? '');
-        _gigLengthController = TextEditingController(text: widget.gigLengthHours?.toStringAsFixed(1) ?? '');
-        _driveSetupController = TextEditingController(text: widget.driveSetupTimeHours?.toStringAsFixed(1) ?? '');
-        _rehearsalController = TextEditingController(text: widget.rehearsalTimeHours?.toStringAsFixed(1) ?? '');
         _selectedVenue = widget.preselectedVenue;
         _isAddNewVenue = false;
         _isLoadingVenues = false;
-
         await _handleVenueSelection(_selectedVenue);
-
         _payController.addListener(_calculateDynamicRate);
         _gigLengthController.addListener(_calculateDynamicRate);
         _driveSetupController.addListener(_calculateDynamicRate);
         _rehearsalController.addListener(_calculateDynamicRate);
         _calculateDynamicRate();
       } else { // Calculator Mode
-        _payController = TextEditingController(text: widget.totalPay?.toStringAsFixed(0) ?? '');
-        _gigLengthController = TextEditingController(text: widget.gigLengthHours?.toStringAsFixed(1) ?? '');
-        _driveSetupController = TextEditingController(text: widget.driveSetupTimeHours?.toStringAsFixed(1) ?? '');
-        _rehearsalController = TextEditingController(text: widget.rehearsalTimeHours?.toStringAsFixed(1) ?? '');
         await _loadSelectableVenuesForDropdown(defaultToAddVenue: true);
       }
     }
     if (mounted) {
       setState(() {});
     }
+  }
+
+  // Helper method to create the service on-demand
+  DriveTimeService _createDriveTimeService() {
+    return DriveTimeService(
+      googleApiKey: widget.googleApiKey,
+      allKnownVenues: _allKnownVenuesInternal,
+      address1: _profileAddress1,
+      city: _profileCity,
+      state: _profileState,
+      zipCode: _profileZipCode,
+    );
   }
 
   Future<void> _handleVenueSelection(StoredLocation? venue) async {
@@ -271,10 +274,16 @@ class _BookingDialogState extends State<BookingDialog> {
 
     if (venue.driveDuration == null) {
       setState(() => _isFetchingDriveTime = true);
-      final updatedVenue = await _driveTimeService.fetchAndCacheDriveTime(venue);
+
+      // --- CHANGE #3: Use the new helper method to create the service ---
+      final driveTimeService = _createDriveTimeService();
+      final updatedVenue = await driveTimeService.fetchAndCacheDriveTime(venue);
+
       if (mounted) {
         setState(() {
           if (updatedVenue != null) {
+            final index = _allKnownVenuesInternal.indexWhere((v) => v.placeId == updatedVenue.placeId);
+            if(index != -1) _allKnownVenuesInternal[index] = updatedVenue;
             _selectedVenue = updatedVenue;
           }
           _isFetchingDriveTime = false;
@@ -283,9 +292,8 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
+  // --- CHANGE #4: Update this method to use the new service constructor ---
   Future<void> _fetchDriveTimeForManualAddress() async {
-    if (_userProfileAddress == null) return;
-
     final address = _newVenueAddressController.text.trim();
     if (address.isEmpty) return;
 
@@ -300,10 +308,14 @@ class _BookingDialogState extends State<BookingDialog> {
         placeId: 'temp_manual_place_id_${DateTime.now().millisecondsSinceEpoch}',
       );
 
-      final resultVenue = await _driveTimeService.fetchAndCacheDriveTime(tempVenue);
+      // Use the helper method to get a fresh service instance
+      final driveTimeService = _createDriveTimeService();
+      final resultVenue = await driveTimeService.fetchAndCacheDriveTime(tempVenue);
 
       if (mounted) {
         setState(() {
+          // Since this is a temporary venue, we don't update the main venue list,
+          // just display the calculated time for the user.
           _manualDriveDurationString = resultVenue?.driveDuration;
           _manualDriveDistance = resultVenue?.driveDistance;
         });
@@ -315,14 +327,14 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  void _showNotesPage() {
+ /* void _showNotesPage() {
     if (widget.editingGig == null) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => NotesPage(editingGigId: widget.editingGig!.id),
       ),
     );
-  }
+  }*/
 
   void _confirmAction() async {
     if (!_formKey.currentState!.validate()) return;
@@ -365,8 +377,6 @@ class _BookingDialogState extends State<BookingDialog> {
         if (mounted) setState(() => _isProcessing = false);
         return;
       }
-      // *** FIX #2 IS HERE ***
-      // Removed `hasJamOpenMic` and `jamStyle` as they no longer exist on the StoredLocation constructor.
       finalVenueDetails = StoredLocation(
         placeId: 'manual_${DateTime.now().millisecondsSinceEpoch}',
         name: newVenueName,
@@ -489,7 +499,6 @@ class _BookingDialogState extends State<BookingDialog> {
         initialSelection = _selectableVenuesForDropdown.firstWhere((v) => v.placeId != _addNewVenuePlaceholder.placeId && !v.isArchived, orElse: () => _selectableVenuesForDropdown.first);
       } else {
         _selectableVenuesForDropdown = [_addNewVenuePlaceholder];
-
         initialSelection = _selectableVenuesForDropdown.first;
       }
 
@@ -716,28 +725,14 @@ class _BookingDialogState extends State<BookingDialog> {
                     isFetching: _isFetchingDriveTime,
                     duration: _isAddNewVenue ? _manualDriveDurationString : _selectedVenue?.driveDuration,
                     distance: _isAddNewVenue ? _manualDriveDistance : _selectedVenue?.driveDistance,
-                    userProfileAddress: _userProfileAddress,
+                    // Use the new display-only address string
+                    userProfileAddress: _userProfileAddressForDisplay,
                   ),
 
                   const SizedBox(height: 4),
 
                   Row( children: [ Expanded(child: Text(_selectedDate == null ? 'No date selected*' : 'Date: ${DateFormat.yMMMEd().format(_selectedDate!)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickDate(context), child: const Text('SELECT DATE')), ], ),
                   Row( children: [ Expanded(child: Text(_selectedTime == null ? 'No time selected*' : 'Time: ${_selectedTime!.format(context)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickTime(context), child: const Text('SELECT TIME')), ], ),
-
-                  /*if (_isEditingMode) ...[
-                    const SizedBox(height: 16),
-                    Center(
-                      child: OutlinedButton.icon(
-                        icon: Icon((_gigNotes?.isNotEmpty ?? false) || (_gigNotesUrl?.isNotEmpty ?? false) ? Icons.speaker_notes : Icons.speaker_notes_off_outlined),
-                        label: const Text('GIG NOTES & LINK'),
-                        onPressed: isDialogProcessing ? null : _showNotesPage,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: (_gigNotes?.isNotEmpty ?? false) || (_gigNotesUrl?.isNotEmpty ?? false) ? Theme.of(context).colorScheme.primary : Colors.grey,
-                          side: BorderSide(color: (_gigNotes?.isNotEmpty ?? false) || (_gigNotesUrl?.isNotEmpty ?? false) ? Theme.of(context).colorScheme.primary : Colors.grey),
-                        ),
-                      ),
-                    ),
-                  ],*/
                   const SizedBox(height: 10),
                 ],
               ),

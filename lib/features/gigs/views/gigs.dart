@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart'; // Import TableCalendar
 import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the notifier
-import 'package:url_launcher/url_launcher.dart';
 
 // Import your models
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
@@ -406,7 +405,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-  Future<void> _deleteGig(Gig gigToDelete) async {
+  /*Future<void> _deleteGig(Gig gigToDelete) async {
     if (gigToDelete.isJamOpenMic) return;
     if (!mounted) return;
     final prefs = await SharedPreferences.getInstance();
@@ -416,7 +415,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     await prefs.setString(_keyGigsList, Gig.encode(currentActualGigs));
     globalRefreshNotifier.notify();
   }
-
+*/
   Future<void> _archiveVenue(StoredLocation venueToArchive) async {
     if (!mounted) return;
     // CORRECTED: Only check for REAL, non-jam gigs.
@@ -638,7 +637,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     );
   }
 
-  Future<void> _openVenueInMap(StoredLocation venue) async {
+  /*Future<void> _openVenueInMap(StoredLocation venue) async {
     final lat = venue.coordinates.latitude;
     final lng = venue.coordinates.longitude;
     final String query = Uri.encodeComponent(venue.address.isNotEmpty ? venue.address : venue.name);
@@ -653,7 +652,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open map application.')));
       }
     }
-  }
+  }*/
+
   void _showEmbedCodeDialog() {
     // Generate the HTML code using the service
     final String embedCode = GigEmbedService.generateEmbedCode(_loadedGigs);
