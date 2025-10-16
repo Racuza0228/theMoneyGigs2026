@@ -1,10 +1,33 @@
+// lib/features/gigs/views/gig_calculator_page.dart
+
 import 'package:flutter/material.dart';
-// For jsonEncode, jsonDecode
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
-import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the notifier
+import 'package:the_money_gigs/global_refresh_notifier.dart';
+
+// Demo-related imports
+import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
+import 'package:the_money_gigs/features/app_demo/widgets/tutorial_overlay.dart';
+
+// Helper class for the demo script
+class _DemoStep {
+  final GlobalKey key;
+  final String text;
+  final Alignment alignment;
+  final VoidCallback? onBefore;
+  final bool hideNextButton;
+
+  _DemoStep({
+    required this.key,
+    required this.text,
+    required this.alignment,
+    this.onBefore,
+    this.hideNextButton = false,
+  });
+}
 
 class GigCalculator extends StatefulWidget {
   const GigCalculator({super.key});
@@ -36,19 +59,84 @@ class _GigCalculatorState extends State<GigCalculator> {
   static const String _keyMinHourlyRate = 'profile_min_hourly_rate';
   static const String _keyGigsList = 'gigs_list';
 
-  // FocusNodes for managing focus and keyboard
   final _payFocusNode = FocusNode();
   final _gigTimeFocusNode = FocusNode();
   final _driveSetupTimeFocusNode = FocusNode();
   final _rehearsalTimeFocusNode = FocusNode();
+
+  // GlobalKeys for each demo step target
+  final GlobalKey _payKey = GlobalKey();
+  final GlobalKey _gigTimeKey = GlobalKey();
+  final GlobalKey _driveTimeKey = GlobalKey();
+  final GlobalKey _rehearsalTimeKey = GlobalKey();
+  final GlobalKey _calculateBtnKey = GlobalKey();
+  final GlobalKey _rateResultKey = GlobalKey();
+  final GlobalKey _takeGigBtnKey = GlobalKey(); // <<< 1. ADD KEY FOR "TAKE GIG" BUTTON
+
+  late final List<_DemoStep> _demoScript;
 
   @override
   void initState() {
     super.initState();
     _loadUserMinHourlyRate();
 
+    _demoScript = [
+      // Steps 1-5 are unchanged
+      _DemoStep(
+        key: _payKey,
+        text:
+        'Hey there! Welcome!\n Let\'s cover some basics. First, we enter the total pay for the gig. For this demo, we\'ll use \$250.',
+        alignment: Alignment.center,
+        onBefore: () {
+          _payController.text = '250';
+          _gigTimeController.text = '3';
+          _driveSetupTimeController.text = '2.5';
+          _rehearsalTimeController.text = '2';
+        },
+      ),
+      _DemoStep(
+        key: _gigTimeKey,
+        text:
+        'Next, input the actual length of the performance in hours. Let\'s say it\'s a 3-hour gig.',
+        alignment: Alignment.bottomCenter,
+      ),
+      _DemoStep(
+        key: _driveTimeKey,
+        text:
+        'This is for all the unpaid time spent driving, loading in, setting up, and sound check. We\'ll estimate 2.5 hours.',
+        alignment: Alignment.bottomCenter,
+      ),
+      _DemoStep(
+        key: _rehearsalTimeKey,
+        text:
+        'Finally, add any unpaid rehearsal time for this specific gig. Let\'s add 2 hours.',
+        alignment: Alignment.bottomCenter,
+      ),
+      _DemoStep(
+        key: _calculateBtnKey,
+        text:
+        'Now, click that Calculate button.',
+        alignment: Alignment.topCenter,
+        hideNextButton: true,
+      ),
+      _DemoStep(
+        key: _rateResultKey,
+        text:
+        'There it is! Your rate isn\'t what you get for playing; it\'s what you earn for all the work involved. Your time is valuable! You can use this to negotiate.',
+        alignment: Alignment.topCenter,
+      ),
+      // <<< 2. ADD STEP 7 FOR "TAKE THIS GIG" BUTTON >>>
+      _DemoStep(
+        key: _takeGigBtnKey,
+        text: 'Now, let\'s book this gig! Tap here to open the booking dialog.',
+        alignment: Alignment.bottomCenter,
+        hideNextButton: true, // User must click the real button
+      ),
+    ];
+
     if (_googleApiKey.isEmpty) {
-      print("CRITICAL WARNING (GigCalculator): GOOGLE_API_KEY is not defined. Geocoding will fail.");
+      print(
+          "CRITICAL WARNING (GigCalculator): GOOGLE_API_KEY is not defined. Geocoding will fail.");
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -63,6 +151,19 @@ class _GigCalculatorState extends State<GigCalculator> {
     }
   }
 
+  @override
+  void dispose() {
+    _payController.dispose();
+    _gigTimeController.dispose();
+    _driveSetupTimeController.dispose();
+    _rehearsalTimeController.dispose();
+    _payFocusNode.dispose();
+    _gigTimeFocusNode.dispose();
+    _driveSetupTimeFocusNode.dispose();
+    _rehearsalTimeFocusNode.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadUserMinHourlyRate() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
@@ -71,56 +172,17 @@ class _GigCalculatorState extends State<GigCalculator> {
     });
   }
 
-  @override
-  void dispose() {
-    _payController.dispose();
-    _gigTimeController.dispose();
-    _driveSetupTimeController.dispose();
-    _rehearsalTimeController.dispose();
-
-    _payFocusNode.dispose();
-    _gigTimeFocusNode.dispose();
-    _driveSetupTimeFocusNode.dispose();
-    _rehearsalTimeFocusNode.dispose();
-    super.dispose();
-  }
-
-  /*void _resetGigDetailsAndForm() {
-    FocusScope.of(context).unfocus(); // Dismiss keyboard
-    if (mounted) {
-      setState(() {
-        _showTakeGigButton = false;
-        _currentPay = 0.0;
-        _currentGigLengthHours = 0.0;
-        _currentDriveSetupHours = 0.0;
-        _currentRehearsalHours = 0.0;
-        _currentHourlyRateString = "";
-        _hourlyRateResult = "";
-        _rateResultColor = Colors.greenAccent.shade400;
-        _formKey.currentState?.reset(); // Resets validation state
-      });
-    }
-  }*/
-
-  // This method is called by the "Clear All" button.
-  // It clears TextFormFields and resets calculated results and form state.
   void _clearAllInputFields() {
     FocusScope.of(context).unfocus();
-
     _payController.clear();
-
     _gigTimeController.clear();
     _driveSetupTimeController.clear();
     _rehearsalTimeController.clear();
-    _hourlyRateResult = "";
-    _showTakeGigButton = false;
-
-
     if (mounted) {
       setState(() {
+        _hourlyRateResult = "";
+        _showTakeGigButton = false;
       });
-    } else {
-      print("DEBUG: _clearAllInputFields - NOT MOUNTED when setState was to be called");
     }
   }
 
@@ -129,69 +191,82 @@ class _GigCalculatorState extends State<GigCalculator> {
     await _loadUserMinHourlyRate();
 
     if (!mounted) return;
-    setState(() {
-      _showTakeGigButton = false;
-      _currentHourlyRateString = "";
-      _hourlyRateResult = ""; // Clear previous results before validating
-      _rateResultColor = Colors.greenAccent.shade400;
-    });
+
+    String newHourlyRateResult = "";
+    String newCurrentHourlyRateString = "";
+    Color newRateResultColor = Colors.greenAccent.shade400;
+    bool newShowTakeGigButton = false;
+    double newCurrentPay = 0.0;
+    double newCurrentGigLengthHours = 0.0;
+    double newCurrentDriveSetupHours = 0.0;
+    double newCurrentRehearsalHours = 0.0;
 
     if (_formKey.currentState!.validate()) {
       final double pay = double.tryParse(_payController.text) ?? 0;
       final double gigTime = double.tryParse(_gigTimeController.text) ?? 0;
-      final double driveSetupTime = double.tryParse(_driveSetupTimeController.text) ?? 0;
-      final double rehearsalTime = double.tryParse(_rehearsalTimeController.text) ?? 0;
-      final double totalHoursForRateCalc = gigTime + driveSetupTime + rehearsalTime;
+      final double driveSetupTime =
+          double.tryParse(_driveSetupTimeController.text) ?? 0;
+      final double rehearsalTime =
+          double.tryParse(_rehearsalTimeController.text) ?? 0;
+      final double totalHoursForRateCalc =
+          gigTime + driveSetupTime + rehearsalTime;
 
       if (totalHoursForRateCalc > 0 && pay > 0) {
         final double calculatedRate = pay / totalHoursForRateCalc;
-        final String rateString = '\$${calculatedRate.toStringAsFixed(2)} per hour';
-        Color newResultColor = Colors.greenAccent.shade400;
-        if (_userMinHourlyRate != null && calculatedRate < _userMinHourlyRate!) {
-          newResultColor = Colors.redAccent.shade200;
-        }
-        if (mounted) {
-          setState(() {
-            _hourlyRateResult = rateString;
-            _currentHourlyRateString = rateString;
-            _rateResultColor = newResultColor;
-            _showTakeGigButton = true;
-            _currentPay = pay;
-            _currentGigLengthHours = gigTime;
-            _currentDriveSetupHours = driveSetupTime;
-            _currentRehearsalHours = rehearsalTime;
-          });
-        }
+        final String rateString =
+            '\$${calculatedRate.toStringAsFixed(2)} per hour';
+
+        newHourlyRateResult = rateString;
+        newCurrentHourlyRateString = rateString;
+        newRateResultColor =
+        (_userMinHourlyRate != null && calculatedRate < _userMinHourlyRate!)
+            ? Colors.redAccent.shade200
+            : Colors.greenAccent.shade400;
+        newShowTakeGigButton = true;
+        newCurrentPay = pay;
+        newCurrentGigLengthHours = gigTime;
+        newCurrentDriveSetupHours = driveSetupTime;
+        newCurrentRehearsalHours = rehearsalTime;
       } else {
         String errorMessage = "";
         if (pay <= 0 && totalHoursForRateCalc > 0) {
           errorMessage = 'Please provide the Pay for the Gig.';
         } else if (pay > 0 && totalHoursForRateCalc <= 0) {
-          errorMessage = 'We need some hours to divide the pay to get your rate.';
+          errorMessage =
+          'We need some hours to divide the pay to get your rate.';
         } else {
           errorMessage = 'Enter the pay and time(s) for the rate calculation.';
         }
-        if (mounted) {
-          setState(() {
-            _hourlyRateResult = errorMessage;
-            _rateResultColor = Colors.lightBlue.shade200;
-            _showTakeGigButton = false;
-          });
-        }
+        newHourlyRateResult = errorMessage;
+        newRateResultColor = Colors.lightBlue.shade200;
+        newShowTakeGigButton = false;
       }
     } else {
-      if (mounted) {
-        setState(() {
-          _hourlyRateResult = 'Please provide the Pay for the Gig.';
-          _rateResultColor = Colors.lightBlue.shade200;
-          _showTakeGigButton = false;
-        });
-      }
+      newHourlyRateResult = 'Please provide the Pay for the Gig.';
+      newRateResultColor = Colors.lightBlue.shade200;
+      newShowTakeGigButton = false;
+    }
+
+    setState(() {
+      _hourlyRateResult = newHourlyRateResult;
+      _currentHourlyRateString = newCurrentHourlyRateString;
+      _rateResultColor = newRateResultColor;
+      _showTakeGigButton = newShowTakeGigButton;
+      _currentPay = newCurrentPay;
+      _currentGigLengthHours = newCurrentGigLengthHours;
+      _currentDriveSetupHours = newCurrentDriveSetupHours;
+      _currentRehearsalHours = newCurrentRehearsalHours;
+    });
+
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    if (demoProvider.isDemoModeActive && demoProvider.currentStep == 5) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        demoProvider.nextStep();
+      });
     }
   }
 
   Future<List<Gig>> _loadAllGigsFromPreferences() async {
-    // ... (no changes needed here for "Clear All" button)
     try {
       final prefs = await SharedPreferences.getInstance();
       final String? gigsJsonString = prefs.getString(_keyGigsList);
@@ -200,7 +275,6 @@ class _GigCalculatorState extends State<GigCalculator> {
       }
       return [];
     } catch (e) {
-      print("Error loading all gigs from SharedPreferences: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Error loading existing gigs: $e'),
@@ -211,25 +285,28 @@ class _GigCalculatorState extends State<GigCalculator> {
   }
 
   Future<void> _saveBookedGigToList(Gig gigToSave) async {
-    // ... (no changes needed here for "Clear All" button)
     final prefs = await SharedPreferences.getInstance();
     List<Gig> existingGigs = await _loadAllGigsFromPreferences();
     final index = existingGigs.indexWhere((g) => g.id == gigToSave.id);
     if (index != -1) {
       existingGigs[index] = gigToSave;
-      print("GigCalculator: Gig updated: ${gigToSave.venueName}");
     } else {
       existingGigs.add(gigToSave);
-      print("GigCalculator: Gig saved: ${gigToSave.venueName}");
     }
     existingGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
     await prefs.setString(_keyGigsList, Gig.encode(existingGigs));
     globalRefreshNotifier.notify();
-    print("GigCalculator: Global refresh notified after saving gig.");
   }
 
+  // <<< 3. MODIFY _showBookingDialog TO BE DEMO-AWARE >>>
   Future<void> _showBookingDialog() async {
-    // ... (no changes needed here for "Clear All" button, but it calls _clearAllInputFields on success)
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+
+    // If in demo mode and on the correct step, advance the demo.
+    if (demoProvider.isDemoModeActive && demoProvider.currentStep == 7) {
+      demoProvider.nextStep(); // Advance to step 8, which the dialog will handle
+    }
+
     if (!_showTakeGigButton ||
         _currentHourlyRateString.isEmpty ||
         _currentPay <= 0) {
@@ -246,7 +323,7 @@ class _GigCalculatorState extends State<GigCalculator> {
     List<Gig> allExistingGigs = await _loadAllGigsFromPreferences();
     if (!mounted) return;
 
-    final dynamic result = await showDialog<dynamic>( // Changed to dynamic to handle Gig or GigEditResult
+    final dynamic result = await showDialog<dynamic>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
@@ -257,17 +334,25 @@ class _GigCalculatorState extends State<GigCalculator> {
           driveSetupTimeHours: _currentDriveSetupHours,
           rehearsalTimeHours: _currentRehearsalHours,
           googleApiKey: _googleApiKey,
-          existingGigs: allExistingGigs.where((g) => !g.isJamOpenMic).toList(), // Pass only actual gigs
-          onNewVenuePotentiallyAdded: () async {
-            print("GigCalculator: BookingDialog's onNewVenuePotentiallyAdded callback received.");
-          },
+          existingGigs: allExistingGigs.where((g) => !g.isJamOpenMic).toList(),
+          onNewVenuePotentiallyAdded: () async {},
         );
       },
     );
 
     if (!mounted) return;
 
-    if (result is Gig) { // New gig was booked
+    // <<< START OF CHANGE >>>
+    // Check for the special demo completion signal.
+    if (result == "demo_completed") {
+      // The demo is continuing on another page, so just clear the fields
+      // and do NOT end the demo here.
+      _clearAllInputFields();
+      return;
+    }
+    // <<< END OF CHANGE >>>
+
+    if (result is Gig) {
       final bookedGig = result;
       await _saveBookedGigToList(bookedGig);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -275,24 +360,16 @@ class _GigCalculatorState extends State<GigCalculator> {
             content: Text('${bookedGig.venueName} gig booked!'),
             backgroundColor: Colors.green),
       );
-      _clearAllInputFields(); // Clear fields after successful booking
-    } else if (result is GigEditResult) {
-      // This case should ideally not happen if launching BookingDialog for a new gig
-      // but handling it defensively.
-      if (result.action == GigEditResultAction.updated && result.gig != null) {
-        // This implies an existing gig was somehow passed and updated, which is not the flow here
-        print("GigCalculator: Unexpected GigEditResult.updated from new gig booking flow.");
-      } else if (result.action == GigEditResultAction.deleted) {
-        print("GigCalculator: Unexpected GigEditResult.deleted from new gig booking flow.");
-      }
-      // If GigEditResultAction.noChange or other, treat as cancellation for new gig flow
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Booking process not completed.')),
-      );
-    } else { // Dialog was dismissed or returned null (treat as cancellation)
+      _clearAllInputFields();
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Booking cancelled.')),
       );
+    }
+
+    // If the demo was active and the user cancels or completes a real booking, end the demo.
+    if (demoProvider.isDemoModeActive) {
+      demoProvider.endDemo();
     }
   }
 
@@ -312,8 +389,53 @@ class _GigCalculatorState extends State<GigCalculator> {
     return null;
   }
 
+  Widget _buildDemoOverlay(DemoProvider demoProvider) {
+    int currentStepIndex = demoProvider.currentStep - 1;
+
+    // This page only handles steps 1-7.
+    if (currentStepIndex < 0 || currentStepIndex >= 7) {
+      return const SizedBox.shrink();
+    }
+
+    final step = _demoScript[currentStepIndex];
+
+    if (step.onBefore != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        step.onBefore!();
+      });
+    }
+
+    return TutorialOverlay(
+      key: ValueKey('demo_step_$currentStepIndex'),
+      highlightKey: step.key,
+      instructionalText: step.text,
+      textAlignment: step.alignment,
+      hideNextButton: step.hideNextButton,
+      onNext: () {
+        if (currentStepIndex == _demoScript.length - 1) {
+          demoProvider.endDemo();
+        } else {
+          demoProvider.nextStep();
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    return Consumer<DemoProvider>(
+      builder: (context, demoProvider, child) {
+        return Stack(
+          children: [
+            _buildCalculatorUI(context),
+            if (demoProvider.isDemoModeActive) _buildDemoOverlay(demoProvider),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCalculatorUI(BuildContext context) {
     final formBackgroundColor = Colors.black.withAlpha(128);
     final formTextColor = Colors.white;
     final formHintColor = Colors.white70;
@@ -381,94 +503,109 @@ class _GigCalculatorState extends State<GigCalculator> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8.0, 0.0, 8.0, 24.0),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(8.0, 0.0, 8.0, 24.0),
                   child: Text(
                     "Your data is stored on your device only and never shared.",
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 12,
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white70,
                         fontStyle: FontStyle.italic),
                   ),
                 ),
-                TextFormField(
-                  controller: _payController,
-                  focusNode: _payFocusNode,
-                  style: TextStyle(color: formTextColor, fontSize: 16),
-                  decoration: formInputDecoration(
-                      labelText: 'Pay',
-                      hintText: 'e.g., 150',
-                      icon: Icons.attach_money),
-                  keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-                  validator: _validatePay,
-                  textInputAction: TextInputAction.next,
-                  onFieldSubmitted: (_) =>
-                      FocusScope.of(context).requestFocus(_gigTimeFocusNode),
+                Container(
+                  key: _payKey,
+                  child: TextFormField(
+                    controller: _payController,
+                    focusNode: _payFocusNode,
+                    style: TextStyle(color: formTextColor, fontSize: 16),
+                    decoration: formInputDecoration(
+                        labelText: 'Pay',
+                        hintText: 'e.g., 150',
+                        icon: Icons.attach_money),
+                    keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                    validator: _validatePay,
+                    textInputAction: TextInputAction.next,
+                    onFieldSubmitted: (_) =>
+                        FocusScope.of(context).requestFocus(_gigTimeFocusNode),
+                  ),
                 ),
                 const SizedBox(height: 16.0),
-                TextFormField(
-                  controller: _gigTimeController,
-                  focusNode: _gigTimeFocusNode,
-                  style: TextStyle(color: formTextColor, fontSize: 16),
-                  decoration: formInputDecoration(
-                      labelText: 'Gig Time (hours)',
-                      hintText: 'e.g., 3.5',
-                      icon: Icons.timer_outlined),
-                  keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-                  validator: (value) => _validateTime(value, 'Gig Time'),
-                  textInputAction: TextInputAction.next,
-                  onFieldSubmitted: (_) => FocusScope.of(context)
-                      .requestFocus(_driveSetupTimeFocusNode),
+                Container(
+                  key: _gigTimeKey,
+                  child: TextFormField(
+                    controller: _gigTimeController,
+                    focusNode: _gigTimeFocusNode,
+                    style: TextStyle(color: formTextColor, fontSize: 16),
+                    decoration: formInputDecoration(
+                        labelText: 'Gig Time (hours)',
+                        hintText: 'e.g., 3.5',
+                        icon: Icons.timer_outlined),
+                    keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                    validator: (value) => _validateTime(value, 'Gig Time'),
+                    textInputAction: TextInputAction.next,
+                    onFieldSubmitted: (_) => FocusScope.of(context)
+                        .requestFocus(_driveSetupTimeFocusNode),
+                  ),
                 ),
                 const SizedBox(height: 16.0),
-                TextFormField(
-                  controller: _driveSetupTimeController,
-                  focusNode: _driveSetupTimeFocusNode,
-                  style: TextStyle(color: formTextColor, fontSize: 16),
-                  decoration: formInputDecoration(
-                      labelText: 'Drive & Setup (hours)',
-                      hintText: 'e.g., 1',
-                      icon: Icons.directions_car_outlined),
-                  keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-                  validator: (value) =>
-                      _validateTime(value, 'Drive & Setup Time'),
-                  textInputAction: TextInputAction.next,
-                  onFieldSubmitted: (_) => FocusScope.of(context)
-                      .requestFocus(_rehearsalTimeFocusNode),
+                Container(
+                  key: _driveTimeKey,
+                  child: TextFormField(
+                    controller: _driveSetupTimeController,
+                    focusNode: _driveSetupTimeFocusNode,
+                    style: TextStyle(color: formTextColor, fontSize: 16),
+                    decoration: formInputDecoration(
+                        labelText: 'Drive & Setup (hours)',
+                        hintText: 'e.g., 1',
+                        icon: Icons.directions_car_outlined),
+                    keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                    validator: (value) =>
+                        _validateTime(value, 'Drive & Setup Time'),
+                    textInputAction: TextInputAction.next,
+                    onFieldSubmitted: (_) => FocusScope.of(context)
+                        .requestFocus(_rehearsalTimeFocusNode),
+                  ),
                 ),
                 const SizedBox(height: 16.0),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: TextFormField(
-                        controller: _rehearsalTimeController,
-                        focusNode: _rehearsalTimeFocusNode,
-                        style: TextStyle(color: formTextColor, fontSize: 16),
-                        decoration: formInputDecoration(
-                            labelText: 'Rehearsal Time (hours)',
-                            hintText: 'e.g., 2',
-                            icon: Icons.music_note_outlined),
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        validator: (value) =>
-                            _validateTime(value, 'Rehearsal Time'),
-                        textInputAction: TextInputAction.done,
-                        onFieldSubmitted: (_) => _performCalculation(),
+                      child: Container(
+                        key: _rehearsalTimeKey,
+                        child: TextFormField(
+                          controller: _rehearsalTimeController,
+                          focusNode: _rehearsalTimeFocusNode,
+                          style: TextStyle(color: formTextColor, fontSize: 16),
+                          decoration: formInputDecoration(
+                              labelText: 'Rehearsal Time (hours)',
+                              hintText: 'e.g., 2',
+                              icon: Icons.music_note_outlined),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          validator: (value) =>
+                              _validateTime(value, 'Rehearsal Time'),
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) => _performCalculation(),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12.0),
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
                       child: ElevatedButton(
+                        key: _calculateBtnKey,
                         onPressed: _performCalculation,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.primary,
-                          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                          backgroundColor:
+                          Theme.of(context).colorScheme.primary,
+                          foregroundColor:
+                          Theme.of(context).colorScheme.onPrimary,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 18.0, vertical: 15.0),
                           textStyle: const TextStyle(
@@ -484,6 +621,7 @@ class _GigCalculatorState extends State<GigCalculator> {
                 const SizedBox(height: 24.0),
                 if (_hourlyRateResult.isNotEmpty)
                   Padding(
+                    key: _rateResultKey,
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Center(
                       child: Text(
@@ -504,13 +642,14 @@ class _GigCalculatorState extends State<GigCalculator> {
                       ),
                     ),
                   ),
-                // "Take This Gig" and "Clear All" buttons are shown together if _showTakeGigButton is true
                 if (_showTakeGigButton)
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
                     child: Row(
                       children: [
+                        // <<< 4. ASSIGN THE KEY TO THE "TAKE THIS GIG" BUTTON'S PARENT >>>
                         Expanded(
+                          key: _takeGigBtnKey,
                           child: ElevatedButton.icon(
                             onPressed: _showBookingDialog,
                             icon: const Icon(Icons.check_circle_outline),
@@ -533,7 +672,7 @@ class _GigCalculatorState extends State<GigCalculator> {
                         const SizedBox(width: 12.0),
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: _clearAllInputFields, // This is the correct method
+                            onPressed: _clearAllInputFields,
                             icon: Icon(Icons.clear_all_outlined,
                                 color: Colors.grey.shade300),
                             label: Text(
@@ -554,33 +693,6 @@ class _GigCalculatorState extends State<GigCalculator> {
                       ],
                     ),
                   )
-                // If you want the "Clear All" button to be visible even when "Take This Gig" isn't,
-                // you would move it outside the `if (_showTakeGigButton)` block
-                // or have a separate condition for it.
-                // For example, to always show a clear button if there's any text or result:
-                /*
-                else if (_payController.text.isNotEmpty ||
-                           _gigTimeController.text.isNotEmpty ||
-                           _driveSetupTimeController.text.isNotEmpty ||
-                           _rehearsalTimeController.text.isNotEmpty ||
-                           _hourlyRateResult.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
-                    child: Center( // Or use a Row if you prefer alignment
-                      child: OutlinedButton.icon(
-                        onPressed: _clearAllInputFields,
-                        icon: Icon(Icons.clear_all_outlined, color: Colors.grey.shade300),
-                        label: Text('Clear All', style: TextStyle(color: Colors.grey.shade300)),
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.grey.shade600),
-                          padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 24.0),
-                          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-                        ),
-                      ),
-                    ),
-                  ),
-                */
               ],
             ),
           ),

@@ -1,7 +1,6 @@
 // lib/features/map_venues/widgets/venue_details_dialog.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_rating_bar/flutter_rating_bar.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter_rating_bar/flutter_rating_bar.dart';import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
@@ -34,12 +33,14 @@ class VenueDetailsDialog extends StatefulWidget {
 class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   late double _currentRating;
   late final TextEditingController _commentController;
+  late bool _isPrivateVenue; // <<<--- 1. ADD NEW STATE VARIABLE
 
   @override
   void initState() {
     super.initState();
     _currentRating = widget.venue.rating;
     _commentController = TextEditingController(text: widget.venue.comment);
+    _isPrivateVenue = widget.venue.isPrivate; // <<<--- 2. INITIALIZE IT
   }
 
   @override
@@ -62,20 +63,24 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
     }
   }
 
-  void _handleSave({bool popOnSave = true}) {
-    final newRating = _currentRating;
-    final newComment = _commentController.text.trim();
-    final newCommentOrNull = newComment.isEmpty ? null : newComment;
+  StoredLocation _buildUpdatedVenue() {
+    return widget.venue.copyWith(
+      rating: _currentRating,
+      comment: _commentController.text.trim().isEmpty ? null : _commentController.text.trim(),
+      isPrivate: _isPrivateVenue, // <<<--- 3. INCLUDE isPrivate
+    );
+  }
 
-    final bool hasRatingChanged = newRating != widget.venue.rating;
-    final bool hasCommentChanged = newCommentOrNull != widget.venue.comment;
+  void _handleSave({bool popOnSave = true}) {
+    final updatedVenue = _buildUpdatedVenue();
+
+    // Check if any of the editable fields have changed.
+    final bool hasRatingChanged = updatedVenue.rating != widget.venue.rating;
+    final bool hasCommentChanged = updatedVenue.comment != widget.venue.comment;
+    final bool hasPrivacyChanged = updatedVenue.isPrivate != widget.venue.isPrivate;
 
     // Only save if a change was made
-    if (hasRatingChanged || hasCommentChanged) {
-      final updatedVenue = widget.venue.copyWith(
-        rating: newRating,
-        comment: newCommentOrNull,
-      );
+    if (hasRatingChanged || hasCommentChanged || hasPrivacyChanged) {
       widget.onSave(updatedVenue);
     }
 
@@ -84,16 +89,8 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
     }
   }
 
-  // *** THE FIX IS HERE ***
-  // This method now ensures the venue is saved before booking.
   void _handleBook() {
-    // Create an updated venue object with any pending UI changes.
-    final venueWithPendingChanges = widget.venue.copyWith(
-      rating: _currentRating,
-      comment: _commentController.text.trim().isEmpty ? null : _commentController.text.trim(),
-    );
-    // Pass this venue to the onBook callback. The parent widget will now be
-    // responsible for saving it and launching the booking flow.
+    final venueWithPendingChanges = _buildUpdatedVenue();
     widget.onBook(venueWithPendingChanges);
   }
 
@@ -172,6 +169,21 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
             ),
             const SizedBox(height: 16),
             const Divider(),
+
+            // <<<--- 4. ADD THE SWITCH UI ELEMENT HERE ---
+            SwitchListTile(
+              title: const Text('Private Venue'),
+              subtitle: const Text('Will not be shared in the cloud'),
+              value: _isPrivateVenue,
+              onChanged: (bool value) {
+                setState(() {
+                  _isPrivateVenue = value;
+                });
+              },
+              contentPadding: const EdgeInsets.symmetric(horizontal: 0),
+              dense: true,
+            ),
+            const SizedBox(height: 8),
 
             // Contact Person
             Row(

@@ -19,14 +19,14 @@ class CalculatorSummaryView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final detailLabelStyle = const TextStyle(fontWeight: FontWeight.bold);
-    final detailValueStyle = TextStyle(color: Colors.grey.shade700, fontSize: 14);
+    final detailValueStyle = TextStyle(color: Colors.lightBlue, fontSize: 14);
     final rateValueStyle = const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Review Calculated Details:", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        const Divider(height: 20, thickness: 1),
+        //const Text("Review Calculated Details:", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const Divider(height: 10, thickness: 1),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Total Pay:', style: detailLabelStyle), Text('\$${totalPay?.toStringAsFixed(0) ?? 'N/A'}', style: detailValueStyle)]),
         const SizedBox(height: 4),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Gig Length:', style: detailLabelStyle), Text('${gigLengthHours?.toStringAsFixed(1) ?? 'N/A'} hrs', style: detailValueStyle)]),

@@ -17,10 +17,8 @@ class StoredLocation {
   String? comment;
   bool isArchived;
   final bool isMuted;
+  final bool isPrivate; // <<<--- 1. ADD NEW PROPERTY
 
-  // --- REPLACED ---
-  // The old single jam properties are removed.
-  // --- NEW ---
   final List<JamSession> jamSessions; // <<<--- NEW LIST PROPERTY
 
   final VenueContact? contact;
@@ -40,6 +38,7 @@ class StoredLocation {
     this.isArchived = false,
     this.jamSessions = const [], // <<<--- INITIALIZE THE LIST
     this.isMuted = false,
+    this.isPrivate = false, // <<<--- 2. ADD TO CONSTRUCTOR WITH DEFAULT
     this.contact,
     this.venueNotes,
     this.venueNotesUrl,
@@ -62,6 +61,7 @@ class StoredLocation {
     // <<<--- SERIALIZE THE LIST OF JAMS
     'jamSessions': jamSessions.map((js) => js.toJson()).toList(),
     'isMuted': isMuted,
+    'isPrivate': isPrivate, // <<<--- 3. ADD TO toJson FOR SAVING
     'contact': contact?.toJson(),
     'venueNotes': venueNotes,
     'venueNotesUrl': venueNotesUrl,
@@ -111,6 +111,7 @@ class StoredLocation {
       isArchived: json['isArchived'] as bool? ?? false,
       jamSessions: sessions, // <<<--- ASSIGN THE LIST
       isMuted: json['isMuted'] as bool? ?? false,
+      isPrivate: json['isPrivate'] as bool? ?? false, // <<<--- 4. ADD TO fromJson FOR LOADING
       contact: json['contact'] != null ? VenueContact.fromJson(json['contact']) : null,
       venueNotes: json['venueNotes'] as String?,
       venueNotesUrl: json['venueNotesUrl'] as String?,
@@ -129,6 +130,7 @@ class StoredLocation {
     bool? isArchived,
     List<JamSession>? jamSessions, // <<<--- UPDATE TO LIST
     bool? isMuted,
+    bool? isPrivate, // <<<--- 5. ADD TO copyWith
     VenueContact? contact,
     ValueGetter<String?>? venueNotes,
     ValueGetter<String?>? venueNotesUrl,
@@ -145,6 +147,7 @@ class StoredLocation {
       isArchived: isArchived ?? this.isArchived,
       jamSessions: jamSessions ?? this.jamSessions, // <<<--- COPY LIST
       isMuted: isMuted ?? this.isMuted,
+      isPrivate: isPrivate ?? this.isPrivate, // <<<--- AND HERE
       contact: contact ?? this.contact,
       venueNotes: venueNotes != null ? venueNotes() : this.venueNotes,
       venueNotesUrl: venueNotesUrl != null ? venueNotesUrl() : this.venueNotesUrl,

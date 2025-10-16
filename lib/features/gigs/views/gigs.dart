@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart'; // Import TableCalendar
@@ -21,6 +22,8 @@ import 'package:the_money_gigs/core/services/gig_embed_service.dart';
 // Add this line with your other imports
 import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
+
+import '../../app_demo/providers/demo_provider.dart';
 
 
 
@@ -53,6 +56,20 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   static const String _keyGigsList = 'gigs_list';
   static const String _keySavedLocations = 'saved_locations';
 
+  final Gig _demoGig = Gig(
+    id: DemoProvider.demoGigId,
+    venueName: 'Kroger Marketplace',
+    address: '4613 Marburg Ave, Cincinnati, OH 45209',
+    placeId: DemoProvider.demoVenuePlaceId,
+    latitude: 39.1602761,
+    longitude: -84.429593,
+    dateTime: DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, 20, 0),
+    pay: 250,
+    gigLengthHours: 3,
+    driveSetupTimeHours: 2.5,
+    rehearsalLengthHours: 2,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +78,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     _tabController.addListener(_handleTabSelection);
     _loadAllDataForGigsPage();
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
+
+    // Listen for changes in the demo state.
+    Provider.of<DemoProvider>(context, listen: false)
+        .addListener(_onDemoStateChanged);
   }
 
   @override
@@ -68,7 +89,34 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     globalRefreshNotifier.removeListener(_handleGlobalRefresh);
     _tabController.removeListener(_handleTabSelection);
     _tabController.dispose();
+
+    Provider.of<DemoProvider>(context, listen: false)
+        .removeListener(_onDemoStateChanged);
     super.dispose();
+  }
+
+  void _onDemoStateChanged() {
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+
+    if (!mounted) return;
+
+    setState(() {
+      // When we get to the "My Gigs" step, add the demo gig to the list.
+      if (demoProvider.isDemoModeActive && demoProvider.currentStep == 13) {
+        // Ensure it's not already in the list to prevent duplicates.
+        _loadedGigs.removeWhere((g) => g.id == _demoGig.id);
+        _loadedGigs.insert(0, _demoGig); // Add to the top of the list.
+        _loadedGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      }
+      // When the demo ends, remove the demo gig.
+      else if (!demoProvider.isDemoModeActive) {
+        _loadedGigs.removeWhere((g) => g.id == _demoGig.id);
+      }
+
+      // Refresh the calendar events after modifying the list.
+      _prepareCalendarEvents();
+      _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
+    });
   }
 
   void _handleGlobalRefresh() {
@@ -79,7 +127,13 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   Future<void> _loadAllDataForGigsPage() async {
     await _loadVenues();
-    await _loadGigs();
+
+    // This is the critical change: by checking `mounted` again,
+    // we ensure that the state update from `_loadVenues` has had a chance
+    // to complete before we proceed to load the gigs.
+    if (mounted) {
+      await _loadGigs();
+    }
   }
 
   void _handleTabSelection() {
@@ -102,8 +156,21 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading actual gigs: $e')));
       }
     }
+    // --- START OF FIX: Add [PRIVATE] prefix to actual gigs ---
+    List<Gig> processedActualGigs = actualGigs.map((gig) {
+      final sourceVenue = _allKnownVenues.firstWhere(
+            (v) => v.placeId == gig.placeId,
+        orElse: () => StoredLocation(placeId: '', name: gig.venueName, address: '', coordinates: const LatLng(0,0)),
+      );
+      if (sourceVenue.isPrivate) {
+        return gig.copyWith(venueName: '[PRIVATE] ${gig.venueName}');
+      }
+      return gig;
+    }).toList();
+    // --- END OF FIX ---
+
     List<Gig> jamOpenMicGigs = _generateJamOpenMicGigs();
-    List<Gig> allDisplayGigs = [...actualGigs, ...jamOpenMicGigs];
+    List<Gig> allDisplayGigs = [...processedActualGigs, ...jamOpenMicGigs]; // Use processed list
     allDisplayGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
     if (mounted) {
       setState(() {
@@ -115,8 +182,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-  // *** THE REFACTORED METHOD ***
-  // This method is now completely rewritten to support the new data model.
   List<Gig> _generateJamOpenMicGigs() {
     List<Gig> jamGigs = [];
     DateTime today = DateTime.now();
@@ -189,7 +254,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     return jamGigs;
   }
 
-  // This method is updated to take a JamSession object as a parameter.
   void _addJamGigIfApplicable(List<Gig> jamGigs, StoredLocation venue, JamSession session, DateTime dateOfJam) {
     DateTime jamDateTime = DateTime(
       dateOfJam.year,
@@ -206,7 +270,14 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       bool alreadyExists = jamGigs.any((g) => g.id == uniqueId);
 
       if (!alreadyExists) {
-        String venueName = "[JAM] ${venue.name}";
+        // --- START OF FIX: Add [PRIVATE] prefix to jam gigs ---
+        String venueName = venue.name;
+        if (venue.isPrivate) {
+          venueName = '[PRIVATE] $venueName';
+        }
+        venueName = '[JAM] $venueName'; // Prepend [JAM] after [PRIVATE]
+        // --- END OF FIX ---
+
         if(session.style != null && session.style!.isNotEmpty){
           venueName += " (${session.style})";
         }
@@ -229,7 +300,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       }
     }
   }
-  // *** END OF REFACTORED SECTION ***
 
   DateTime _findNextDayOfWeek(DateTime startDate, int targetWeekday) {
     DateTime date = DateTime(startDate.year, startDate.month, startDate.day);
@@ -316,6 +386,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   void _launchNotesPageForGig(Gig gig) {
     if (gig.isJamOpenMic) return;
+    // Strip [PRIVATE] from the gig name before passing to dialog, if needed, though ID is primary
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => NotesPage(editingGigId: gig.id),
@@ -324,9 +395,22 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   Future<void> _launchBookingDialogForGig(Gig gigToEdit) async {
-    if (gigToEdit.isJamOpenMic) {
+    // We must use the original gig data for editing, not the one with a modified name.
+    final String? originalGigId = gigToEdit.isJamOpenMic ? null : gigToEdit.id;
+    Gig? originalGig;
+    if (originalGigId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      final gigsJson = prefs.getString(_keyGigsList) ?? '[]';
+      final allGigs = Gig.decode(gigsJson);
+      originalGig = allGigs.firstWhere((g) => g.id == originalGigId, orElse: () => gigToEdit);
+    } else {
+      originalGig = gigToEdit;
+    }
+
+
+    if (originalGig.isJamOpenMic) {
       final sourceVenue = _allKnownVenues.firstWhere(
-            (v) => v.placeId == gigToEdit.placeId,
+            (v) => v.placeId == originalGig!.placeId,
         orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0,0)),
       );
       if (sourceVenue.placeId.isEmpty) return;
@@ -369,20 +453,60 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return BookingDialog(
-          editingGig: gigToEdit,
+          editingGig: originalGig, // Pass the original gig object
           googleApiKey: googleApiKey,
           existingGigs: _loadedGigs.where((g) => !g.isJamOpenMic).toList(),
         );
       },
     );
+
+    // --- START OF REVISED CODE ---
     if (result is GigEditResult && result.action != GigEditResultAction.noChange) {
       if (result.action == GigEditResultAction.updated && result.gig != null) {
+        // This part for updating is correct and does not need to change.
+        // It's good practice to notify and reload.
+        globalRefreshNotifier.notify();
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" updated.'), backgroundColor: Colors.green));
+
       } else if (result.action == GigEditResultAction.deleted && result.gig != null) {
+        // THIS IS THE FIX: Call the _deleteGig method.
+        await _deleteGig(result.gig!);
+
+        // Show the confirmation SnackBar *after* the deletion has been processed.
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" cancelled.'), backgroundColor: Colors.orange));
       }
     } else if (result is Gig) {
+      // This part for handling a newly booked gig is also correct.
+      // It's good practice to notify and reload.
+      globalRefreshNotifier.notify();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('New gig "${result.venueName}" booked.'), backgroundColor: Colors.green));
+    }
+    // --- END OF REVISED CODE ---
+  }
+
+  Future<void> _deleteGig(Gig gigToDelete) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Get the current list of gigs from SharedPreferences
+      final String? gigsJsonString = prefs.getString(_keyGigsList);
+      List<Gig> allGigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
+
+      // Remove the gig with the matching ID
+      allGigs.removeWhere((g) => g.id == gigToDelete.id);
+
+      // Save the updated list back to SharedPreferences
+      await prefs.setString(_keyGigsList, Gig.encode(allGigs));
+
+      // Notify the rest of the app (like the map) that data has changed
+      globalRefreshNotifier.notify();
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error cancelling gig: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -405,17 +529,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-  /*Future<void> _deleteGig(Gig gigToDelete) async {
-    if (gigToDelete.isJamOpenMic) return;
-    if (!mounted) return;
-    final prefs = await SharedPreferences.getInstance();
-    final String? gigsJsonString = prefs.getString(_keyGigsList);
-    List<Gig> currentActualGigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
-    currentActualGigs.removeWhere((gig) => gig.id == gigToDelete.id);
-    await prefs.setString(_keyGigsList, Gig.encode(currentActualGigs));
-    globalRefreshNotifier.notify();
-  }
-*/
   Future<void> _archiveVenue(StoredLocation venueToArchive) async {
     if (!mounted) return;
     // CORRECTED: Only check for REAL, non-jam gigs.
@@ -521,7 +634,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     DateTime comparisonDate = DateTime.now();
     return _loadedGigs.where((gig) {
       bool venueMatch = (gig.placeId != null && gig.placeId!.isNotEmpty && gig.placeId == venue.placeId) ||
-          (gig.placeId == null && gig.venueName.toLowerCase() == venue.name.toLowerCase());
+          (gig.placeId == null && gig.venueName.toLowerCase().contains(venue.name.toLowerCase()));
       bool dateMatch = true;
       if (futureOnly) {
         DateTime gigDayStart = DateTime(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day);
@@ -535,7 +648,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   Future<void> _showVenueDetailsDialog(StoredLocation venue) async {
     if (!mounted) return;
 
-    // --- Data loading remains the same ---
     List<Gig> upcomingGigsAtVenue = _getGigsForVenue(venue, futureOnly: true)
         .where((g) => !g.isJamOpenMic)
         .toList();
@@ -552,28 +664,19 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
               Navigator.of(dialogContext).pop();
               _archiveVenue(venue);
             },
-            // *** THE FIX IS HERE ***
-            // The onBook callback now accepts the venue object and implements the refresh logic.
             onBook: (venueToSaveAndBook) async {
-              // 1. Save the venue immediately. This ensures it's in the user's stored list.
               await _updateAndSaveLocationReview(venueToSaveAndBook);
 
-              // 2. Launch the booking dialog.
               final newGig = await _launchBookingDialogForVenue(venueToSaveAndBook);
 
-              // 3. Close the current details dialog.
               if(mounted) Navigator.of(dialogContext).pop();
 
-              // 4. If a gig was successfully booked, re-show the details dialog with fresh data.
               if (newGig != null) {
-                // A slight delay ensures the first dialog has fully closed before opening the new one.
                 await Future.delayed(const Duration(milliseconds: 100));
-                // Call this method again to show a refreshed dialog.
                 _showVenueDetailsDialog(venueToSaveAndBook);
               }
             },
             onSave: (updatedVenue) {
-              // This handles the "SAVE/CLOSE" button press.
               _updateAndSaveLocationReview(updatedVenue);
             },
             onEditContact: () {
@@ -623,7 +726,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   Future<Gig?> _launchBookingDialogForVenue(StoredLocation venue) async {
     const String googleApiKey = String.fromEnvironment('GOOGLE_API_KEY');
-    // Return the result of showDialog
     return await showDialog<Gig>(
       context: context,
       barrierDismissible: false,
@@ -637,26 +739,17 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     );
   }
 
-  /*Future<void> _openVenueInMap(StoredLocation venue) async {
-    final lat = venue.coordinates.latitude;
-    final lng = venue.coordinates.longitude;
-    final String query = Uri.encodeComponent(venue.address.isNotEmpty ? venue.address : venue.name);
-    Uri mapUri = Uri.parse('https://maps.google.com/maps?q=$query&ll=$lat,$lng');
-    if (await canLaunchUrl(mapUri)) {
-      await launchUrl(mapUri, mode: LaunchMode.externalApplication);
-    } else {
-      Uri fallbackMapUri = Uri.parse('https://maps.google.com/maps?q=$lat,$lng');
-      if (await canLaunchUrl(fallbackMapUri)) {
-        await launchUrl(fallbackMapUri, mode: LaunchMode.externalApplication);
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open map application.')));
-      }
-    }
-  }*/
-
   void _showEmbedCodeDialog() {
-    // Generate the HTML code using the service
-    final String embedCode = GigEmbedService.generateEmbedCode(_loadedGigs);
+    // --- START OF FIX: Filter private gigs before exporting ---
+    final publicGigs = _loadedGigs.where((gig) {
+      final sourceVenue = _allKnownVenues.firstWhere(
+            (v) => v.placeId == gig.placeId,
+        orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0,0)),
+      );
+      return !sourceVenue.isPrivate;
+    }).toList();
+    final String embedCode = GigEmbedService.generateEmbedCode(publicGigs);
+    // --- END OF FIX ---
 
     showDialog(
       context: context,
@@ -669,7 +762,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Copy the HTML code below and paste it into your website editor. This will display a list of your upcoming gigs.',
+                  'Copy the HTML code below and paste it into your website editor. This will display a list of your upcoming public gigs.',
                   style: TextStyle(fontSize: 14),
                 ),
                 const SizedBox(height: 16),
@@ -777,7 +870,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _buildGigsViewToggle(),
-              // <<< MODIFIED: Add the export button here
               if (hasUpcomingGigs)
                 OutlinedButton.icon(
                   icon: const Icon(Icons.code, size: 18),
@@ -1042,6 +1134,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         final bool hasVenueNotes = (venue.venueNotes?.isNotEmpty ?? false) || (venue.venueNotesUrl?.isNotEmpty ?? false);
         final venueContact = venue.contact;
 
+        // --- START OF FIX: Add [PRIVATE] prefix to venue name ---
+        String venueDisplayName = venue.isPrivate ? '[PRIVATE] ${venue.name}' : venue.name;
+        // --- END OF FIX ---
+
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
           child: ListTile(
@@ -1049,7 +1145,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             title: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(child: Text(venue.name, style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
+                Expanded(child: Text(venueDisplayName, style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
                 if (futureGigsCount > 0)
                   Text(
                     ' ($futureGigsCount upcoming)',

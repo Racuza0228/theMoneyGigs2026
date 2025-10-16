@@ -17,7 +17,7 @@ class ExportService {
   static const String _keySavedLocations = 'saved_locations';
 
   /// Gathers all necessary data from SharedPreferences and prepares it for export.
-  /// Sensitive data like hourly rates and pay amounts are obfuscated.
+  /// Sensitive data is filtered or obfuscated for privacy.
   Future<Map<String, dynamic>> _gatherData(SharedPreferences prefs) async {
     // 1. Gather Profile Data and Obfuscate Rate
     Map<String, dynamic> profileData = {
@@ -30,44 +30,70 @@ class ExportService {
       'has_min_hourly_rate': (prefs.getInt(_keyMinHourlyRate) ?? 0) > 0,
     };
 
-    // 2. Gather and Obfuscate Gigs Data
+    // --- START OF REVISED SECTION ---
+
+    // 2. Gather, Filter, and Obfuscate Venues Data
+    final List<String>? venuesJsonStringList = prefs.getStringList(_keySavedLocations);
+    final List<Map<String, dynamic>> allVenuesList = venuesJsonStringList != null
+        ? venuesJsonStringList.map((v) => jsonDecode(v) as Map<String, dynamic>).toList()
+        : [];
+
+    // Identify the placeIds of all private venues.
+    final Set<String> privateVenuePlaceIds = allVenuesList
+        .where((venue) => venue['isPrivate'] == true)
+        .map((venue) => venue['placeId'] as String)
+        .toSet();
+
+    // Create the final list of venues for export:
+    // - Filter out all private venues.
+    // - Obfuscate the contact details of the remaining public venues.
+    final List<Map<String, dynamic>> sanitizedVenuesList = allVenuesList
+        .where((venue) => !(venue['isPrivate'] as bool? ?? false))
+        .map((venue) {
+      final newVenue = Map<String, dynamic>.from(venue);
+      // OBFUSCATION: If contact info exists, replace it with a placeholder.
+      if (newVenue.containsKey('contact') && newVenue['contact'] != null) {
+        newVenue['contact'] = {
+          'name': 'CONTACT_NAME',
+          'phone': 'CONTACT_PHONE',
+          'email': 'CONTACT_EMAIL',
+        };
+      }
+      return newVenue;
+    }).toList();
+
+
+    // 3. Gather, Filter, and Obfuscate Gigs Data
     final String? gigsJsonString = prefs.getString(_keyGigsList);
-    List<dynamic> gigsList = gigsJsonString != null && gigsJsonString.isNotEmpty
+    List<dynamic> allGigsList = gigsJsonString != null && gigsJsonString.isNotEmpty
         ? jsonDecode(gigsJsonString)
         : [];
 
-    // <<< START OF CHANGE >>>
-    // Iterate through each gig to obfuscate the 'pay' field.
-    List<dynamic> obfuscatedGigsList = [];
-    if (gigsList.isNotEmpty) {
-      obfuscatedGigsList = gigsList.map((gig) {
-        if (gig is Map<String, dynamic>) {
-          // Create a mutable copy of the gig map
-          final newGig = Map<String, dynamic>.from(gig);
-          // Check if the 'pay' field exists and has a value
-          if (newGig.containsKey('pay') && newGig['pay'] != null) {
-            // Replace the actual amount with the static placeholder
-            newGig['pay'] = "\$PAY";
-          }
-          return newGig;
-        }
-        return gig; // Return non-map items as-is (though they shouldn't exist)
-      }).toList();
-    }
-    // <<< END OF CHANGE >>>
+    // Create the final list of gigs for export:
+    // - Filter out any gigs associated with a private venue.
+    // - Obfuscate the 'pay' field for the remaining public gigs.
+    final List<dynamic> sanitizedGigsList = allGigsList
+        .where((gig) {
+      // Keep the gig only if its placeId is NOT in our set of private venue IDs.
+      return gig is Map<String, dynamic> && !privateVenuePlaceIds.contains(gig['placeId']);
+    })
+        .map((gig) {
+      // This will only run on public gigs now.
+      final newGig = Map<String, dynamic>.from(gig as Map<String, dynamic>);
+      // OBFUSCATION: Replace the actual 'pay' amount with a placeholder.
+      if (newGig.containsKey('pay') && newGig['pay'] != null) {
+        newGig['pay'] = "\$PAY";
+      }
+      return newGig;
+    }).toList();
 
-    // 3. Gather Venues Data
-    final List<String>? venuesJsonStringList = prefs.getStringList(_keySavedLocations);
-    final List<dynamic> venuesList = venuesJsonStringList != null
-        ? venuesJsonStringList.map((v) => jsonDecode(v)).toList()
-        : [];
+    // --- END OF REVISED SECTION ---
 
-    // 4. Combine all data into a single map
+    // 4. Combine all sanitized data into a single map
     return {
       'profile': profileData,
-      // Use the new obfuscated list for the export
-      'gigs': obfuscatedGigsList,
-      'venues': venuesList,
+      'gigs': sanitizedGigsList,
+      'venues': sanitizedVenuesList,
       'exported_at': DateTime.now().toIso8601String(),
       'app_version': '1.0.0', // TODO: Replace with a dynamic app version loader if possible
     };
@@ -84,7 +110,7 @@ class ExportService {
       String prettyJsonData = const JsonEncoder.withIndent('  ').convert(allData);
 
       // Prepare the 'mailto' link with the recipient, subject, and body.
-      final String emailTo = 'clifford.adams.ii@gmail.com';
+      final String emailTo = 'cliff@themoneygigs.com';
       final String emailSubject = 'MoneyGigs App - User Data Export';
       final Uri emailLaunchUri = Uri(
         scheme: 'mailto',

@@ -4,6 +4,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart'; // <<< IMPORTED
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
@@ -13,10 +14,29 @@ import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 
-// --- NEW IMPORTS FOR REFACTORED UI WIDGETS ---
+// --- DEMO AND WIDGET IMPORTS ---
+import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
+import 'package:the_money_gigs/features/app_demo/widgets/tutorial_overlay.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/calculator_summary_view.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/financial_inputs_view.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/venue_selection_view.dart';
+
+// Helper class for the demo script within the dialog
+class _DialogDemoStep {
+  final GlobalKey key;
+  final String text;
+  final Alignment alignment;
+  final VoidCallback? onBefore;
+  final bool hideNextButton;
+
+  _DialogDemoStep({
+    required this.key,
+    required this.text,
+    required this.alignment,
+    this.onBefore,
+    this.hideNextButton = false,
+  });
+}
 
 enum GigEditResultAction { updated, deleted, noChange }
 
@@ -72,7 +92,7 @@ class _BookingDialogState extends State<BookingDialog> {
     coordinates: const LatLng(0, 0),
   );
 
-  final AudioPlayer _audioPlayer = AudioPlayer(); // <<< ADD THIS INSTANCE
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   final _formKey = GlobalKey<FormState>();
 
@@ -108,14 +128,20 @@ class _BookingDialogState extends State<BookingDialog> {
   String? _gigNotesUrl;
 
   bool _isFetchingDriveTime = false;
+  bool _isPrivateVenue = false;
 
-  // --- CHANGE #1: Store address components instead of a single string ---
   String? _profileAddress1;
   String? _profileCity;
   String? _profileState;
   String? _profileZipCode;
-  // A string to display in the UI that the user has an address set.
   String? _userProfileAddressForDisplay;
+
+  // --- DEMO KEYS & SCRIPT ---
+  final GlobalKey _summaryKey = GlobalKey();
+  final GlobalKey _venueSectionKey = GlobalKey();
+  final GlobalKey _dateSectionKey = GlobalKey();
+  final GlobalKey _confirmBtnKey = GlobalKey();
+  late final List<_DialogDemoStep> _demoScript;
 
   bool get _isEditingMode => widget.editingGig != null;
   bool get _isCalculatorMode => widget.calculatedHourlyRate != null && !_isEditingMode && widget.preselectedVenue == null;
@@ -127,14 +153,48 @@ class _BookingDialogState extends State<BookingDialog> {
   void initState() {
     super.initState();
     _initializeDialogState();
-    //globalRefreshNotifier.addListener(_onGlobalRefresh);
     _newVenueAddressFocusNode.addListener(_onAddressFocusChange);
+
+    // Initialize the dialog's demo script
+    _demoScript = [
+      _DialogDemoStep(
+        key: _summaryKey,
+        text: 'Notice the pay and time details have been transferred.',
+        alignment: Alignment.center,
+      ),
+      _DialogDemoStep(
+        key: _venueSectionKey,
+        text: 'Next, provide the venue info. We\'ll use a favorite place of mine to play, Oakley Kroger. Stop in, catch a performance, and say Hello to Jay sometime!',
+        alignment: Alignment.bottomCenter,
+        onBefore: () {
+          _newVenueNameController.text = "Kroger Marketplace";
+          _newVenueAddressController.text = "4613 Marburg Ave, Cincinnati, OH 45209";
+        },
+      ),
+      _DialogDemoStep(
+        key: _dateSectionKey,
+        text: 'Now we pick the date and time for the gig. We can use today at 8.',
+        alignment: Alignment.topCenter,
+        onBefore: () {
+          if (mounted) {
+            setState(() {
+              _selectedDate = DateTime.now();
+            });
+          }
+        },
+      ),
+      _DialogDemoStep(
+        key: _confirmBtnKey,
+        text: 'Finally, Confirm & Book! Click that button!',
+        alignment: Alignment.center,
+        hideNextButton: true,
+      ),
+    ];
   }
 
   @override
   void dispose() {
     _audioPlayer.dispose();
-    //globalRefreshNotifier.removeListener(_onGlobalRefresh);
     _newVenueNameController.dispose();
     _newVenueAddressController.dispose();
     _newVenueAddressFocusNode.removeListener(_onAddressFocusChange);
@@ -160,14 +220,6 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-
-  /*void _onGlobalRefresh() {
-    if (mounted) {
-      _initializeDialogState();
-    }
-  }*/
-
-  // --- CHANGE #2: Load individual address components ---
   Future<void> _loadProfileAddress() async {
     final prefs = await SharedPreferences.getInstance();
     _profileAddress1 = prefs.getString('profile_address1');
@@ -175,7 +227,6 @@ class _BookingDialogState extends State<BookingDialog> {
     _profileState = prefs.getString('profile_state');
     _profileZipCode = prefs.getString('profile_zip_code');
 
-    // For UI display purposes only
     if ((_profileCity != null && _profileCity!.isNotEmpty) || (_profileZipCode != null && _profileZipCode!.isNotEmpty)) {
       _userProfileAddressForDisplay = '${_profileCity ?? ''}, ${_profileState ?? ''} ${_profileZipCode ?? ''}'.trim();
     } else {
@@ -185,7 +236,6 @@ class _BookingDialogState extends State<BookingDialog> {
 
   Future<void> _initializeDialogState() async {
     await _loadProfileAddress();
-
     await _loadAllKnownVenuesInternal();
     if (!mounted) return;
 
@@ -212,12 +262,11 @@ class _BookingDialogState extends State<BookingDialog> {
 
       await _handleVenueSelection(_selectedVenue);
 
-      //if (!_payController.hasListeners) {
-        _payController.addListener(_calculateDynamicRate);
-        _gigLengthController.addListener(_calculateDynamicRate);
-        _driveSetupController.addListener(_calculateDynamicRate);
-        _rehearsalController.addListener(_calculateDynamicRate);
-      //}
+      _payController.addListener(_calculateDynamicRate);
+      _gigLengthController.addListener(_calculateDynamicRate);
+      _driveSetupController.addListener(_calculateDynamicRate);
+      _rehearsalController.addListener(_calculateDynamicRate);
+
       _calculateDynamicRate();
     } else {
       _selectedTime = _defaultGigTime;
@@ -228,6 +277,7 @@ class _BookingDialogState extends State<BookingDialog> {
 
       if (_isMapModeNewGig) {
         _selectedVenue = widget.preselectedVenue;
+        _isPrivateVenue = _selectedVenue?.isPrivate ?? false;
         _isAddNewVenue = false;
         _isLoadingVenues = false;
         await _handleVenueSelection(_selectedVenue);
@@ -236,7 +286,7 @@ class _BookingDialogState extends State<BookingDialog> {
         _driveSetupController.addListener(_calculateDynamicRate);
         _rehearsalController.addListener(_calculateDynamicRate);
         _calculateDynamicRate();
-      } else { // Calculator Mode
+      } else {
         await _loadSelectableVenuesForDropdown(defaultToAddVenue: true);
       }
     }
@@ -245,7 +295,6 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  // Helper method to create the service on-demand
   DriveTimeService _createDriveTimeService() {
     return DriveTimeService(
       googleApiKey: widget.googleApiKey,
@@ -267,6 +316,11 @@ class _BookingDialogState extends State<BookingDialog> {
       setState(() {
         _selectedVenue = venue;
         _isAddNewVenue = (venue?.placeId == _addNewVenuePlaceholder.placeId);
+        if (!_isAddNewVenue) {
+          _isPrivateVenue = venue?.isPrivate ?? false;
+        } else {
+          _isPrivateVenue = false;
+        }
       });
       return;
     }
@@ -278,8 +332,6 @@ class _BookingDialogState extends State<BookingDialog> {
 
     if (venue.driveDuration == null) {
       setState(() => _isFetchingDriveTime = true);
-
-      // --- CHANGE #3: Use the new helper method to create the service ---
       final driveTimeService = _createDriveTimeService();
       final updatedVenue = await driveTimeService.fetchAndCacheDriveTime(venue);
 
@@ -296,13 +348,10 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  // --- CHANGE #4: Update this method to use the new service constructor ---
   Future<void> _fetchDriveTimeForManualAddress() async {
     final address = _newVenueAddressController.text.trim();
     if (address.isEmpty) return;
-
     setState(() => _isFetchingDriveTime = true);
-
     LatLng? coords = await _geocodeAddress(address);
     if (coords != null && mounted) {
       final tempVenue = StoredLocation(
@@ -311,36 +360,79 @@ class _BookingDialogState extends State<BookingDialog> {
         coordinates: coords,
         placeId: 'temp_manual_place_id_${DateTime.now().millisecondsSinceEpoch}',
       );
-
-      // Use the helper method to get a fresh service instance
       final driveTimeService = _createDriveTimeService();
       final resultVenue = await driveTimeService.fetchAndCacheDriveTime(tempVenue);
-
       if (mounted) {
         setState(() {
-          // Since this is a temporary venue, we don't update the main venue list,
-          // just display the calculated time for the user.
           _manualDriveDurationString = resultVenue?.driveDuration;
           _manualDriveDistance = resultVenue?.driveDistance;
         });
       }
     }
-
     if (mounted) {
       setState(() => _isFetchingDriveTime = false);
     }
   }
 
- /* void _showNotesPage() {
-    if (widget.editingGig == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => NotesPage(editingGigId: widget.editingGig!.id),
-      ),
-    );
-  }*/
-
   void _confirmAction() async {
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    // When on the final demo step, clicking this button just finishes the demo.
+    if (demoProvider.isDemoModeActive && demoProvider.currentStep == 11) {
+      // ... we will now perform a REAL (but temporary) save operation.
+      if (mounted) setState(() => _isProcessing = true);
+
+      // 1. Create the demo venue and gig objects using the static IDs from DemoProvider
+      const LatLng demoCoords = LatLng(39.1602761, -84.429593);
+      final demoVenue = StoredLocation(
+        placeId: DemoProvider.demoVenuePlaceId,
+        name: 'Kroger Marketplace',
+        address: '4613 Marburg Ave, Cincinnati, OH 45209',
+        coordinates: demoCoords,
+      );
+
+      final demoGig = Gig(
+        id: DemoProvider.demoGigId,
+        venueName: demoVenue.name,
+        address: demoVenue.address,
+        placeId: demoVenue.placeId,
+        latitude: demoCoords.latitude,
+        longitude: demoCoords.longitude,
+        dateTime: DateTime.now().add(const Duration(days: 7)),
+        pay: 250,
+        gigLengthHours: 3,
+        driveSetupTimeHours: 2.5,
+        rehearsalLengthHours: 2,
+      );
+
+      // 2. Save them to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+
+      // Save Venue
+      _allKnownVenuesInternal.removeWhere((v) => v.placeId == DemoProvider.demoVenuePlaceId);
+      _allKnownVenuesInternal.add(demoVenue);
+      final List<String> updatedLocationsJson = _allKnownVenuesInternal.map((loc) => jsonEncode(loc.toJson())).toList();
+      await prefs.setStringList('saved_locations', updatedLocationsJson);
+
+      // Save Gig
+      final String? gigsJsonString = prefs.getString('gigs_list');
+      List<Gig> allGigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
+      allGigs.removeWhere((g) => g.id == DemoProvider.demoGigId);
+      allGigs.add(demoGig);
+      await prefs.setString('gigs_list', Gig.encode(allGigs));
+
+      // 3. Notify the app that data has changed, so the map updates itself
+      if (mounted) context.read<GlobalRefreshNotifier>().notify();
+
+      if (mounted) setState(() => _isProcessing = false);
+
+      // 4. Proceed with the rest of the demo flow
+      await _audioPlayer.play(AssetSource('sounds/thetone.wav'));
+      await Future.delayed(const Duration(milliseconds: 2500));
+      demoProvider.nextStep(); // Advance to step 12
+      if (mounted) Navigator.of(context).pop("demo_completed");
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) return;
     if (_selectedDate == null || _selectedTime == null) {
       if (mounted) {
@@ -387,10 +479,16 @@ class _BookingDialogState extends State<BookingDialog> {
         address: newVenueAddress,
         coordinates: coords,
         isArchived: false,
+        isPrivate: _isPrivateVenue,
       );
       await _saveNewVenueToPrefs(finalVenueDetails);
     } else {
-      finalVenueDetails = _selectedVenue!;
+      if (_selectedVenue!.isPrivate != _isPrivateVenue) {
+        finalVenueDetails = _selectedVenue!.copyWith(isPrivate: _isPrivateVenue);
+        await _saveNewVenueToPrefs(finalVenueDetails);
+      } else {
+        finalVenueDetails = _selectedVenue!;
+      }
     }
     if (!mounted) {
       setState(() => _isProcessing = false);
@@ -437,12 +535,8 @@ class _BookingDialogState extends State<BookingDialog> {
       }
     }
 
-    // Play the success tone just before closing the dialog with a success result.
     await _audioPlayer.play(AssetSource('sounds/thetone.wav'));
-
-    // A brief delay can prevent the sound from being cut off by the dialog closing animation.
     await Future.delayed(const Duration(milliseconds: 2500));
-
     if (mounted) setState(() => _isProcessing = false);
 
     if (_isEditingMode) {
@@ -518,7 +612,6 @@ class _BookingDialogState extends State<BookingDialog> {
           _isAddNewVenue = (initialSelection?.placeId == _addNewVenuePlaceholder.placeId);
         });
       }
-
     } catch (e) {
       print("Error filtering/setting up venues for dropdown: $e");
       if (mounted) {
@@ -655,132 +748,205 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode) || _isFetchingDriveTime;
+  // --- DEMO OVERLAY BUILDER ---
+  Widget _buildDemoOverlay(DemoProvider demoProvider) {
+    // This dialog handles steps 8, 9, 10, 11.
+    // The demo provider's step is 1-based, our script list is 0-based.
+    // We subtract 8 to map the global step to the local script index.
+    int currentStepIndex = demoProvider.currentStep - 8;
 
-    String dialogTitle = "Book New Gig";
-    String confirmButtonText = "CONFIRM & BOOK";
-    if (_isEditingMode) {
-      dialogTitle = "Edit Gig Details";
-      confirmButtonText = "UPDATE GIG";
-    } else if (_isMapModeNewGig) {
-      dialogTitle = "Book Gig at Selected Venue";
+    if (currentStepIndex < 0 || currentStepIndex >= _demoScript.length) {
+      return const SizedBox.shrink();
     }
 
-    return AlertDialog(
-      title: Text(dialogTitle),
-      contentPadding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 0.0),
-      content: Stack(
-        children: [
-          Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              child: ListBody(
-                children: <Widget>[
-                  if (_isCalculatorMode)
-                    CalculatorSummaryView(
-                      totalPay: widget.totalPay,
-                      gigLengthHours: widget.gigLengthHours,
-                      driveSetupTimeHours: widget.driveSetupTimeHours,
-                      rehearsalTimeHours: widget.rehearsalTimeHours,
-                      calculatedHourlyRate: widget.calculatedHourlyRate,
-                    )
-                  else ...[
-                    FinancialInputsView(
-                      payController: _payController,
-                      gigLengthController: _gigLengthController,
-                      driveSetupController: _driveSetupController,
-                      rehearsalController: _rehearsalController,
-                      showDynamicRate: _isMapModeNewGig || _isEditingMode,
-                      dynamicRateString: _dynamicRateString,
-                      dynamicRateResultColor: _dynamicRateResultColor,
-                    ),
-                    const Divider(height: 24, thickness: 1),
-                  ],
+    final step = _demoScript[currentStepIndex];
 
-                  Text( _isEditingMode ? "Venue & Schedule:" : (_isMapModeNewGig ? "Confirm Venue & Schedule:" : "Venue & Schedule:"), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
+    if (step.onBefore != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Ensure state changes from onBefore happen after the build.
+        step.onBefore!();
+      });
+    }
 
-                  VenueSelectionView(
-                    isStaticDisplay: _isEditingMode || _isMapModeNewGig,
-                    isLoading: _isLoadingVenues,
-                    selectedVenue: _selectedVenue,
-                    selectableVenues: _selectableVenuesForDropdown,
-                    addNewVenuePlaceholder: _addNewVenuePlaceholder,
-                    onVenueSelected: (venue) {
-                      _handleVenueSelection(venue);
-                    },
+    return TutorialOverlay(
+      key: ValueKey('dialog_demo_step_${demoProvider.currentStep}'),
+      highlightKey: step.key,
+      instructionalText: step.text,
+      textAlignment: step.alignment,
+      hideNextButton: step.hideNextButton,
+      onNext: () {
+        if (demoProvider.currentStep == 11) { // Final step for this dialog
+          demoProvider.endDemo();
+        } else {
+          demoProvider.nextStep();
+        }
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Wrap the entire build method in a Consumer to get the demoProvider
+    return Consumer<DemoProvider>(
+      builder: (context, demoProvider, child) {
+        bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode) || _isFetchingDriveTime;
+
+        String dialogTitle = "Book New Gig";
+        String confirmButtonText = "CONFIRM & BOOK";
+        if (_isEditingMode) {
+          dialogTitle = "Edit Gig Details";
+          confirmButtonText = "UPDATE GIG";
+        } else if (_isMapModeNewGig) {
+          dialogTitle = "Book Gig at Selected Venue";
+        }
+
+        return AlertDialog(
+          title: Text(dialogTitle),
+          contentPadding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 0.0),
+          content: Stack(
+            children: [
+              Form(
+                key: _formKey,
+                child: SingleChildScrollView(
+                  child: ListBody(
+                    children: <Widget>[
+                      if (_isCalculatorMode)
+                      // Assign key to the summary view
+                        Container(
+                          key: _summaryKey,
+                          child: CalculatorSummaryView(
+                            totalPay: widget.totalPay,
+                            gigLengthHours: widget.gigLengthHours,
+                            driveSetupTimeHours: widget.driveSetupTimeHours,
+                            rehearsalTimeHours: widget.rehearsalTimeHours,
+                            calculatedHourlyRate: widget.calculatedHourlyRate,
+                          ),
+                        )
+                      else ...[
+                        FinancialInputsView(
+                          payController: _payController,
+                          gigLengthController: _gigLengthController,
+                          driveSetupController: _driveSetupController,
+                          rehearsalController: _rehearsalController,
+                          showDynamicRate: _isMapModeNewGig || _isEditingMode,
+                          dynamicRateString: _dynamicRateString,
+                          dynamicRateResultColor: _dynamicRateResultColor,
+                        ),
+                        const Divider(height: 24, thickness: 1),
+                      ],
+
+                      // Assign key to the venue section
+                      Container(
+                        key: _venueSectionKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text( _isEditingMode ? "Venue & Schedule:" : (_isMapModeNewGig ? "Confirm Venue & Schedule:" : "Venue & Schedule:"), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 12),
+                            VenueSelectionView(
+                              isStaticDisplay: _isEditingMode || _isMapModeNewGig,
+                              isLoading: _isLoadingVenues,
+                              selectedVenue: _selectedVenue,
+                              selectableVenues: _selectableVenuesForDropdown,
+                              addNewVenuePlaceholder: _addNewVenuePlaceholder,
+                              onVenueSelected: (venue) {
+                                _handleVenueSelection(venue);
+                              },
+                            ),
+                            if (_isAddNewVenue) ...[
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                controller: _newVenueNameController,
+                                decoration: const InputDecoration(labelText: 'New Venue Name*', border: OutlineInputBorder()),
+                                validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue name is required'; } return null; },
+                              ),
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _newVenueAddressController,
+                                focusNode: _newVenueAddressFocusNode,
+                                decoration: const InputDecoration(labelText: 'New Venue Address*', hintText: 'e.g., 1600 Amphitheatre Pkwy, MV, CA', border: OutlineInputBorder()),
+                                onFieldSubmitted: (_) => _fetchDriveTimeForManualAddress(),
+                                validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue address is required'; } return null; },
+                              ),
+                              const SizedBox(height: 8),
+                              SwitchListTile(
+                                title: const Text('Private Venue'),
+                                subtitle: const Text('Never shared'),
+                                value: _isPrivateVenue,
+                                onChanged: (bool value) {
+                                  setState((){ _isPrivateVenue = value;
+                                  });
+                                },
+                                dense: true,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                              )
+                            ],
+                            DriveTimeDisplay(
+                              isFetching: _isFetchingDriveTime,
+                              duration: _isAddNewVenue ? _manualDriveDurationString : _selectedVenue?.driveDuration,
+                              distance: _isAddNewVenue ? _manualDriveDistance : _selectedVenue?.driveDistance,
+                              userProfileAddress: _userProfileAddressForDisplay,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      // Assign key to the date/time section
+                      Container(
+                        key: _dateSectionKey,
+                        child: Column(
+                          children: [
+                            Row( children: [ Expanded(child: Text(_selectedDate == null ? 'No date selected*' : 'Date: ${DateFormat.yMMMEd().format(_selectedDate!)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickDate(context), child: const Text('SELECT DATE')), ], ),
+                            Row( children: [ Expanded(child: Text(_selectedTime == null ? 'No time selected*' : 'Time: ${_selectedTime!.format(context)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickTime(context), child: const Text('SELECT TIME')), ], ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                   ),
-
-                  if (_isAddNewVenue) ...[
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _newVenueNameController,
-                      decoration: const InputDecoration(labelText: 'New Venue Name*', border: OutlineInputBorder()),
-                      validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue name is required'; } return null; },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _newVenueAddressController,
-                      focusNode: _newVenueAddressFocusNode,
-                      decoration: const InputDecoration(labelText: 'New Venue Address*', hintText: 'e.g., 1600 Amphitheatre Pkwy, MV, CA', border: OutlineInputBorder()),
-                      onFieldSubmitted: (_) => _fetchDriveTimeForManualAddress(),
-                      validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue address is required'; } return null; },
-                    ),
-                    const SizedBox(height: 4),
-                  ],
-
-                  DriveTimeDisplay(
-                    isFetching: _isFetchingDriveTime,
-                    duration: _isAddNewVenue ? _manualDriveDurationString : _selectedVenue?.driveDuration,
-                    distance: _isAddNewVenue ? _manualDriveDistance : _selectedVenue?.driveDistance,
-                    // Use the new display-only address string
-                    userProfileAddress: _userProfileAddressForDisplay,
-                  ),
-
-                  const SizedBox(height: 4),
-
-                  Row( children: [ Expanded(child: Text(_selectedDate == null ? 'No date selected*' : 'Date: ${DateFormat.yMMMEd().format(_selectedDate!)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickDate(context), child: const Text('SELECT DATE')), ], ),
-                  Row( children: [ Expanded(child: Text(_selectedTime == null ? 'No time selected*' : 'Time: ${_selectedTime!.format(context)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickTime(context), child: const Text('SELECT TIME')), ], ),
-                  const SizedBox(height: 10),
-                ],
+                ),
               ),
-            ),
+              if (isDialogProcessing) Positioned.fill( child: Container( color: Colors.black.withOpacity(0.3), child: const Center(child: CircularProgressIndicator()), ), ),
+              // Add the demo overlay for the dialog
+              if (demoProvider.isDemoModeActive)
+                _buildDemoOverlay(demoProvider),
+            ],
           ),
-          if (isDialogProcessing) Positioned.fill( child: Container( color: Colors.black.withOpacity(0.3), child: const Center(child: CircularProgressIndicator()), ), ),
-        ],
-      ),
-      actionsAlignment: MainAxisAlignment.spaceBetween,
-      actionsPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      actions: <Widget>[
-        if (_isEditingMode)
-          TextButton(
-            child: Text('CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            onPressed: isDialogProcessing ? null : _handleGigCancellation,
-          )
-        else
-          TextButton(
-            child: const Text('CANCEL'),
-            onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(),
-          ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+          actionsAlignment: MainAxisAlignment.spaceBetween,
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          actions: <Widget>[
             if (_isEditingMode)
               TextButton(
-                child: const Text('CLOSE'),
-                onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange)),
+                child: Text('CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                onPressed: isDialogProcessing ? null : _handleGigCancellation,
+              )
+            // In non-edit mode, show the regular "CANCEL" button that just closes the dialog.
+            else
+              TextButton(
+                child: const Text('CANCEL'),
+                onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(),
               ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom( backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary ),
-              onPressed: isDialogProcessing ? null : _confirmAction,
-              child: isDialogProcessing ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))) : Text(confirmButtonText),
+            // Assign key to the confirm button's parent Row
+            Row(
+              key: _confirmBtnKey,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isEditingMode)
+                  TextButton(
+                    child: const Text('CLOSE'),
+                    onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange)),
+                  ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom( backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary ),
+                  onPressed: isDialogProcessing ? null : _confirmAction,
+                  child: isDialogProcessing ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))) : Text(confirmButtonText),
+                ),
+              ],
             ),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 }

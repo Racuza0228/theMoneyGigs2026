@@ -1,12 +1,13 @@
-// lib/profile.dart
+// lib/features/profile/views/profile.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:the_money_gigs/main.dart';
 import 'package:the_money_gigs/core/services/export_service.dart';
+import 'package:the_money_gigs/global_refresh_notifier.dart'; // <<< 1. IMPORT THE CORRECT NOTIFIER
 
 import '../../app_demo/providers/demo_provider.dart';
 
@@ -35,9 +36,10 @@ class _ProfilePageState extends State<ProfilePage> {
   static const String _keyState = 'profile_state';
   static const String _keyZipCode = 'profile_zip_code';
   static const String _keyMinHourlyRate = 'profile_min_hourly_rate';
-  // <<< NOTE: _keyGigsList and _keySavedLocations are no longer needed here >>>
   final List<String> _usStates = [ 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY' ];
 
+  // --- All methods from initState() to _buildSectionTitle() are unchanged ---
+  // --- They are included here for completeness of the file. ---
   @override
   void initState() {
     super.initState();
@@ -150,7 +152,6 @@ class _ProfilePageState extends State<ProfilePage> {
     if (!mounted) return;
     setState(() => _isExporting = true);
 
-    // Delegate the entire export process to the ExportService
     final exportService = ExportService();
     await exportService.export(context);
 
@@ -282,7 +283,11 @@ class _ProfilePageState extends State<ProfilePage> {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        return const BackgroundSettingsDialog();
+        // <<< 2. PASS THE CORRECT NOTIFIER TYPE TO THE DIALOG
+        return Provider.value(
+          value: context.read<GlobalRefreshNotifier>(),
+          child: const BackgroundSettingsDialog(),
+        );
       },
     );
   }
@@ -494,17 +499,16 @@ class _ProfilePageState extends State<ProfilePage> {
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
                 ),
               ),
+              const SizedBox(height: 16),
               ElevatedButton.icon(
                 icon: const Icon(Icons.replay_outlined),
                 label: const Text('Replay App Demo'),
                 onPressed: () {
-                  // Use the Provider to call the reset method
-                  context.read<DemoProvider>().resetDemoFlagForTesting();
-                  // Show a confirmation message
+                  context.read<DemoProvider>().startDemo();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Demo has been reset. It will run on the next app restart.'),
-                      backgroundColor: Colors.green,
+                      content: Text('Starting demo now...'),
+                      backgroundColor: Colors.blueAccent,
                     ),
                   );
                 },
@@ -514,6 +518,23 @@ class _ProfilePageState extends State<ProfilePage> {
                   padding: const EdgeInsets.symmetric(vertical: 12.0),
                   textStyle: const TextStyle(fontSize: 15),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              // <<< 3. NEW "RESET DEMO" BUTTON FOR TESTING
+              TextButton(
+                onPressed: () {
+                  context.read<DemoProvider>().resetDemoFlagForTesting();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Demo flag reset. The demo will run on the next app restart.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+                child: const Text(
+                  'Reset Demo on Next Launch (for testing)',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ),
               const SizedBox(height: 20.0),
@@ -590,7 +611,8 @@ class BackgroundSettingsDialog extends StatelessWidget {
     }
 
     if (context.mounted) {
-      Provider.of<RefreshNotifier>(context, listen: false).notify();
+      // <<< 4. USE THE CORRECT NOTIFIER TYPE
+      context.read<GlobalRefreshNotifier>().notify();
       Navigator.of(context).pop(); // Pop the parent dialog
     }
   }
@@ -599,11 +621,7 @@ class BackgroundSettingsDialog extends StatelessWidget {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
     if (image != null && context.mounted) {
-      // Pass the context from the ListTile tap
       _setBackground(context, pageIndex, imagePath: image.path);
-    } else {
-      // If image picking was cancelled, we might need to pop the dialog
-      // depending on the flow. Here, since it's a sub-action, we do nothing.
     }
   }
 
