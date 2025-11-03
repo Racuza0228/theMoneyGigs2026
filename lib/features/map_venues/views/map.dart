@@ -1,12 +1,14 @@
 // lib/features/map_venues/views/map.dart
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/services.dart' show rootBundle;
+import 'dart:ui' as ui;
+import 'package:flutter/services.dart' show rootBundle, Uint8List, ByteData;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:permission_handler/permission_handler.dart';
 
 // --- Project Imports ---
 import 'package:the_money_gigs/core/services/places_service.dart';
@@ -29,6 +31,8 @@ class MapPage extends StatefulWidget {
 }
 
 class _MapPageState extends State<MapPage> {
+  bool _isMapReady = false;
+
   final Completer<GoogleMapController> _controller = Completer<GoogleMapController>();
   Set<Marker> _markers = {};
 
@@ -55,11 +59,27 @@ class _MapPageState extends State<MapPage> {
     zoom: 10.0,
   );
 
+  // --- START OF MODIFICATIONS ---
+
   @override
   void initState() {
     super.initState();
+    // Replace the multiple calls in initState with a single async method
+    // to control the order of operations.
+    _initializeMapPage();
+  }
+
+  /// This new method controls the initialization sequence to prevent race conditions.
+  Future<void> _initializeMapPage() async {
+    // 1. First, wait for the permission check to complete.
+    await _checkAndRequestLocationPermission();
+
+    // After an async gap, always check if the widget is still mounted.
+    if (!mounted) return;
+
+    // 2. Now that permissions are handled, initialize services and add listeners.
     _placesService = PlacesService(apiKey: _googleApiKey);
-    _loadAllMapData();
+
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
     Provider.of<DemoProvider>(context, listen: false)
         .addListener(_onDemoStateChanged);
@@ -75,7 +95,9 @@ class _MapPageState extends State<MapPage> {
       });
     });
 
+    // 3. Check for the Google API Key.
     if (_googleApiKey.isEmpty) {
+      // Use addPostFrameCallback to ensure the widget is built before showing a SnackBar.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -87,6 +109,65 @@ class _MapPageState extends State<MapPage> {
           );
         }
       });
+    }
+
+    // 4. Finally, with everything set up, load the map data.
+    await _loadAllMapData();
+
+    if (mounted) {
+      setState(() {
+        _isMapReady = true;
+      });
+    }
+  }
+
+  // --- END OF MODIFICATIONS ---
+
+  Future<void> _checkAndRequestLocationPermission() async {
+    var status = await Permission.location.status;
+    // Check if the permission is already granted
+    if (status.isGranted) {
+      print("Location permission is already granted.");
+      return; // No need to do anything else
+    }
+
+    // If permission is denied, request it
+    if (status.isDenied) {
+      // We await the request itself.
+      var result = await Permission.location.request();
+      if (result.isGranted) {
+        print("Location permission granted after request.");
+      } else {
+        print("Location permission was denied by the user.");
+      }
+    }
+
+    // If permission is permanently denied, guide user to app settings
+    if (status.isPermanentlyDenied) {
+      print("Location permission is permanently denied. Showing a dialog.");
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Location Permission Required"),
+            content: const Text(
+                "This app needs location permission to show your position on the map. Please enable it in the app settings."),
+            actions: [
+              TextButton(
+                child: const Text("Cancel"),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              TextButton(
+                child: const Text("Open Settings"),
+                onPressed: () {
+                  openAppSettings();
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
 
@@ -118,20 +199,17 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  // This method now ONLY moves the camera. The data loading handles the marker.
   Future<void> _focusOnDemoGigLocation() async {
-    // Ensure the custom marker icon has been loaded before we try to use it.
     if (!_controller.isCompleted || _gigMarkerIcon == null) return;
 
     final GoogleMapController mapController = await _controller.future;
 
-    // Use the accurate coordinates for the demo gig.
     const LatLng demoGigLocation = LatLng(39.1602761, -84.429593);
 
     final demoMarker = Marker(
-      markerId: MarkerId(DemoProvider.demoGigId), // Use the static demo ID
+      markerId: MarkerId(DemoProvider.demoGigId),
       position: demoGigLocation,
-      icon: _gigMarkerIcon!, // Use the custom "upcoming gig" icon
+      icon: _gigMarkerIcon!,
       infoWindow: const InfoWindow(
         title: 'Kroger Marketplace',
         snippet: 'Your newly booked demo gig!',
@@ -140,7 +218,6 @@ class _MapPageState extends State<MapPage> {
 
     if (mounted) {
       setState(() {
-        // Add the demo marker to the existing set of markers.
         _markers.add(demoMarker);
       });
     }
@@ -151,14 +228,10 @@ class _MapPageState extends State<MapPage> {
     );
   }
 
-  // All other methods from _loadCustomMarker to _updateMarkers remain unchanged...
-  // Just ensure they are present in your file. I will include them for completeness.
-
   Future<void> _loadCustomMarker() async {
-    final icon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(12, 12)),
-      'assets/mapmarker.png',
-    );
+    final Uint8List markerIconBytes = await _getBytesFromAsset('assets/mapmarker.png', 100);
+    final BitmapDescriptor icon = BitmapDescriptor.fromBytes(markerIconBytes);
+
     if (mounted) {
       setState(() {
         _gigMarkerIcon = icon;
@@ -166,6 +239,14 @@ class _MapPageState extends State<MapPage> {
       });
     }
   }
+
+  Future<Uint8List> _getBytesFromAsset(String path, int width) async {
+    ByteData data = await rootBundle.load(path);
+    ui.Codec codec = await ui.instantiateImageCodec(data.buffer.asUint8List(), targetWidth: width);
+    ui.FrameInfo fi = await codec.getNextFrame();
+    return (await fi.image.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
+  }
+
 
   Future<void> _fetchAutocompleteResults(String input) async {
     final results = await _placesService.fetchAutocompleteResults(input);
@@ -210,10 +291,8 @@ class _MapPageState extends State<MapPage> {
     if (!mounted) return;
     setState(() { _isLoading = true; });
 
-    // Load the custom marker first to ensure it's ready for the demo.
     await _loadCustomMarker();
 
-    // Load the rest of the data in parallel.
     await Future.wait([
       _loadSavedLocations(),
       _loadJamSessionAsset(),
@@ -355,17 +434,13 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  // *** DEFINITIVE FIX FOR THE ERROR AT LINE 363 ***
   Future<void> _saveLocation(PlaceApiResult placeToSave) async {
-    // Use .any() for a simple boolean check, which is safer and cleaner.
     if (_allKnownMapVenues.any((loc) => loc.placeId == placeToSave.placeId)) {
-      // Find the existing location safely and show its details.
       final existingLoc = _allKnownMapVenues.firstWhere((l) => l.placeId == placeToSave.placeId);
       _showLocationDetailsDialog(existingLoc);
       return;
     }
 
-    // If it doesn't exist, create and save the new location.
     final newLocation = StoredLocation(
       placeId: placeToSave.placeId,
       name: placeToSave.name,
@@ -383,10 +458,6 @@ class _MapPageState extends State<MapPage> {
     }
     _showLocationDetailsDialog(newLocation);
   }
-
-  // The rest of your methods (_handleMapTap, _askToAddOrViewVenue, etc.) are correct.
-  // I will include them here to ensure the file is complete and correct.
-  // ... (All other methods from _handleMapTap to build are included below without changes)
 
   Future<void> _handleMapTap(LatLng tappedPoint) async {
     if (_googleApiKey.isEmpty) return;
@@ -609,11 +680,15 @@ class _MapPageState extends State<MapPage> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        GoogleMap(
+        // Use the _isMapReady flag to control what gets built.
+        _isMapReady
+            ? GoogleMap(
           mapType: MapType.normal,
           initialCameraPosition: _kInitialPosition,
           onMapCreated: (GoogleMapController controller) {
-            if (!_controller.isCompleted) _controller.complete(controller);
+            if (!_controller.isCompleted) {
+              _controller.complete(controller);
+            }
           },
           markers: _markers,
           onTap: (tappedPoint) {
@@ -635,7 +710,14 @@ class _MapPageState extends State<MapPage> {
             top: _isSearchVisible ? 120 : 70,
             bottom: Theme.of(context).platform == TargetPlatform.iOS ? 90 : 60,
           ),
+        )
+        // If the map is NOT ready, show a loading circle instead.
+        // This prevents the GoogleMap widget from ever being created in a bad state.
+            : const Center(
+          child: CircularProgressIndicator(),
         ),
+
+        // The rest of your UI overlay is built on top, which is correct.
         Positioned(
           top: 12.0,
           left: 12.0,
@@ -737,3 +819,4 @@ class _MapPageState extends State<MapPage> {
     );
   }
 }
+

@@ -98,7 +98,7 @@ class TutorialOverlay extends StatelessWidget {
                         if (!hideSkipButton) ...[
                           TextButton(
                             onPressed: () => context.read<DemoProvider>().endDemo(),
-                            child: const Text('Skip Demo', style: TextStyle(color: Colors.white70)),
+                            child: const Text('Exit', style: TextStyle(color: Colors.white70)),
                           ),
                           const SizedBox(width: 20),
                         ],

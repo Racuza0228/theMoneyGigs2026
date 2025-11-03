@@ -1,5 +1,8 @@
-import 'package:flutter/material.dart';
-import 'package:the_money_gigs/features/map_venues/models/venue_model.dart'; // For enums
+// lib/features/map_venues/models/jam_session_model.dartimport 'package:flutter/material.dart';
+import 'package:the_money_gigs/core/models/enums.dart'; // <<< CORRECT: Imports the shared enums
+import 'package:flutter/material.dart'; // <<< ADD THIS IMPORT for TimeOfDay
+
+// The import for venue_model.dart has been removed.
 
 class JamSession {
   final String id;

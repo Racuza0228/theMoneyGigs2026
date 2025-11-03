@@ -129,7 +129,7 @@ class _GigCalculatorState extends State<GigCalculator> {
       _DemoStep(
         key: _takeGigBtnKey,
         text: 'Now, let\'s book this gig! Tap here to open the booking dialog.',
-        alignment: Alignment.bottomCenter,
+        alignment: Alignment.center,
         hideNextButton: true, // User must click the real button
       ),
     ];

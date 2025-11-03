@@ -2,9 +2,8 @@
 import 'dart:convert';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:provider/provider.dart'; // <<< IMPORTED
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
@@ -13,15 +12,14 @@ import 'package:the_money_gigs/core/widgets/drive_time_display.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
-
-// --- DEMO AND WIDGET IMPORTS ---
+import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
 import 'package:the_money_gigs/features/app_demo/widgets/tutorial_overlay.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/calculator_summary_view.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/financial_inputs_view.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/venue_selection_view.dart';
+import 'package:the_money_gigs/features/gigs/widgets/recurring_gig_dialog.dart';
 
-// Helper class for the demo script within the dialog
 class _DialogDemoStep {
   final GlobalKey key;
   final String text;
@@ -124,8 +122,7 @@ class _BookingDialogState extends State<BookingDialog> {
   bool _isGeocoding = false;
   bool _isProcessing = false;
 
-  String? _gigNotes;
-  String? _gigNotesUrl;
+  Gig? _editableGig;
 
   bool _isFetchingDriveTime = false;
   bool _isPrivateVenue = false;
@@ -146,6 +143,7 @@ class _BookingDialogState extends State<BookingDialog> {
   bool get _isEditingMode => widget.editingGig != null;
   bool get _isCalculatorMode => widget.calculatedHourlyRate != null && !_isEditingMode && widget.preselectedVenue == null;
   bool get _isMapModeNewGig => widget.preselectedVenue != null && !_isEditingMode;
+  bool _isInitialized = false;
 
   final TimeOfDay _defaultGigTime = const TimeOfDay(hour: 20, minute: 0);
 
@@ -155,7 +153,6 @@ class _BookingDialogState extends State<BookingDialog> {
     _initializeDialogState();
     _newVenueAddressFocusNode.addListener(_onAddressFocusChange);
 
-    // Initialize the dialog's demo script
     _demoScript = [
       _DialogDemoStep(
         key: _summaryKey,
@@ -240,22 +237,50 @@ class _BookingDialogState extends State<BookingDialog> {
     if (!mounted) return;
 
     if (_isEditingMode) {
-      final gigsJson = await SharedPreferences.getInstance().then((p) => p.getString('gigs_list') ?? '[]');
-      final allGigs = Gig.decode(gigsJson);
-      final currentGig = allGigs.firstWhere((g) => g.id == widget.editingGig!.id, orElse: () => widget.editingGig!);
+      // --- (a) DEBUG PRINT: Print the incoming gig data ---
+      print("--- LOADING GIG INTO DIALOG ---");
+      print("Gig ID: ${widget.editingGig!.id}");
+      print("isRecurring: ${widget.editingGig!.isRecurring}");
+      print("Frequency: ${widget.editingGig!.recurrenceFrequency}");
+      print("Day: ${widget.editingGig!.recurrenceDay}");
+      print("Nth Value: ${widget.editingGig!.recurrenceNthValue}");
+      print("End Date: ${widget.editingGig!.recurrenceEndDate}");
+      print("---------------------------------");
 
-      _payController = TextEditingController(text: currentGig.pay.toStringAsFixed(0));
-      _gigLengthController = TextEditingController(text: currentGig.gigLengthHours.toStringAsFixed(1));
-      _driveSetupController = TextEditingController(text: currentGig.driveSetupTimeHours.toStringAsFixed(1));
-      _rehearsalController = TextEditingController(text: currentGig.rehearsalLengthHours.toStringAsFixed(1));
-      _selectedDate = currentGig.dateTime;
-      _selectedTime = TimeOfDay.fromDateTime(currentGig.dateTime);
-      _gigNotes = currentGig.notes;
-      _gigNotesUrl = currentGig.notesUrl;
+      _editableGig = widget.editingGig!.copyWith(
+        // Explicitly copy all fields to ensure a complete state object
+        id: widget.editingGig!.id,
+        venueName: widget.editingGig!.venueName,
+        latitude: widget.editingGig!.latitude,
+        longitude: widget.editingGig!.longitude,
+        address: widget.editingGig!.address,
+        placeId: widget.editingGig!.placeId,
+        dateTime: widget.editingGig!.dateTime,
+        pay: widget.editingGig!.pay,
+        gigLengthHours: widget.editingGig!.gigLengthHours,
+        driveSetupTimeHours: widget.editingGig!.driveSetupTimeHours,
+        rehearsalLengthHours: widget.editingGig!.rehearsalLengthHours,
+        isJamOpenMic: widget.editingGig!.isJamOpenMic,
+        notes: widget.editingGig!.notes,
+        notesUrl: widget.editingGig!.notesUrl,
+        isRecurring: widget.editingGig!.isRecurring,
+        recurrenceFrequency: widget.editingGig!.recurrenceFrequency,
+        recurrenceDay: widget.editingGig!.recurrenceDay,
+        recurrenceNthValue: widget.editingGig!.recurrenceNthValue,
+        recurrenceEndDate: widget.editingGig!.recurrenceEndDate,
+      );
+
+      _payController = TextEditingController(text: _editableGig!.pay.toStringAsFixed(0));
+      _gigLengthController = TextEditingController(text: _editableGig!.gigLengthHours.toStringAsFixed(1));
+      _driveSetupController = TextEditingController(text: _editableGig!.driveSetupTimeHours.toStringAsFixed(1));
+      _rehearsalController = TextEditingController(text: _editableGig!.rehearsalLengthHours.toStringAsFixed(1));
+
+      _selectedDate = _editableGig!.dateTime;
+      _selectedTime = TimeOfDay.fromDateTime(_editableGig!.dateTime);
 
       _selectedVenue = _allKnownVenuesInternal.firstWhere(
-            (v) => (currentGig.placeId != null && v.placeId == currentGig.placeId) || (v.name == currentGig.venueName && v.address == currentGig.address),
-        orElse: () => StoredLocation( placeId: currentGig.placeId ?? 'edited_${currentGig.id}', name: currentGig.venueName, address: currentGig.address, coordinates: LatLng(currentGig.latitude, currentGig.longitude), isArchived: true),
+            (v) => (_editableGig!.placeId != null && v.placeId == _editableGig!.placeId) || (v.name == _editableGig!.venueName && v.address == _editableGig!.address),
+        orElse: () => StoredLocation( placeId: _editableGig!.placeId ?? 'edited_${_editableGig!.id}', name: _editableGig!.venueName, address: _editableGig!.address, coordinates: LatLng(_editableGig!.latitude, _editableGig!.longitude), isArchived: true),
       );
       _isAddNewVenue = false;
       _isLoadingVenues = false;
@@ -266,14 +291,29 @@ class _BookingDialogState extends State<BookingDialog> {
       _gigLengthController.addListener(_calculateDynamicRate);
       _driveSetupController.addListener(_calculateDynamicRate);
       _rehearsalController.addListener(_calculateDynamicRate);
-
       _calculateDynamicRate();
+
     } else {
-      _selectedTime = _defaultGigTime;
+
       _payController = TextEditingController(text: widget.totalPay?.toStringAsFixed(0) ?? '');
       _gigLengthController = TextEditingController(text: widget.gigLengthHours?.toStringAsFixed(1) ?? '');
       _driveSetupController = TextEditingController(text: widget.driveSetupTimeHours?.toStringAsFixed(1) ?? '');
       _rehearsalController = TextEditingController(text: widget.rehearsalTimeHours?.toStringAsFixed(1) ?? '');
+
+      _editableGig = Gig(
+        id: 'new_${DateTime.now().millisecondsSinceEpoch}',
+        venueName: widget.preselectedVenue?.name ?? '',
+        address: widget.preselectedVenue?.address ?? '',
+        latitude: widget.preselectedVenue?.coordinates.latitude ?? 0,
+        longitude: widget.preselectedVenue?.coordinates.longitude ?? 0,
+        dateTime: DateTime.now(), // Default, will be updated by picker
+        pay: widget.totalPay ?? 0,
+        gigLengthHours: widget.gigLengthHours ?? 0,
+        driveSetupTimeHours: widget.driveSetupTimeHours ?? 0,
+        rehearsalLengthHours: widget.rehearsalTimeHours ?? 0,
+      );
+
+      _selectedTime = _defaultGigTime;
 
       if (_isMapModeNewGig) {
         _selectedVenue = widget.preselectedVenue;
@@ -281,6 +321,7 @@ class _BookingDialogState extends State<BookingDialog> {
         _isAddNewVenue = false;
         _isLoadingVenues = false;
         await _handleVenueSelection(_selectedVenue);
+
         _payController.addListener(_calculateDynamicRate);
         _gigLengthController.addListener(_calculateDynamicRate);
         _driveSetupController.addListener(_calculateDynamicRate);
@@ -291,7 +332,9 @@ class _BookingDialogState extends State<BookingDialog> {
       }
     }
     if (mounted) {
-      setState(() {});
+      setState(() {
+        _isInitialized = true;
+      });
     }
   }
 
@@ -374,11 +417,42 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
+  Future<void> _openRecurringGigSettings() async {
+    if (_editableGig == null) return;
+
+    Gig gigForDialog = _editableGig!;
+    if (!_editableGig!.isRecurring) {
+      gigForDialog = _editableGig!.copyWith(
+        isRecurring: true, // Check the box by default
+        recurrenceFrequency: JamFrequencyType.weekly, // Default to weekly
+        recurrenceDay: DayOfWeek.values[_editableGig!.dateTime.weekday - 1],
+      );
+    }
+
+    final updatedGig = await showDialog<Gig>(
+      context: context,
+      builder: (context) => RecurringGigDialog(gig: gigForDialog),
+    );
+
+    if (updatedGig != null && mounted) {
+      setState(() {
+        _editableGig = updatedGig; // Update the state with changes from the dialog
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_editableGig!.isRecurring ? 'Recurrence settings applied.' : 'Recurrence settings removed.'),
+          duration: const Duration(seconds: 2),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+        ),
+      );
+    }
+  }
+
   void _confirmAction() async {
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     // When on the final demo step, clicking this button just finishes the demo.
     if (demoProvider.isDemoModeActive && demoProvider.currentStep == 11) {
-      // ... we will now perform a REAL (but temporary) save operation.
+      // ... demo logic remains the same
       if (mounted) setState(() => _isProcessing = true);
 
       // 1. Create the demo venue and gig objects using the static IDs from DemoProvider
@@ -433,6 +507,7 @@ class _BookingDialogState extends State<BookingDialog> {
       return;
     }
 
+
     if (!_formKey.currentState!.validate()) return;
     if (_selectedDate == null || _selectedTime == null) {
       if (mounted) {
@@ -443,19 +518,11 @@ class _BookingDialogState extends State<BookingDialog> {
     if (mounted) setState(() => _isProcessing = true);
 
     final DateTime selectedFullDateTime = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _selectedTime!.hour, _selectedTime!.minute);
-    double finalPay, finalGigLengthHours, finalDriveSetupHours, finalRehearsalHours;
 
-    if (_isCalculatorMode) {
-      finalPay = widget.totalPay!;
-      finalGigLengthHours = widget.gigLengthHours!;
-      finalDriveSetupHours = widget.driveSetupTimeHours!;
-      finalRehearsalHours = widget.rehearsalTimeHours!;
-    } else {
-      finalPay = double.tryParse(_payController.text) ?? 0;
-      finalGigLengthHours = double.tryParse(_gigLengthController.text) ?? 0;
-      finalDriveSetupHours = double.tryParse(_driveSetupController.text) ?? 0;
-      finalRehearsalHours = double.tryParse(_rehearsalController.text) ?? 0;
-    }
+    final double finalPay = double.tryParse(_payController.text) ?? 0;
+    final double finalGigLengthHours = double.tryParse(_gigLengthController.text) ?? 0;
+    final double finalDriveSetupHours = double.tryParse(_driveSetupController.text) ?? 0;
+    final double finalRehearsalHours = double.tryParse(_rehearsalController.text) ?? 0;
 
     StoredLocation finalVenueDetails;
     if (_isAddNewVenue) {
@@ -495,9 +562,7 @@ class _BookingDialogState extends State<BookingDialog> {
       return;
     }
 
-    final String gigId = _isEditingMode ? widget.editingGig!.id : 'gig_${DateTime.now().millisecondsSinceEpoch}';
-    final Gig newOrUpdatedGigData = Gig(
-      id: gigId,
+    final Gig newOrUpdatedGigData = _editableGig!.copyWith(
       venueName: finalVenueDetails.name,
       latitude: finalVenueDetails.coordinates.latitude,
       longitude: finalVenueDetails.coordinates.longitude,
@@ -508,9 +573,24 @@ class _BookingDialogState extends State<BookingDialog> {
       gigLengthHours: finalGigLengthHours,
       driveSetupTimeHours: finalDriveSetupHours,
       rehearsalLengthHours: finalRehearsalHours,
-      notes: _gigNotes,
-      notesUrl: _gigNotesUrl,
+      notes: _editableGig!.notes,
+      notesUrl: _editableGig!.notesUrl,
+      // EXPLICITLY CARRY OVER THE RECURRENCE SETTINGS
+      isRecurring: _editableGig!.isRecurring,
+      recurrenceFrequency: _editableGig!.recurrenceFrequency,
+      recurrenceDay: _editableGig!.recurrenceDay,
+      recurrenceNthValue: _editableGig!.recurrenceNthValue,
+      recurrenceEndDate: _editableGig!.recurrenceEndDate,
     );
+    // --- (a) DEBUG PRINT: Print the outgoing gig data before saving ---
+    print("--- SAVING GIG FROM DIALOG ---");
+    print("Gig ID: ${newOrUpdatedGigData.id}");
+    print("isRecurring: ${newOrUpdatedGigData.isRecurring}");
+    print("Frequency: ${newOrUpdatedGigData.recurrenceFrequency}");
+    print("Day: ${newOrUpdatedGigData.recurrenceDay}");
+    print("Nth Value: ${newOrUpdatedGigData.recurrenceNthValue}");
+    print("End Date: ${newOrUpdatedGigData.recurrenceEndDate}");
+    print("--------------------------------");
 
     List<Gig> otherGigsToCheck = List.from(widget.existingGigs.where((g) => !g.isJamOpenMic));
     if (_isEditingMode) {
@@ -546,6 +626,7 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
+  // ... (All other helper methods like _loadAllKnownVenuesInternal, _calculateDynamicRate, etc., remain the same)
   Future<void> _loadAllKnownVenuesInternal() async {
     final prefs = await SharedPreferences.getInstance();
     final List<String>? locationsJson = prefs.getStringList('saved_locations');
@@ -748,7 +829,6 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  // --- DEMO OVERLAY BUILDER ---
   Widget _buildDemoOverlay(DemoProvider demoProvider) {
     // This dialog handles steps 8, 9, 10, 11.
     // The demo provider's step is 1-based, our script list is 0-based.
@@ -784,9 +864,21 @@ class _BookingDialogState extends State<BookingDialog> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
-    // Wrap the entire build method in a Consumer to get the demoProvider
+    if (!_isInitialized) {
+      // If initialization is not complete, show a loading indicator
+      // inside a correctly-sized AlertDialog shell.
+      return const AlertDialog(
+        title: Text("Loading..."),
+        content: Center(
+          heightFactor: 2,
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Consumer<DemoProvider>(
       builder: (context, demoProvider, child) {
         bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode) || _isFetchingDriveTime;
@@ -811,7 +903,6 @@ class _BookingDialogState extends State<BookingDialog> {
                   child: ListBody(
                     children: <Widget>[
                       if (_isCalculatorMode)
-                      // Assign key to the summary view
                         Container(
                           key: _summaryKey,
                           child: CalculatorSummaryView(
@@ -834,8 +925,6 @@ class _BookingDialogState extends State<BookingDialog> {
                         ),
                         const Divider(height: 24, thickness: 1),
                       ],
-
-                      // Assign key to the venue section
                       Container(
                         key: _venueSectionKey,
                         child: Column(
@@ -891,7 +980,26 @@ class _BookingDialogState extends State<BookingDialog> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      // Assign key to the date/time section
+
+                      // --- 4. ADD THE BUTTON TO THE UI ---
+                      if (_isEditingMode)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: Center(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.repeat),
+                              label: Text(_editableGig?.isRecurring ?? false ? 'Edit Recurring Settings' : 'Set Up Recurrence'),
+                              onPressed: _openRecurringGigSettings,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _editableGig?.isRecurring ?? false ? Theme.of(context).colorScheme.primary : null,
+                                side: BorderSide(
+                                  color: _editableGig?.isRecurring ?? false ? Theme.of(context).colorScheme.primary : Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+
                       Container(
                         key: _dateSectionKey,
                         child: Column(
@@ -907,7 +1015,6 @@ class _BookingDialogState extends State<BookingDialog> {
                 ),
               ),
               if (isDialogProcessing) Positioned.fill( child: Container( color: Colors.black.withOpacity(0.3), child: const Center(child: CircularProgressIndicator()), ), ),
-              // Add the demo overlay for the dialog
               if (demoProvider.isDemoModeActive)
                 _buildDemoOverlay(demoProvider),
             ],
@@ -920,13 +1027,11 @@ class _BookingDialogState extends State<BookingDialog> {
                 child: Text('CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)),
                 onPressed: isDialogProcessing ? null : _handleGigCancellation,
               )
-            // In non-edit mode, show the regular "CANCEL" button that just closes the dialog.
             else
               TextButton(
                 child: const Text('CANCEL'),
                 onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(),
               ),
-            // Assign key to the confirm button's parent Row
             Row(
               key: _confirmBtnKey,
               mainAxisSize: MainAxisSize.min,

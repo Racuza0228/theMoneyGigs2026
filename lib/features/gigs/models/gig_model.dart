@@ -1,5 +1,6 @@
-// lib/gig_model.dart
-import 'dart:convert'; // For jsonEncode and jsonDecode
+// lib/features/gigs/models/gig_model.dart
+import 'dart:convert';
+import 'package:the_money_gigs/core/models/enums.dart';
 
 class Gig {
   String id;
@@ -8,14 +9,22 @@ class Gig {
   double longitude;
   String address;
   String? placeId;
-  DateTime dateTime;
+  DateTime dateTime; // For recurring gigs, this will be the START date
   double pay;
   double gigLengthHours;
   double driveSetupTimeHours;
   double rehearsalLengthHours;
   bool isJamOpenMic;
   String? notes;
-  String? notesUrl; // <<< NEW: To store a URL for the gig notes
+  String? notesUrl;
+
+  // --- RECURRENCE FIELDS ---
+  bool isRecurring;
+  JamFrequencyType? recurrenceFrequency;
+  DayOfWeek? recurrenceDay;
+  int? recurrenceNthValue;
+  DateTime? recurrenceEndDate;
+  bool isFromRecurring;
 
   Gig({
     required this.id,
@@ -31,9 +40,16 @@ class Gig {
     required this.rehearsalLengthHours,
     this.isJamOpenMic = false,
     this.notes,
-    this.notesUrl, // <<< ADDED to constructor
+    this.notesUrl,
+    this.isRecurring = false,
+    this.recurrenceFrequency,
+    this.recurrenceDay,
+    this.recurrenceNthValue,
+    this.recurrenceEndDate,
+    this.isFromRecurring = false,
   });
 
+  // --- `copyWith` REVERTED TO SIMPLE, CORRECT IMPLEMENTATION ---
   Gig copyWith({
     String? id,
     String? venueName,
@@ -48,7 +64,13 @@ class Gig {
     double? rehearsalLengthHours,
     bool? isJamOpenMic,
     String? notes,
-    String? notesUrl, // <<< ADDED
+    String? notesUrl,
+    bool? isRecurring,
+    JamFrequencyType? recurrenceFrequency,
+    DayOfWeek? recurrenceDay,
+    int? recurrenceNthValue,
+    DateTime? recurrenceEndDate,
+    bool? isFromRecurring,
   }) {
     return Gig(
       id: id ?? this.id,
@@ -64,10 +86,17 @@ class Gig {
       rehearsalLengthHours: rehearsalLengthHours ?? this.rehearsalLengthHours,
       isJamOpenMic: isJamOpenMic ?? this.isJamOpenMic,
       notes: notes ?? this.notes,
-      notesUrl: notesUrl ?? this.notesUrl, // <<< ADDED
+      notesUrl: notesUrl ?? this.notesUrl,
+      isRecurring: isRecurring ?? this.isRecurring,
+      recurrenceFrequency: recurrenceFrequency ?? this.recurrenceFrequency,
+      recurrenceDay: recurrenceDay ?? this.recurrenceDay,
+      recurrenceNthValue: recurrenceNthValue ?? this.recurrenceNthValue,
+      recurrenceEndDate: recurrenceEndDate ?? this.recurrenceEndDate,
+      isFromRecurring: isFromRecurring ?? this.isFromRecurring,
     );
   }
 
+  // --- `toJson` and `fromJson` remain correct ---
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -83,11 +112,25 @@ class Gig {
       'rehearsalLengthHours': rehearsalLengthHours,
       'isJamOpenMic': isJamOpenMic,
       'notes': notes,
-      'notesUrl': notesUrl, // <<< ADDED to JSON
+      'notesUrl': notesUrl,
+      'isRecurring': isRecurring,
+      'recurrenceFrequency': recurrenceFrequency?.toString(),
+      'recurrenceDay': recurrenceDay?.toString(),
+      'recurrenceNthValue': recurrenceNthValue,
+      'recurrenceEndDate': recurrenceEndDate?.toIso8601String(),
     };
   }
 
   factory Gig.fromJson(Map<String, dynamic> json) {
+    T? safeParseEnum<T>(List<T> enumValues, String? value) {
+      if (value == null) return null;
+      try {
+        return enumValues.firstWhere((e) => e.toString() == value);
+      } catch (e) {
+        return null;
+      }
+    }
+
     return Gig(
       id: json['id'] as String,
       venueName: json['venueName'] as String,
@@ -99,17 +142,18 @@ class Gig {
       pay: (json['pay'] as num).toDouble(),
       gigLengthHours: (json['gigLengthHours'] as num).toDouble(),
       driveSetupTimeHours: (json['driveSetupTimeHours'] as num?)?.toDouble() ?? 0.0,
-      rehearsalLengthHours: (json['rehearsalLengthHours'] as num).toDouble(),
+      rehearsalLengthHours: (json['rehearsalLengthHours'] as num?)?.toDouble() ?? 0.0,
       isJamOpenMic: json['isJamOpenMic'] as bool? ?? false,
       notes: json['notes'] as String?,
-      notesUrl: json['notesUrl'] as String?, // <<< ADDED from JSON
+      notesUrl: json['notesUrl'] as String?,
+      isRecurring: json['isRecurring'] as bool? ?? false,
+      recurrenceFrequency: safeParseEnum(JamFrequencyType.values, json['recurrenceFrequency'] as String?),
+      recurrenceDay: safeParseEnum(DayOfWeek.values, json['recurrenceDay'] as String?),
+      recurrenceNthValue: json['recurrenceNthValue'] as int?,
+      recurrenceEndDate: json['recurrenceEndDate'] != null ? DateTime.tryParse(json['recurrenceEndDate'] as String) : null,
     );
   }
 
-  // --- Static methods and equality operators are assumed to be updated accordingly ---
-  // (Full code omitted for brevity but should include `notesUrl` in equality checks)
-
-  // --- Static methods for saving and loading a list of Gigs ---
   static String encode(List<Gig> gigs) => json.encode(
     gigs.map<Map<String, dynamic>>((gig) => gig.toJson()).toList(),
   );
@@ -121,12 +165,7 @@ class Gig {
       return decodedJson
           .map<Gig?>((item) {
         try {
-          if (item is Map<String, dynamic>) {
-            return Gig.fromJson(item);
-          } else {
-            print("Error decoding a single gig: Item is not a Map - $item.");
-            return null;
-          }
+          return Gig.fromJson(item as Map<String, dynamic>);
         } catch (e) {
           print("Error decoding a single gig: $item. Error: $e");
           return null;
@@ -140,27 +179,13 @@ class Gig {
     }
   }
 
-  // --- Equality Operators ---
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
           other is Gig &&
               runtimeType == other.runtimeType &&
-              id == other.id &&
-              venueName == other.venueName &&
-              address == other.address &&
-              dateTime == other.dateTime &&
-              pay == other.pay &&
-              notes == other.notes &&
-              notesUrl == other.notesUrl;
+              id == other.id;
 
   @override
-  int get hashCode =>
-      id.hashCode ^
-      venueName.hashCode ^
-      address.hashCode ^
-      dateTime.hashCode ^
-      pay.hashCode ^
-      notes.hashCode ^
-      notesUrl.hashCode;
+  int get hashCode => id.hashCode;
 }

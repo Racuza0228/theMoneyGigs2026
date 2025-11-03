@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHARED ENUMS
 import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:uuid/uuid.dart';
@@ -91,7 +92,6 @@ class _JamOpenMicDialogState extends State<JamOpenMicDialog> {
                   child: Center(child: Text('No jam sessions configured.', style: TextStyle(fontStyle: FontStyle.italic))),
                 )
               else
-              // *** THE FIX IS HERE ***
                 ListView.builder(
                   shrinkWrap: true, // This is crucial.
                   physics: const NeverScrollableScrollPhysics(), // This is also crucial.

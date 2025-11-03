@@ -7,6 +7,16 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+
+val localProperties = Properties()
+
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
+    println("Successfully loaded local.properties")
+} else {
+    println("WARNING: local.properties not found. API key placeholder will not be replaced.")
+}
 // ------------------- Start of Kotlin Keystore Logic -------------------
 val keystorePropertiesFile = rootProject.file("key.properties")
 println("Looking for key.properties at: ${keystorePropertiesFile.absolutePath}")
@@ -42,6 +52,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode.toInt()
         versionName = flutter.versionName
+        manifestPlaceholders["googleApiKey"] = localProperties.getProperty("googleApiKey")
+
     }
     
     signingConfigs {

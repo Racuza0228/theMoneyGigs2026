@@ -3,6 +3,11 @@ import 'package:in_app_review/in_app_review.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'package:google_maps_flutter_android/google_maps_flutter_android.dart'; // <<< 1. ADD THIS IMPORT
+import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart'; // <<< 1. ADD THIS IMPORT
+
 import 'package:provider/provider.dart';
 import 'features/app_demo/providers/demo_provider.dart';
 import 'features/app_demo/widgets/tutorial_overlay.dart';
@@ -38,6 +43,16 @@ class _GlobalDemoStep {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // final GoogleMapsFlutterPlatform mapsImplementation = GoogleMapsFlutterPlatform.instance;
+  // if (mapsImplementation is GoogleMapsFlutterAndroid) {
+  //   mapsImplementation.useAndroidViewSurface = false;
+  // }
+
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
+
   runApp(
     MultiProvider(
       providers: [

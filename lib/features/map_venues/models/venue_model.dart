@@ -1,12 +1,10 @@
+// lib/features/map_venues/models/venue_model.dart
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHARED ENUMS
 import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
-import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart'; // <<<--- IMPORT THE NEW MODEL
-
-// Enums can stay here
-enum DayOfWeek { monday, tuesday, wednesday, thursday, friday, saturday, sunday }
-enum JamFrequencyType { weekly, biWeekly, monthlySameDay, monthlySameDate, customNthDay }
+import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart';
 
 class StoredLocation {
   final String placeId;
@@ -17,9 +15,9 @@ class StoredLocation {
   String? comment;
   bool isArchived;
   final bool isMuted;
-  final bool isPrivate; // <<<--- 1. ADD NEW PROPERTY
+  final bool isPrivate;
 
-  final List<JamSession> jamSessions; // <<<--- NEW LIST PROPERTY
+  final List<JamSession> jamSessions;
 
   final VenueContact? contact;
   final String? venueNotes;
@@ -36,9 +34,9 @@ class StoredLocation {
     this.rating = 0.0,
     this.comment,
     this.isArchived = false,
-    this.jamSessions = const [], // <<<--- INITIALIZE THE LIST
+    this.jamSessions = const [],
     this.isMuted = false,
-    this.isPrivate = false, // <<<--- 2. ADD TO CONSTRUCTOR WITH DEFAULT
+    this.isPrivate = false,
     this.contact,
     this.venueNotes,
     this.venueNotesUrl,
@@ -46,7 +44,6 @@ class StoredLocation {
     this.driveDistance,
   });
 
-  // Helper getter to determine if the venue has any jams
   bool get hasJamOpenMic => jamSessions.isNotEmpty;
 
   Map<String, dynamic> toJson() => {
@@ -58,10 +55,9 @@ class StoredLocation {
     'rating': rating,
     'comment': comment,
     'isArchived': isArchived,
-    // <<<--- SERIALIZE THE LIST OF JAMS
     'jamSessions': jamSessions.map((js) => js.toJson()).toList(),
     'isMuted': isMuted,
-    'isPrivate': isPrivate, // <<<--- 3. ADD TO toJson FOR SAVING
+    'isPrivate': isPrivate,
     'contact': contact?.toJson(),
     'venueNotes': venueNotes,
     'venueNotesUrl': venueNotesUrl,
@@ -69,19 +65,15 @@ class StoredLocation {
     'driveDistance': driveDistance,
   };
 
-  factory StoredLocation.fromJson(Map<String, dynamic> json) {
-    List<JamSession> sessions = [];
-    if (json['jamSessions'] != null && json['jamSessions'] is List) {
-      // New format: Load from the list
-      sessions = (json['jamSessions'] as List)
-          .map((js) => JamSession.fromJson(js))
-          .toList();
-    } else if (json['hasJamOpenMic'] == true) {
-      // --- BACKWARD COMPATIBILITY ---
-      // If old data is found, convert it to a single JamSession object
-      try {
-        final timeMap = json['jamOpenMicTime'] as Map<String, dynamic>;
-        sessions.add(JamSession(
+  /// A private helper function to handle backward compatibility for old jam session data.
+  static List<JamSession> _migrateOldJamData(Map<String, dynamic> json) {
+    if (json['hasJamOpenMic'] != true) {
+      return [];
+    }
+    try {
+      final timeMap = json['jamOpenMicTime'] as Map<String, dynamic>;
+      return [
+        JamSession(
           id: 'migrated_jam_1',
           style: json['jamStyle'] as String?,
           day: DayOfWeek.values.byName((json['jamOpenMicDay'] as String).split('.').last),
@@ -92,10 +84,24 @@ class StoredLocation {
           ),
           nthValue: json['customNthValue'] as int?,
           showInGigsList: json['addJamToGigs'] as bool? ?? false,
-        ));
-      } catch (_) {
-        // Could not migrate, so we'll have an empty list.
-      }
+        )
+      ];
+    } catch (_) {
+      // Could not migrate, return an empty list to prevent crashes.
+      return [];
+    }
+  }
+
+  factory StoredLocation.fromJson(Map<String, dynamic> json) {
+    List<JamSession> sessions = [];
+    if (json['jamSessions'] != null && json['jamSessions'] is List) {
+      // New, preferred format: Load directly from the list.
+      sessions = (json['jamSessions'] as List)
+          .map((js) => JamSession.fromJson(js))
+          .toList();
+    } else {
+      // Old format detected, attempt to migrate the data.
+      sessions = _migrateOldJamData(json);
     }
 
     return StoredLocation(
@@ -109,9 +115,9 @@ class StoredLocation {
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
       comment: json['comment'] as String?,
       isArchived: json['isArchived'] as bool? ?? false,
-      jamSessions: sessions, // <<<--- ASSIGN THE LIST
+      jamSessions: sessions,
       isMuted: json['isMuted'] as bool? ?? false,
-      isPrivate: json['isPrivate'] as bool? ?? false, // <<<--- 4. ADD TO fromJson FOR LOADING
+      isPrivate: json['isPrivate'] as bool? ?? false,
       contact: json['contact'] != null ? VenueContact.fromJson(json['contact']) : null,
       venueNotes: json['venueNotes'] as String?,
       venueNotesUrl: json['venueNotesUrl'] as String?,
@@ -128,9 +134,9 @@ class StoredLocation {
     double? rating,
     String? comment,
     bool? isArchived,
-    List<JamSession>? jamSessions, // <<<--- UPDATE TO LIST
+    List<JamSession>? jamSessions,
     bool? isMuted,
-    bool? isPrivate, // <<<--- 5. ADD TO copyWith
+    bool? isPrivate,
     VenueContact? contact,
     ValueGetter<String?>? venueNotes,
     ValueGetter<String?>? venueNotesUrl,
@@ -145,9 +151,9 @@ class StoredLocation {
       rating: rating ?? this.rating,
       comment: comment ?? this.comment,
       isArchived: isArchived ?? this.isArchived,
-      jamSessions: jamSessions ?? this.jamSessions, // <<<--- COPY LIST
+      jamSessions: jamSessions ?? this.jamSessions,
       isMuted: isMuted ?? this.isMuted,
-      isPrivate: isPrivate ?? this.isPrivate, // <<<--- AND HERE
+      isPrivate: isPrivate ?? this.isPrivate,
       contact: contact ?? this.contact,
       venueNotes: venueNotes != null ? venueNotes() : this.venueNotes,
       venueNotesUrl: venueNotesUrl != null ? venueNotesUrl() : this.venueNotesUrl,
@@ -156,11 +162,13 @@ class StoredLocation {
     );
   }
 
+  // --- REVISED and CORRECTED ---
+  // This method now correctly displays all jam sessions without any incorrect filtering.
   String jamOpenMicDisplayString(BuildContext context) {
-    if (!hasJamOpenMic) {
+    if (jamSessions.isEmpty) {
       return 'Not set up';
     }
-    // Return a summary of all jams
+    // Return a summary of all configured jam sessions.
     return jamSessions.map((session) {
       String dayString = toBeginningOfSentenceCase(session.day.toString().split('.').last) ?? '';
       String timeString = session.time.format(context);
@@ -169,7 +177,8 @@ class StoredLocation {
     }).join('\n'); // Separate each jam session with a new line
   }
 
-  // Other methods like == and hashCode remain the same
+  // --- REMOVED `recurringGigsDisplayString` as it was based on a false premise ---
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -181,3 +190,4 @@ class StoredLocation {
     return placeId.hashCode;
   }
 }
+

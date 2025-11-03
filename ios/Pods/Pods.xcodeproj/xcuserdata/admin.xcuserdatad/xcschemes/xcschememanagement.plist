@@ -29,6 +29,21 @@
 			<key>isShown</key>
 			<false/>
 		</dict>
+		<key>audioplayers_darwin.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
+		<key>geolocator_apple-geolocator_apple_privacy.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
+		<key>geolocator_apple.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
 		<key>google_maps_flutter_ios-google_maps_flutter_ios_privacy.xcscheme</key>
 		<dict>
 			<key>isShown</key>
@@ -45,6 +60,36 @@
 			<false/>
 		</dict>
 		<key>image_picker_ios.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
+		<key>in_app_review-in_app_review_privacy.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
+		<key>in_app_review.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
+		<key>package_info_plus-package_info_plus_privacy.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
+		<key>package_info_plus.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
+		<key>path_provider_foundation-path_provider_foundation_privacy.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
+		<key>path_provider_foundation.xcscheme</key>
 		<dict>
 			<key>isShown</key>
 			<false/>

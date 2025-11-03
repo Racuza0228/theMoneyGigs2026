@@ -13,7 +13,7 @@
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.biWeekly",
         "style": "",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -29,7 +29,7 @@
         "day": "DayOfWeek.thursday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.biWeekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -45,7 +45,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.biWeekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -61,7 +61,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.biWeekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -77,7 +77,7 @@
         "day": "DayOfWeek.sunday",
         "time": { "hour": 16, "minute": 0 },
         "frequency": "JamFrequencyType.biWeekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -93,7 +93,7 @@
         "day": "DayOfWeek.monday",
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.biWeekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -110,7 +110,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.biWeekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -126,14 +126,14 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.biWeekly",
-        "showInGigsList": true
+        "showInGigsList": false
       },
       {
         "id": "shady_2",
         "day": "DayOfWeek.monday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -149,7 +149,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.biWeekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -167,7 +167,7 @@
         "time": { "hour": 13, "minute": 30 },
         "frequency": "JamFrequencyType.monthlySameDay",
         "nthValue": 3,
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -185,7 +185,7 @@
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.monthlySameDay",
         "nthValue": 4,
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -202,7 +202,7 @@
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.monthlySameDay",
         "nthValue": 1,
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -221,7 +221,7 @@
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.monthlySameDay",
         "nthValue": 3,
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -240,7 +240,7 @@
         "time": { "hour": 13, "minute": 0 },
         "frequency": "JamFrequencyType.monthlySameDay",
         "nthValue": 1,
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -257,7 +257,7 @@
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.monthlySameDay",
         "nthValue": 1,
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -276,7 +276,7 @@
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.monthlySameDay",
         "nthValue": 2,
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -295,7 +295,7 @@
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.monthlySameDay",
         "nthValue": 4,
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -311,7 +311,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -327,7 +327,7 @@
         "day": "DayOfWeek.friday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -343,7 +343,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -359,7 +359,7 @@
         "day": "DayOfWeek.thursday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -375,7 +375,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -392,7 +392,7 @@
         "day": "DayOfWeek.monday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -408,7 +408,7 @@
         "day": "DayOfWeek.saturday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -424,7 +424,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -440,7 +440,7 @@
         "day": "DayOfWeek.thursday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -456,7 +456,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 18, "minute": 30 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -472,7 +472,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -489,7 +489,7 @@
         "day": "DayOfWeek.thursday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -505,7 +505,7 @@
         "day": "DayOfWeek.sunday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -522,7 +522,7 @@
         "day": "DayOfWeek.sunday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -538,7 +538,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -554,7 +554,7 @@
         "day": "DayOfWeek.monday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -589,7 +589,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -607,7 +607,7 @@
         "day": "DayOfWeek.sunday",
         "time": { "hour": 17, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -623,7 +623,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -639,7 +639,7 @@
         "day": "DayOfWeek.sunday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -655,7 +655,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -673,7 +673,7 @@
         "day": "DayOfWeek.sunday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -690,7 +690,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -706,7 +706,7 @@
         "day": "DayOfWeek.monday",
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -723,7 +723,7 @@
         "day": "DayOfWeek.monday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -740,7 +740,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 19, "minute": 30 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -756,7 +756,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 21, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -774,7 +774,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -792,7 +792,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -808,7 +808,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -825,7 +825,7 @@
         "day": "DayOfWeek.thursday",
         "time": { "hour": 17, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -841,7 +841,7 @@
         "day": "DayOfWeek.thursday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -857,7 +857,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -873,7 +873,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -889,7 +889,7 @@
         "day": "DayOfWeek.sunday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -905,7 +905,7 @@
         "day": "DayOfWeek.monday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -921,7 +921,7 @@
         "day": "DayOfWeek.thursday",
         "time": { "hour": 18, "minute": 30 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -937,7 +937,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -954,7 +954,7 @@
         "day": "DayOfWeek.thursday",
         "time": { "hour": 19, "minute": 30 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -971,7 +971,7 @@
         "day": "DayOfWeek.friday",
         "time": { "hour": 21, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -987,7 +987,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -1003,7 +1003,7 @@
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 17, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   },
@@ -1019,7 +1019,7 @@
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": true
+        "showInGigsList": false
       }
     ]
   }

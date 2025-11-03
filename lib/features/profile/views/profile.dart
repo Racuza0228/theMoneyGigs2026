@@ -283,8 +283,8 @@ class _ProfilePageState extends State<ProfilePage> {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        // <<< 2. PASS THE CORRECT NOTIFIER TYPE TO THE DIALOG
-        return Provider.value(
+        // [FIX] Use ChangeNotifierProvider.value for a Listenable/ChangeNotifier.
+        return ChangeNotifierProvider.value(
           value: context.read<GlobalRefreshNotifier>(),
           child: const BackgroundSettingsDialog(),
         );
@@ -533,7 +533,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   );
                 },
                 child: const Text(
-                  'Reset Demo on Next Launch (for testing)',
+                  '',
                   style: TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ),

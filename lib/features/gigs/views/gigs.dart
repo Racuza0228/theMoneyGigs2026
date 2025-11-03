@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart'; // Import TableCalendar
 import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the notifier
+import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHARED ENUMS
 
 // Import your models
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
@@ -25,9 +26,6 @@ import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.
 
 import '../../app_demo/providers/demo_provider.dart';
 
-
-
-// Enum for Gigs view type
 enum GigsViewType { list, calendar }
 
 class GigsPage extends StatefulWidget {
@@ -39,7 +37,15 @@ class GigsPage extends StatefulWidget {
 
 class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  List<Gig> _loadedGigs = [];
+  late ScrollController _scrollController;
+
+  // --- STATE FOR LAZY LOADING AND RECURRENCE ---
+  List<Gig> _allGigs = []; // Raw data from SharedPreferences, including recurring templates
+  List<Gig> _displayedGigs = []; // Generated, displayable occurrences for the list view
+  DateTime _gigListEndDate = DateTime.now().add(const Duration(days: 90));
+  bool _isMoreGigsLoading = false;
+  // --- END OF STATE ---
+
   Map<DateTime, List<Gig>> _calendarEvents = {};
 
   List<StoredLocation> _allKnownVenues = [];
@@ -74,12 +80,12 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _scrollController = ScrollController()..addListener(_scrollListener); // Initialize scroll controller
     _selectedDay = _focusedDay;
     _tabController.addListener(_handleTabSelection);
     _loadAllDataForGigsPage();
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
 
-    // Listen for changes in the demo state.
     Provider.of<DemoProvider>(context, listen: false)
         .addListener(_onDemoStateChanged);
   }
@@ -89,10 +95,19 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     globalRefreshNotifier.removeListener(_handleGlobalRefresh);
     _tabController.removeListener(_handleTabSelection);
     _tabController.dispose();
+    _scrollController.dispose(); // Dispose scroll controller
 
     Provider.of<DemoProvider>(context, listen: false)
         .removeListener(_onDemoStateChanged);
     super.dispose();
+  }
+
+  void _scrollListener() {
+    // Load more when user is 200 pixels from the bottom of the list
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 &&
+        !_isMoreGigsLoading) {
+      _loadMoreGigs();
+    }
   }
 
   void _onDemoStateChanged() {
@@ -100,40 +115,27 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
     if (!mounted) return;
 
-    setState(() {
-      // When we get to the "My Gigs" step, add the demo gig to the list.
-      if (demoProvider.isDemoModeActive && demoProvider.currentStep == 13) {
-        // Ensure it's not already in the list to prevent duplicates.
-        _loadedGigs.removeWhere((g) => g.id == _demoGig.id);
-        _loadedGigs.insert(0, _demoGig); // Add to the top of the list.
-        _loadedGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
-      }
-      // When the demo ends, remove the demo gig.
-      else if (!demoProvider.isDemoModeActive) {
-        _loadedGigs.removeWhere((g) => g.id == _demoGig.id);
-      }
+    if (demoProvider.isDemoModeActive && demoProvider.currentStep == 13) {
+      _allGigs.removeWhere((g) => g.id == _demoGig.id);
+      _allGigs.insert(0, _demoGig);
+    } else if (!demoProvider.isDemoModeActive) {
+      _allGigs.removeWhere((g) => g.id == _demoGig.id);
+    }
 
-      // Refresh the calendar events after modifying the list.
-      _prepareCalendarEvents();
-      _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
-    });
+    // Regenerate displayed gigs and calendar events after any change
+    _generateAndSetDisplayedGigs();
   }
 
   void _handleGlobalRefresh() {
     if (mounted) {
+      // Reset lazy-loading date range on global refresh
+      _gigListEndDate = DateTime.now().add(const Duration(days: 90));
       _loadAllDataForGigsPage();
     }
   }
 
   Future<void> _loadAllDataForGigsPage() async {
-    await _loadVenues();
-
-    // This is the critical change: by checking `mounted` again,
-    // we ensure that the state update from `_loadVenues` has had a chance
-    // to complete before we proceed to load the gigs.
-    if (mounted) {
-      await _loadGigs();
-    }
+     await Future.wait([_loadVenues(), _loadGigs()]);
   }
 
   void _handleTabSelection() {
@@ -148,161 +150,323 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     setState(() { _isLoadingGigs = true; });
     final prefs = await SharedPreferences.getInstance();
     final String? gigsJsonString = prefs.getString(_keyGigsList);
-    List<Gig> actualGigs = [];
+    List<Gig> loadedGigs = [];
     if (gigsJsonString != null && gigsJsonString.isNotEmpty) {
       try {
-        actualGigs = Gig.decode(gigsJsonString);
+        loadedGigs = Gig.decode(gigsJsonString);
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading actual gigs: $e')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading gigs: $e')));
       }
     }
-    // --- START OF FIX: Add [PRIVATE] prefix to actual gigs ---
-    List<Gig> processedActualGigs = actualGigs.map((gig) {
+
+    // --- START OF DEBUGGING PRINT ---
+    print("--- 1. Gigs Loaded From SharedPreferences ---");
+    for (var gig in loadedGigs) {
+      String recurrenceInfo = gig.isRecurring
+          ? "[RECURRING: ${gig.recurrenceFrequency}, on ${gig.recurrenceDay}]"
+          : "[Not Recurring]";
+      print("  - Loaded Gig: ${gig.venueName} on ${DateFormat('yyyy-MM-dd').format(gig.dateTime)}. $recurrenceInfo");
+    }
+    print("------------------------------------------");
+    // --- END OF DEBUGGING PRINT ---
+
+    if (mounted) {
+      _allGigs = loadedGigs;
+      _generateAndSetDisplayedGigs(); // This will handle generation, sorting, and setting state
+      setState(() { _isLoadingGigs = false; });
+    }
+  }
+
+  Future<void> _loadMoreGigs() async {
+    if (!mounted || _isMoreGigsLoading) return;
+
+    setState(() { _isMoreGigsLoading = true; });
+
+    await Future.delayed(const Duration(milliseconds: 500)); // Simulate network latency
+
+    // Extend the date range and regenerate the list
+    _gigListEndDate = _gigListEndDate.add(const Duration(days: 14));
+    _generateAndSetDisplayedGigs();
+
+    if (mounted) {
+      setState(() { _isMoreGigsLoading = false; });
+    }
+  }
+
+  // lib/features/gigs/views/gigs.dart
+
+  void _generateAndSetDisplayedGigs() {
+    List<Gig> allOccurrences = [];
+    DateTime now = DateTime.now();
+    DateTime todayStart = DateTime(now.year, now.month, now.day);
+
+    // --- START OF REVISED LOGIC ---
+
+    // 1. Add ALL original gigs from storage (both recurring and non-recurring).
+    //    This ensures the original "template" for a recurring gig is always in the list
+    //    if it hasn't passed yet.
+    allOccurrences.addAll(_allGigs);
+
+    // 2. Generate all future occurrences for recurring gigs based on their templates.
+    //    This generates the list of "Weekly on Tuesday", etc.
+    for (var baseGig in _allGigs.where((g) => g.isRecurring)) {
+      allOccurrences.addAll(_generateOccurrencesForGig(baseGig, _gigListEndDate));
+    }
+
+    // 3. Generate all Jam/Open Mic session occurrences.
+    allOccurrences.addAll(_generateJamOpenMicGigs(_gigListEndDate));
+
+    // 4. Process the gigs (add prefixes, etc.)
+    List<Gig> processedGigs = allOccurrences.map((gig) {
       final sourceVenue = _allKnownVenues.firstWhere(
             (v) => v.placeId == gig.placeId,
         orElse: () => StoredLocation(placeId: '', name: gig.venueName, address: '', coordinates: const LatLng(0,0)),
       );
-      if (sourceVenue.isPrivate) {
-        return gig.copyWith(venueName: '[PRIVATE] ${gig.venueName}');
-      }
-      return gig;
-    }).toList();
-    // --- END OF FIX ---
 
-    List<Gig> jamOpenMicGigs = _generateJamOpenMicGigs();
-    List<Gig> allDisplayGigs = [...processedActualGigs, ...jamOpenMicGigs]; // Use processed list
-    allDisplayGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+      String processedVenueName = gig.venueName;
+      if (sourceVenue.isPrivate && !gig.venueName.startsWith('[PRIVATE]')) {
+        processedVenueName = '[PRIVATE] $processedVenueName';
+      }
+
+      if (gig.isJamOpenMic && !gig.venueName.contains('[JAM]')) {
+        processedVenueName = '[JAM] $processedVenueName';
+        if(gig.notes != null && gig.notes!.isNotEmpty){
+          processedVenueName += " (${gig.notes})";
+        }
+      }
+      return gig.copyWith(venueName: processedVenueName);
+    }).toList();
+
+    // 5. De-duplicate the list. This is the most critical step.
+    //    The Map ensures that if a generated occurrence has the same ID as an
+    //    original gig (e.g., the very first date), the generated one is kept,
+    //    preventing duplicates.
+    final Map<String, Gig> uniqueGigs = {};
+    for (var gig in processedGigs) {
+      uniqueGigs[gig.id] = gig;
+    }
+
+    // 6. Filter out gigs that have already ended and then sort the remaining ones.
+    List<Gig> sortedGigs = uniqueGigs.values.where((gig) {
+      DateTime gigEndTime = gig.dateTime.add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
+      return !gigEndTime.isBefore(todayStart);
+    }).toList();
+
+    sortedGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+
+    // --- END OF REVISED LOGIC ---
+
     if (mounted) {
+      // 7. Update the state with the final, correct list.
       setState(() {
-        _loadedGigs = allDisplayGigs;
-        _isLoadingGigs = false;
+        _displayedGigs = sortedGigs;
       });
+
+      // These can now run with the correct data.
       _prepareCalendarEvents();
       _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
     }
   }
 
-  List<Gig> _generateJamOpenMicGigs() {
+
+  List<Gig> _generateJamOpenMicGigs(DateTime rangeEndDate) {
     List<Gig> jamGigs = [];
-    DateTime today = DateTime.now();
-    DateTime calculationStartDate = DateTime(today.year, today.month, today.day);
-    DateTime rangeEndDate = DateTime(today.year, today.month + 6, today.day);
+    DateTime today = DateTime.now(); // Define 'today' here
 
     for (var venue in _allKnownVenues) {
-      if (venue.isArchived || venue.isMuted) {
-        continue;
-      }
-      // Iterate over each session configured for the venue
+      if (venue.isArchived || venue.isMuted) continue;
+
       for (var session in venue.jamSessions) {
-        if (!session.showInGigsList) {
-          continue;
-        }
+        if (!session.showInGigsList) continue;
 
-        int targetWeekday = session.day.index + 1;
+        DateTime sessionStartDateTime = DateTime(
+          today.year,
+          today.month,
+          today.day,
+          session.time.hour,
+          session.time.minute,
+        );
 
-        if (session.frequency == JamFrequencyType.weekly) {
-          DateTime currentDate = calculationStartDate;
-          while (currentDate.isBefore(rangeEndDate) || isSameDay(currentDate, rangeEndDate)) {
-            if (currentDate.weekday == targetWeekday) {
-              _addJamGigIfApplicable(jamGigs, venue, session, currentDate);
-            }
-            currentDate = currentDate.add(const Duration(days: 1));
-          }
-        } else if (session.frequency == JamFrequencyType.biWeekly) {
-          DateTime firstPossibleOccurrence = _findNextDayOfWeek(calculationStartDate, targetWeekday);
-          DateTime cycleAnchorDate = _findNextDayOfWeek(DateTime(2020, 1, 1), targetWeekday);
-          DateTime currentTestDate = firstPossibleOccurrence;
-          while (currentTestDate.isBefore(rangeEndDate) || isSameDay(currentTestDate, rangeEndDate)) {
-            if (currentTestDate.weekday == targetWeekday) {
-              int weeksDifference = currentTestDate.difference(cycleAnchorDate).inDays ~/ 7;
-              if (weeksDifference % 2 == 0) {
-                _addJamGigIfApplicable(jamGigs, venue, session, currentTestDate);
-              }
-            }
-            // Smartly jump to the next week's target day to optimize
-            currentTestDate = currentTestDate.add(const Duration(days: 7));
-          }
-        } else if (session.frequency == JamFrequencyType.customNthDay && session.nthValue != null && session.nthValue! > 0) {
-          int nth = session.nthValue!;
-          DateTime firstPossibleOccurrence = _findNextDayOfWeek(calculationStartDate, targetWeekday);
-          DateTime cycleAnchorDate = _findNextDayOfWeek(DateTime(2020, 1, 1), targetWeekday);
-          DateTime currentTestDate = firstPossibleOccurrence;
-          while (currentTestDate.isBefore(rangeEndDate) || isSameDay(currentTestDate, rangeEndDate)) {
-            if (currentTestDate.weekday == targetWeekday) {
-              int weeksDifference = currentTestDate.difference(cycleAnchorDate).inDays ~/ 7;
-              if (weeksDifference % nth == 0) {
-                _addJamGigIfApplicable(jamGigs, venue, session, currentTestDate);
-              }
-            }
-            currentTestDate = currentTestDate.add(const Duration(days: 7));
-          }
-        } else if (session.frequency == JamFrequencyType.monthlySameDay && session.nthValue != null && session.nthValue! > 0) {
-          int nthOccurrence = session.nthValue!;
-          DateTime monthIterator = DateTime(calculationStartDate.year, calculationStartDate.month, 1);
-          while (monthIterator.isBefore(rangeEndDate) || (monthIterator.year == rangeEndDate.year && monthIterator.month == rangeEndDate.month)) {
-            DateTime? nthDayInMonth = _findNthSpecificWeekdayOfMonth(monthIterator.year, monthIterator.month, targetWeekday, nthOccurrence);
-            if (nthDayInMonth != null) {
-              if (!nthDayInMonth.isBefore(calculationStartDate)) {
-                _addJamGigIfApplicable(jamGigs, venue, session, nthDayInMonth);
-              }
-            }
-            monthIterator = DateTime(monthIterator.year, monthIterator.month + 1, 1);
-          }
-        }
+        // Create a temporary "Gig" template to use the common generator
+        final baseJamGig = Gig(
+          id: 'jam_${venue.placeId}_${session.id}', // Base ID for the series
+          venueName: venue.name,
+          latitude: venue.coordinates.latitude,
+          longitude: venue.coordinates.longitude,
+          address: venue.address,
+          placeId: venue.placeId,
+          dateTime: sessionStartDateTime, // The time of the session is the base time
+          pay: 0,
+          gigLengthHours: 2,
+          driveSetupTimeHours: 0,
+          rehearsalLengthHours: 0,
+          isJamOpenMic: true,
+          notes: session.style, // Use notes to pass the style for display
+          isRecurring: true,
+          recurrenceFrequency: session.frequency,
+          recurrenceDay: session.day,
+          recurrenceNthValue: session.nthValue,
+          recurrenceEndDate: null, // Jams repeat indefinitely within the range
+        );
+
+        jamGigs.addAll(_generateOccurrencesForGig(baseJamGig, rangeEndDate));
       }
     }
     return jamGigs;
   }
 
-  void _addJamGigIfApplicable(List<Gig> jamGigs, StoredLocation venue, JamSession session, DateTime dateOfJam) {
-    DateTime jamDateTime = DateTime(
-      dateOfJam.year,
-      dateOfJam.month,
-      dateOfJam.day,
-      session.time.hour,
-      session.time.minute,
-    );
-    DateTime now = DateTime.now();
-
-    if (jamDateTime.isAfter(now)) {
-      // Create a more unique ID that includes the session ID
-      final String uniqueId = 'jam_${venue.placeId}_${session.id}_${DateFormat('yyyyMMddHHmm').format(jamDateTime)}';
-      bool alreadyExists = jamGigs.any((g) => g.id == uniqueId);
-
-      if (!alreadyExists) {
-        // --- START OF FIX: Add [PRIVATE] prefix to jam gigs ---
-        String venueName = venue.name;
-        if (venue.isPrivate) {
-          venueName = '[PRIVATE] $venueName';
-        }
-        venueName = '[JAM] $venueName'; // Prepend [JAM] after [PRIVATE]
-        // --- END OF FIX ---
-
-        if(session.style != null && session.style!.isNotEmpty){
-          venueName += " (${session.style})";
-        }
-        jamGigs.add(
-          Gig(
-            id: uniqueId,
-            venueName: venueName,
-            latitude: venue.coordinates.latitude,
-            longitude: venue.coordinates.longitude,
-            address: venue.address,
-            placeId: venue.placeId,
-            dateTime: jamDateTime,
-            pay: 0,
-            gigLengthHours: 2, // Assuming a default length
-            driveSetupTimeHours: 0,
-            rehearsalLengthHours: 0,
-            isJamOpenMic: true,
-          ),
-        );
-      }
+  List<Gig> _generateOccurrencesForGig(Gig baseGig, DateTime rangeEndDate) {
+    List<Gig> occurrences = [];
+    if (!baseGig.isRecurring || baseGig.recurrenceFrequency == null || baseGig.recurrenceDay == null) {
+      return occurrences;
     }
+
+    print("\n--- 2. Generating Occurrences for: ${baseGig.venueName} (Base Date: ${baseGig.dateTime}) ---");
+
+    DateTime recurrenceSeriesStart = baseGig.dateTime;
+
+    // The calculation should not exceed the gig's own end date, if it exists.
+    DateTime calculationRangeEnd = baseGig.recurrenceEndDate != null && baseGig.recurrenceEndDate!.isBefore(rangeEndDate)
+        ? baseGig.recurrenceEndDate!
+        : rangeEndDate;
+
+    int targetWeekday = baseGig.recurrenceDay!.index + 1;
+
+    // Start the iterator from the day AFTER the base gig. This prevents duplicating the original instance.
+    DateTime iteratorDate = DateTime(recurrenceSeriesStart.year, recurrenceSeriesStart.month, recurrenceSeriesStart.day).add(const Duration(days: 1));
+
+    // --- START OF DEBUGGING PRINT ---
+    print("   - Calculation Range: ${DateFormat('yyyy-MM-dd').format(iteratorDate)} to ${DateFormat('yyyy-MM-dd').format(calculationRangeEnd)}");
+    // --- END OF DEBUGGING PRINT ---
+
+    switch (baseGig.recurrenceFrequency) {
+      case JamFrequencyType.weekly:
+      // Find the first valid occurrence on or after the iterator date.
+        DateTime testDate = _findNextDayOfWeek(iteratorDate, targetWeekday, sameDayOk: true);
+        while (testDate.isBefore(calculationRangeEnd) || isSameDay(testDate, calculationRangeEnd)) {
+          // --- START OF DEBUGGING PRINT ---
+          print("     - [Weekly] Found potential date: ${DateFormat('yyyy-MM-dd').format(testDate)}");
+          // --- END OF DEBUGGING PRINT ---
+          _addOccurrenceIfApplicable(occurrences, baseGig, testDate);
+          testDate = testDate.add(const Duration(days: 7)); // Simply jump to the next week.
+        }
+        break;
+
+      case JamFrequencyType.biWeekly:
+      // The anchor is always the date of the original event.
+        DateTime cycleAnchorDate = _findNextDayOfWeek(baseGig.dateTime, targetWeekday, sameDayOk: true);
+        DateTime testDate = _findNextDayOfWeek(iteratorDate, targetWeekday, sameDayOk: true);
+
+        while(testDate.isBefore(calculationRangeEnd) || isSameDay(testDate, calculationRangeEnd)){
+          int weeksDifference = testDate.difference(cycleAnchorDate).inDays ~/ 7;
+          // Generate an occurrence only for even-numbered week differences (2, 4, 6, etc.)
+          if (weeksDifference > 0 && weeksDifference % 2 == 0) {
+            _addOccurrenceIfApplicable(occurrences, baseGig, testDate);
+          }
+          testDate = testDate.add(const Duration(days: 7)); // Always check the next week
+        }
+        break;
+
+      case JamFrequencyType.customNthDay:
+        if (baseGig.recurrenceNthValue != null && baseGig.recurrenceNthValue! > 0) {
+          int nth = baseGig.recurrenceNthValue!;
+          DateTime testDate = _findNextDayOfWeek(iteratorDate, targetWeekday, sameDayOk: true);
+          while (testDate.isBefore(calculationRangeEnd) || isSameDay(testDate, calculationRangeEnd)) {
+            _addOccurrenceIfApplicable(occurrences, baseGig, testDate);
+            testDate = testDate.add(Duration(days: 7 * nth)); // Jump by N weeks
+          }
+        }
+        break;
+
+      case JamFrequencyType.monthlySameDay:
+        if (baseGig.recurrenceNthValue != null && baseGig.recurrenceNthValue! > 0) {
+          int nthOccurrence = baseGig.recurrenceNthValue!;
+          // Start iterating from the month of the start date
+          DateTime monthIterator = DateTime(iteratorDate.year, iteratorDate.month, 1);
+
+          while (monthIterator.isBefore(calculationRangeEnd) || (monthIterator.year == calculationRangeEnd.year && monthIterator.month == calculationRangeEnd.month)) {
+            DateTime? nthDayInMonth = _findNthSpecificWeekdayOfMonth(monthIterator.year, monthIterator.month, targetWeekday, nthOccurrence);
+            // Ensure the found day is within the allowed range
+            if (nthDayInMonth != null && !nthDayInMonth.isBefore(iteratorDate) && !nthDayInMonth.isAfter(calculationRangeEnd)) {
+              _addOccurrenceIfApplicable(occurrences, baseGig, nthDayInMonth);
+            }
+            // Move to the next month
+            monthIterator = DateTime(monthIterator.year, monthIterator.month + 1, 1);
+          }
+        }
+        break;
+
+      default:
+        break;
+    }
+    return occurrences;
   }
 
-  DateTime _findNextDayOfWeek(DateTime startDate, int targetWeekday) {
+  void _addOccurrenceIfApplicable(List<Gig> occurrences, Gig baseGig, DateTime dateOfOccurrence) {
+    DateTime gigDateTime = DateTime(
+      dateOfOccurrence.year,
+      dateOfOccurrence.month,
+      dateOfOccurrence.day,
+      baseGig.dateTime.hour,
+      baseGig.dateTime.minute,
+    );
+
+    DateTime now = DateTime.now();
+    DateTime todayStart = DateTime(now.year, now.month, now.day);
+    if (dateOfOccurrence.isBefore(todayStart)) {
+      return; // Do not generate occurrences for days before today.
+    }
+
+    // Create a unique ID for this specific occurrence to avoid collisions
+    final String uniqueId = '${baseGig.id}_${DateFormat('yyyyMMdd').format(gigDateTime)}';
+
+    // --- START OF DEFINITIVE FIX ---
+    print("     ✅ ADDING OCCURRENCE for ${DateFormat('yyyy-MM-dd').format(gigDateTime)}");
+
+    occurrences.add(
+      baseGig.copyWith(
+        id: uniqueId,
+        dateTime: gigDateTime,
+        isRecurring: false, // This instance is a concrete event, not a template
+        isFromRecurring: true, // **THIS IS THE CRITICAL MISSING PIECE**
+      ),
+    );
+  }
+
+
+  void _prepareCalendarEvents() {
+    final events = LinkedHashMap<DateTime, List<Gig>>(equals: isSameDay, hashCode: getHashCode);
+    DateTime today = DateTime.now();
+    DateTime calendarRangeEnd = DateTime(today.year + 5, today.month, today.day);
+
+    List<Gig> allCalendarGigs = [];
+    // --- START OF FIX ---
+    // Add original recurring gigs to the calendar as well
+    allCalendarGigs.addAll(_allGigs);
+    // --- END OF FIX ---
+
+    for (var baseGig in _allGigs.where((g) => g.isRecurring)) {
+      allCalendarGigs.addAll(_generateOccurrencesForGig(baseGig, calendarRangeEnd));
+    }
+    allCalendarGigs.addAll(_generateJamOpenMicGigs(calendarRangeEnd));
+
+    final uniqueGigs = Map<String, Gig>.fromIterable(allCalendarGigs, key: (g) => g.id, value: (g) => g);
+
+    for (var gig in uniqueGigs.values) {
+      final date = DateTime.utc(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day);
+      events.putIfAbsent(date, () => []).add(gig);
+    }
+
+    if (mounted) setState(() { _calendarEvents = events; });
+  }
+
+  DateTime _findNextDayOfWeek(DateTime startDate, int targetWeekday, {bool sameDayOk = false}) {
     DateTime date = DateTime(startDate.year, startDate.month, startDate.day);
+    if (sameDayOk && date.weekday == targetWeekday) {
+      return date;
+    }
+    // If not sameDayOk, or if today doesn't match, start search from tomorrow
+    date = date.add(const Duration(days: 1));
     while (date.weekday != targetWeekday) {
       date = date.add(const Duration(days: 1));
     }
@@ -312,7 +476,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   DateTime? _findNthSpecificWeekdayOfMonth(int year, int month, int targetWeekday, int nth) {
     if (nth < 1 || nth > 5) return null;
     int occurrences = 0;
-    for (int day = 1; day <= DateTime(year, month + 1, 0).day; day++) {
+    int daysInMonth = DateTime(year, month + 1, 0).day;
+    for (int day = 1; day <= daysInMonth; day++) {
       DateTime currentDate = DateTime(year, month, day);
       if (currentDate.weekday == targetWeekday) {
         occurrences++;
@@ -322,15 +487,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       }
     }
     return null;
-  }
-
-  void _prepareCalendarEvents() {
-    final events = LinkedHashMap<DateTime, List<Gig>>(equals: isSameDay, hashCode: getHashCode);
-    for (var gig in _loadedGigs) {
-      final date = DateTime.utc(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day);
-      events.putIfAbsent(date, () => []).add(gig);
-    }
-    if (mounted) setState(() { _calendarEvents = events; });
   }
 
   int getHashCode(DateTime key) => key.day * 1000000 + key.month * 10000 + key.year;
@@ -386,29 +542,38 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   void _launchNotesPageForGig(Gig gig) {
     if (gig.isJamOpenMic) return;
-    // Strip [PRIVATE] from the gig name before passing to dialog, if needed, though ID is primary
+
+    // The ID of a recurring gig instance is modified, so we need the base ID
+    String baseGigId = gig.id;
+    if (gig.id.contains('_') && !gig.id.startsWith('jam_')) {
+      baseGigId = gig.id.substring(0, gig.id.lastIndexOf('_'));
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => NotesPage(editingGigId: gig.id),
+        builder: (context) => NotesPage(editingGigId: baseGigId),
       ),
     );
   }
 
   Future<void> _launchBookingDialogForGig(Gig gigToEdit) async {
-    // We must use the original gig data for editing, not the one with a modified name.
-    final String? originalGigId = gigToEdit.isJamOpenMic ? null : gigToEdit.id;
+    String originalGigId = gigToEdit.id;
+    // For recurring instances, find the original base gig ID from the _allGigs list
+    if (!gigToEdit.isJamOpenMic && gigToEdit.id.contains('_')) {
+      originalGigId = gigToEdit.id.substring(0, gigToEdit.id.lastIndexOf('_'));
+    }
+
     Gig? originalGig;
-    if (originalGigId != null) {
-      final prefs = await SharedPreferences.getInstance();
-      final gigsJson = prefs.getString(_keyGigsList) ?? '[]';
-      final allGigs = Gig.decode(gigsJson);
-      originalGig = allGigs.firstWhere((g) => g.id == originalGigId, orElse: () => gigToEdit);
+    if (!gigToEdit.isJamOpenMic) {
+      // Find the original template from our master list
+      originalGig = _allGigs.firstWhere((g) => g.id == originalGigId, orElse: () => gigToEdit);
     } else {
-      originalGig = gigToEdit;
+      originalGig = gigToEdit; // Jam sessions are handled differently
     }
 
 
     if (originalGig.isJamOpenMic) {
+      // ... This part for jam sessions is correct and does not need to change ...
       final sourceVenue = _allKnownVenues.firstWhere(
             (v) => v.placeId == originalGig!.placeId,
         orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0,0)),
@@ -446,6 +611,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       );
       return;
     }
+
     if (!mounted) return;
     const String googleApiKey = String.fromEnvironment('GOOGLE_API_KEY');
     final result = await showDialog<dynamic>(
@@ -453,52 +619,67 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return BookingDialog(
-          editingGig: originalGig, // Pass the original gig object
+          editingGig: originalGig, // Pass the original template
           googleApiKey: googleApiKey,
-          existingGigs: _loadedGigs.where((g) => !g.isJamOpenMic).toList(),
+          existingGigs: _allGigs.where((g) => !g.isJamOpenMic).toList(),
         );
       },
     );
 
-    // --- START OF REVISED CODE ---
     if (result is GigEditResult && result.action != GigEditResultAction.noChange) {
       if (result.action == GigEditResultAction.updated && result.gig != null) {
-        // This part for updating is correct and does not need to change.
-        // It's good practice to notify and reload.
-        globalRefreshNotifier.notify();
+
+        // ** THE FIX IS HERE **
+        // Call the update function to save the new gig data before doing anything else.
+        await _updateGig(result.gig!);
+
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" updated.'), backgroundColor: Colors.green));
 
       } else if (result.action == GigEditResultAction.deleted && result.gig != null) {
-        // THIS IS THE FIX: Call the _deleteGig method.
         await _deleteGig(result.gig!);
-
-        // Show the confirmation SnackBar *after* the deletion has been processed.
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" cancelled.'), backgroundColor: Colors.orange));
       }
     } else if (result is Gig) {
-      // This part for handling a newly booked gig is also correct.
-      // It's good practice to notify and reload.
+      // This is for creating a brand new gig, which already reloads correctly.
       globalRefreshNotifier.notify();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('New gig "${result.venueName}" booked.'), backgroundColor: Colors.green));
     }
-    // --- END OF REVISED CODE ---
+  }
+  Future<void> _updateGig(Gig updatedGig) async {
+    try {
+      // Find the index of the old gig in your master list
+      final index = _allGigs.indexWhere((g) => g.id == updatedGig.id);
+      if (index != -1) {
+        // Replace the old gig with the updated one
+        _allGigs[index] = updatedGig;
+
+        // Save the entire updated list back to SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        // NOTE: Make sure _keyGigsList is the correct key you use elsewhere for the gigs list.
+        await prefs.setString('gigs_list', Gig.encode(_allGigs));
+
+        // Now that the data is saved, notify the app to reload everything.
+        globalRefreshNotifier.notify();
+        print("Gig updated and saved successfully.");
+      } else {
+        print("Error: Could not find gig with ID ${updatedGig.id} to update.");
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error processing gig update: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Future<void> _deleteGig(Gig gigToDelete) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-
-      // Get the current list of gigs from SharedPreferences
       final String? gigsJsonString = prefs.getString(_keyGigsList);
       List<Gig> allGigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
-
-      // Remove the gig with the matching ID
       allGigs.removeWhere((g) => g.id == gigToDelete.id);
-
-      // Save the updated list back to SharedPreferences
       await prefs.setString(_keyGigsList, Gig.encode(allGigs));
-
-      // Notify the rest of the app (like the map) that data has changed
       globalRefreshNotifier.notify();
 
     } catch (e) {
@@ -531,14 +712,20 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   Future<void> _archiveVenue(StoredLocation venueToArchive) async {
     if (!mounted) return;
-    // CORRECTED: Only check for REAL, non-jam gigs.
-    List<Gig> upcomingActualGigsAtVenue = _getGigsForVenue(venueToArchive, futureOnly: true)
-        .where((gig) => !gig.isJamOpenMic)
-        .toList();
+    // Generate gigs far in the future to check for real conflicts
+    DateTime futureRange = DateTime.now().add(const Duration(days: 365 * 5));
+    List<Gig> upcomingActualGigsAtVenue = [];
+    // Check non-recurring gigs
+    upcomingActualGigsAtVenue.addAll(_allGigs.where((g) => !g.isRecurring && g.placeId == venueToArchive.placeId && !g.isJamOpenMic && g.dateTime.isAfter(DateTime.now())));
+    // Check recurring gigs
+    for (var gig in _allGigs.where((g) => g.isRecurring && g.placeId == venueToArchive.placeId && !g.isJamOpenMic)) {
+      upcomingActualGigsAtVenue.addAll(_generateOccurrencesForGig(gig, futureRange));
+    }
+
 
     String dialogMessage = 'Are you sure you want to archive "${venueToArchive.name}"?';
     if (upcomingActualGigsAtVenue.isNotEmpty) {
-      dialogMessage += '\n\nThis will also DELETE ${upcomingActualGigsAtVenue.length} upcoming actual gig(s) scheduled here.';
+      dialogMessage += '\n\nThis will also DELETE all upcoming actual gig(s) scheduled here (including all recurring instances).';
     } else {
       dialogMessage += '\nIt will be hidden from lists but not permanently deleted.';
     }
@@ -562,11 +749,12 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     if (confirmArchive) {
       setState(() { _isLoadingVenues = true; _isLoadingGigs = true; });
       final prefs = await SharedPreferences.getInstance();
+      // Delete the base gigs associated with the venue
       if (upcomingActualGigsAtVenue.isNotEmpty) {
-        List<String> gigIdsToDelete = upcomingActualGigsAtVenue.map((gig) => gig.id).toList();
         final String? gigsJsonString = prefs.getString(_keyGigsList);
         List<Gig> currentAllActualGigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
-        currentAllActualGigs.removeWhere((gig) => gigIdsToDelete.contains(gig.id));
+        // Remove any gig (recurring or not) at this venue that isn't a jam session
+        currentAllActualGigs.removeWhere((gig) => gig.placeId == venueToArchive.placeId && !gig.isJamOpenMic);
         await prefs.setString(_keyGigsList, Gig.encode(currentAllActualGigs));
       }
       int index = _allKnownVenues.indexWhere((v) => v.placeId == venueToArchive.placeId);
@@ -580,7 +768,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       if (mounted) {
         String snackbarMessage = 'Venue "${venueToArchive.name}" archived.';
         if (upcomingActualGigsAtVenue.isNotEmpty) {
-          snackbarMessage += ' ${upcomingActualGigsAtVenue.length} upcoming actual gig(s) deleted.';
+          snackbarMessage += ' All associated actual gigs deleted.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(snackbarMessage), backgroundColor: Colors.orange),
@@ -632,7 +820,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   List<Gig> _getGigsForVenue(StoredLocation venue, {bool futureOnly = false}) {
     DateTime comparisonDate = DateTime.now();
-    return _loadedGigs.where((gig) {
+    // This now correctly checks against the displayed (generated) gigs
+    return _displayedGigs.where((gig) {
       bool venueMatch = (gig.placeId != null && gig.placeId!.isNotEmpty && gig.placeId == venue.placeId) ||
           (gig.placeId == null && gig.venueName.toLowerCase().contains(venue.name.toLowerCase()));
       bool dateMatch = true;
@@ -733,15 +922,15 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         return BookingDialog(
           preselectedVenue: venue,
           googleApiKey: googleApiKey,
-          existingGigs: _loadedGigs.where((g) => !g.isJamOpenMic).toList(),
+          existingGigs: _allGigs.where((g) => !g.isJamOpenMic).toList(),
         );
       },
     );
   }
 
   void _showEmbedCodeDialog() {
-    // --- START OF FIX: Filter private gigs before exporting ---
-    final publicGigs = _loadedGigs.where((gig) {
+    // Use _allGigs to export all future occurrences of public gigs
+    final publicGigs = _allGigs.where((gig) {
       final sourceVenue = _allKnownVenues.firstWhere(
             (v) => v.placeId == gig.placeId,
         orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0,0)),
@@ -749,7 +938,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       return !sourceVenue.isPrivate;
     }).toList();
     final String embedCode = GigEmbedService.generateEmbedCode(publicGigs);
-    // --- END OF FIX ---
 
     showDialog(
       context: context,
@@ -836,13 +1024,12 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   Widget _buildGigsTabContent() {
-    bool hasUpcomingGigs =
-    _loadedGigs.any((gig) => !gig.isJamOpenMic && gig.dateTime.isAfter(DateTime.now()));
+    bool hasUpcomingGigs = _displayedGigs.any((gig) => !gig.isJamOpenMic && gig.dateTime.isAfter(DateTime.now()));
 
-    if (_isLoadingGigs && _loadedGigs.isEmpty) {
+    if (_isLoadingGigs && _displayedGigs.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (!_isLoadingGigs && _loadedGigs.isEmpty) {
+    if (!_isLoadingGigs && _displayedGigs.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -882,9 +1069,14 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             ],
           ),
         ),
-        if (_isLoadingGigs && _loadedGigs.isNotEmpty)
+        if (_isLoadingGigs && _displayedGigs.isNotEmpty)
           const Padding(padding: EdgeInsets.all(8.0), child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)))),
         Expanded(child: _gigsViewType == GigsViewType.list ? _buildGigsListView() : _buildGigsCalendarView()),
+        if (_isMoreGigsLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16.0),
+            child: Center(child: CircularProgressIndicator()),
+          ),
       ],
     );
   }
@@ -901,20 +1093,23 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   Widget _buildGigsListView() {
-    if (_loadedGigs.isEmpty) return const Center(child: Text('No gigs or jam nights to display.', textAlign: TextAlign.center));
+    if (_displayedGigs.isEmpty) return const Center(child: Text('No gigs or jam nights to display.', textAlign: TextAlign.center));
     return ListView.builder(
-      itemCount: _loadedGigs.length,
+      controller: _scrollController, // Attach scroll controller
+      itemCount: _displayedGigs.length,
       itemBuilder: (context, index) {
-        final gig = _loadedGigs[index];
+        final gig = _displayedGigs[index];
         bool isPast;
-        if (!gig.isJamOpenMic) {
-          DateTime gigEndTime = gig.dateTime.add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
-          isPast = gigEndTime.isBefore(DateTime.now());
-        } else {
-          isPast = gig.dateTime.isBefore(DateTime.now());
-        }
+        DateTime gigEndTime = gig.dateTime.add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
+        isPast = gigEndTime.isBefore(DateTime.now());
+
         bool isJam = gig.isJamOpenMic;
         bool hasNotes = (gig.notes?.isNotEmpty ?? false) || (gig.notesUrl?.isNotEmpty ?? false);
+
+        // --- START OF FIX: Identify if the gig is part of a recurring series ---
+        // A gig is part of a recurring series if it's a template OR was generated from one.
+        final bool isRecurringGig = gig.isRecurring || gig.isFromRecurring;
+        // --- END OF FIX ---
 
         return Card(
           elevation: isPast ? 0.5 : (isJam ? 1.5 : 2),
@@ -926,13 +1121,32 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
               foregroundColor: isJam? Theme.of(context).colorScheme.onTertiary : Colors.white,
               child: isJam ? const Icon(Icons.music_note, size: 20) : Text(DateFormat('d').format(gig.dateTime)),
             ),
-            title: Text(
-              gig.venueName,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isPast ? Colors.grey.shade700 : (isJam ? Theme.of(context).colorScheme.onSecondaryContainer : Theme.of(context).textTheme.titleLarge?.color),
-              ),
+            // --- START OF FIX: Add recurrence icon to title ---
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    gig.venueName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isPast ? Colors.grey.shade700 : (isJam ? Theme.of(context).colorScheme.onSecondaryContainer : Theme.of(context).textTheme.titleLarge?.color),
+                    ),
+                  ),
+                ),
+                // Display the icon if it's a recurring gig (and not a jam session, which is implicitly recurring)
+                if (isRecurringGig && !isJam)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8.0),
+                    child: Icon(
+                      Icons.event_repeat, // A more fitting icon for recurrence
+                      size: 16,
+                      color: isPast ? Colors.grey.shade600 : Theme.of(context).colorScheme.secondary,
+                      semanticLabel: "Recurring Gig",
+                    ),
+                  ),
+              ],
             ),
+            // --- END OF FIX ---
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -968,6 +1182,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       },
     );
   }
+
 
   Widget _buildGigsCalendarView() {
     if (_isLoadingGigs && _calendarEvents.isEmpty) {
@@ -1035,15 +1250,20 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
               if (events.isEmpty) return null;
 
               final List<Gig> gigEvents = events.cast<Gig>();
-              bool hasActualGig = gigEvents.any((gig) => !gig.isJamOpenMic);
+              bool hasActualGig = gigEvents.any((gig) => !gig.isJamOpenMic && !gig.isRecurring); // One-off gig
+              bool hasRecurringGig = gigEvents.any((gig) => !gig.isJamOpenMic && gig.isRecurring); // Recurring gig instance
               bool hasJam = gigEvents.any((gig) => gig.isJamOpenMic);
               List<Widget> markers = [];
               if (hasActualGig) {
                 markers.add(_buildEventsMarker(Theme.of(context).colorScheme.secondary));
               }
+              if (hasRecurringGig) {
+                if (markers.isNotEmpty) markers.add(const SizedBox(width: 2));
+                markers.add(_buildEventsMarker(Colors.blue)); // Dot for recurring gigs
+              }
               if (hasJam) {
-                if (markers.isNotEmpty) markers.add(SizedBox(width: markers.length * 1.5));
-                markers.add(_buildEventsMarker(Theme.of(context).colorScheme.tertiary));
+                if (markers.isNotEmpty) markers.add(const SizedBox(width: 2));
+                markers.add(_buildEventsMarker(Theme.of(context).colorScheme.tertiary)); // Dot for jam sessions
               }
               if (markers.isEmpty) return null;
               return Positioned(
@@ -1065,12 +1285,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           itemBuilder: (context, index) {
             final gig = _selectedDayGigs[index];
             bool isPast;
-            if (!gig.isJamOpenMic) {
-              DateTime gigEndTime = gig.dateTime.add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
-              isPast = gigEndTime.isBefore(DateTime.now());
-            } else {
-              isPast = gig.dateTime.isBefore(DateTime.now());
-            }
+            DateTime gigEndTime = gig.dateTime.add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
+            isPast = gigEndTime.isBefore(DateTime.now());
             bool isJam = gig.isJamOpenMic;
             return Card(
               elevation: isPast ? 0.5 : (isJam ? 1.0 : 1.5),
@@ -1134,9 +1350,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         final bool hasVenueNotes = (venue.venueNotes?.isNotEmpty ?? false) || (venue.venueNotesUrl?.isNotEmpty ?? false);
         final venueContact = venue.contact;
 
-        // --- START OF FIX: Add [PRIVATE] prefix to venue name ---
         String venueDisplayName = venue.isPrivate ? '[PRIVATE] ${venue.name}' : venue.name;
-        // --- END OF FIX ---
 
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
