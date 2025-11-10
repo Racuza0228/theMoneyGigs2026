@@ -126,6 +126,66 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     _generateAndSetDisplayedGigs();
   }
 
+  Future<void> _handleRecurringGigDeletion(Gig gigInstance, RecurringCancelChoice choice) async {
+    if (choice == RecurringCancelChoice.doNothing) return;
+
+    final String baseGigId = gigInstance.getBaseId();
+    final int index = _allGigs.indexWhere((g) => g.id == baseGigId);
+
+    if (index == -1) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: Could not find the original recurring gig to modify.'), backgroundColor: Colors.red));
+      return;
+    }
+
+    Gig baseGig = _allGigs[index];
+    String message = '';
+
+    if (choice == RecurringCancelChoice.allFutureInstances) {
+      // CORRECTED LOGIC: Set the end date to the day before the selected instance.
+      // This preserves all past occurrences.
+      DateTime newEndDate = gigInstance.dateTime.subtract(const Duration(days: 1));
+
+      // Check if the new end date is before the series even started.
+      // If so, it's equivalent to deleting the whole series.
+      if (newEndDate.isBefore(baseGig.dateTime)) {
+        _allGigs.removeAt(index);
+        message = 'The entire recurring series for "${baseGig.venueName}" has been cancelled.';
+      } else {
+        // Otherwise, just truncate the series.
+        _allGigs[index] = baseGig.copyWith(recurrenceEndDate: newEndDate);
+        message = 'The recurring gig for "${gigInstance.venueName}" on and after ${DateFormat.yMMMEd().format(gigInstance.dateTime)} has been cancelled.';
+      }
+
+    } else if (choice == RecurringCancelChoice.thisInstanceOnly) {
+      // This logic is correct: Add the specific date to the exceptions list.
+      List<DateTime> updatedExceptions = List.from(baseGig.recurrenceExceptions ?? []);
+      DateTime exceptionDate = DateTime.utc(gigInstance.dateTime.year, gigInstance.dateTime.month, gigInstance.dateTime.day);
+
+      if (!updatedExceptions.any((d) => isSameDay(d, exceptionDate))) {
+        updatedExceptions.add(exceptionDate);
+      }
+
+      _allGigs[index] = baseGig.copyWith(recurrenceExceptions: updatedExceptions);
+      message = 'The gig for "${gigInstance.venueName}" on ${DateFormat.yMMMEd().format(gigInstance.dateTime)} has been cancelled.';
+    }
+
+    // --- Save the changes and refresh the UI ---
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyGigsList, Gig.encode(_allGigs));
+      globalRefreshNotifier.notify(); // This will trigger a reload and regeneration of gigs
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.orange));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error updating recurring gig: ${e.toString()}'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+
+
   void _handleGlobalRefresh() {
     if (mounted) {
       // Reset lazy-loading date range on global refresh
@@ -403,6 +463,15 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   void _addOccurrenceIfApplicable(List<Gig> occurrences, Gig baseGig, DateTime dateOfOccurrence) {
+    // --- FINALIZED EXCEPTION LOGIC ---
+    // Check if the specific date of this potential occurrence is in the base gig's exception list.
+    if (baseGig.recurrenceExceptions != null &&
+        baseGig.recurrenceExceptions!.any((exceptionDate) => isSameDay(exceptionDate, dateOfOccurrence))) {
+      print("  - 🚫 SKIPPING OCCURRENCE on ${DateFormat('yyyy-MM-dd').format(dateOfOccurrence)} due to exception.");
+      return; // Do not generate this gig instance.
+    }
+    // --- END OF EXCEPTION LOGIC ---
+
     DateTime gigDateTime = DateTime(
       dateOfOccurrence.year,
       dateOfOccurrence.month,
@@ -420,7 +489,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     // Create a unique ID for this specific occurrence to avoid collisions
     final String uniqueId = '${baseGig.id}_${DateFormat('yyyyMMdd').format(gigDateTime)}';
 
-    // --- START OF DEFINITIVE FIX ---
     print("     ✅ ADDING OCCURRENCE for ${DateFormat('yyyy-MM-dd').format(gigDateTime)}");
 
     occurrences.add(
@@ -428,10 +496,12 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         id: uniqueId,
         dateTime: gigDateTime,
         isRecurring: false, // This instance is a concrete event, not a template
-        isFromRecurring: true, // **THIS IS THE CRITICAL MISSING PIECE**
+        isFromRecurring: true, // This flag identifies it as generated from a series
+        recurrenceExceptions: [], // Clear exceptions for the instance itself
       ),
     );
   }
+
 
 
   void _prepareCalendarEvents() {
@@ -557,25 +627,28 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   Future<void> _launchBookingDialogForGig(Gig gigToEdit) async {
-    String originalGigId = gigToEdit.id;
-    // For recurring instances, find the original base gig ID from the _allGigs list
-    if (!gigToEdit.isJamOpenMic && gigToEdit.id.contains('_')) {
-      originalGigId = gigToEdit.id.substring(0, gigToEdit.id.lastIndexOf('_'));
-    }
+    String originalGigId = gigToEdit.getBaseId();
 
     Gig? originalGig;
     if (!gigToEdit.isJamOpenMic) {
-      // Find the original template from our master list
       originalGig = _allGigs.firstWhere((g) => g.id == originalGigId, orElse: () => gigToEdit);
     } else {
-      originalGig = gigToEdit; // Jam sessions are handled differently
+      originalGig = gigToEdit;
     }
+
+    Gig gigForDialog = gigToEdit.copyWith(
+      isRecurring: originalGig.isRecurring,
+      recurrenceFrequency: originalGig.recurrenceFrequency,
+      recurrenceDay: originalGig.recurrenceDay,
+      recurrenceNthValue: originalGig.recurrenceNthValue,
+      recurrenceEndDate: originalGig.recurrenceEndDate,
+      recurrenceExceptions: originalGig.recurrenceExceptions, // Pass exceptions too
+    );
 
 
     if (originalGig.isJamOpenMic) {
-      // ... This part for jam sessions is correct and does not need to change ...
       final sourceVenue = _allKnownVenues.firstWhere(
-            (v) => v.placeId == originalGig!.placeId,
+            (v) => v.placeId == originalGig?.placeId,
         orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0,0)),
       );
       if (sourceVenue.placeId.isEmpty) return;
@@ -619,7 +692,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return BookingDialog(
-          editingGig: originalGig, // Pass the original template
+          editingGig: gigForDialog,
           googleApiKey: googleApiKey,
           existingGigs: _allGigs.where((g) => !g.isJamOpenMic).toList(),
         );
@@ -628,23 +701,23 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
     if (result is GigEditResult && result.action != GigEditResultAction.noChange) {
       if (result.action == GigEditResultAction.updated && result.gig != null) {
-
-        // ** THE FIX IS HERE **
-        // Call the update function to save the new gig data before doing anything else.
         await _updateGig(result.gig!);
-
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" updated.'), backgroundColor: Colors.green));
-
       } else if (result.action == GigEditResultAction.deleted && result.gig != null) {
-        await _deleteGig(result.gig!);
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" cancelled.'), backgroundColor: Colors.orange));
+        if (result.cancelChoice != null && result.cancelChoice != RecurringCancelChoice.doNothing) {
+          await _handleRecurringGigDeletion(result.gig!, result.cancelChoice!);
+        } else if (result.cancelChoice == null) {
+          await _deleteGig(result.gig!);
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" cancelled.'), backgroundColor: Colors.orange));
+        }
       }
     } else if (result is Gig) {
-      // This is for creating a brand new gig, which already reloads correctly.
       globalRefreshNotifier.notify();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('New gig "${result.venueName}" booked.'), backgroundColor: Colors.green));
     }
   }
+
+
   Future<void> _updateGig(Gig updatedGig) async {
     try {
       // Find the index of the old gig in your master list
@@ -674,12 +747,14 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   Future<void> _deleteGig(Gig gigToDelete) async {
+    // This function now primarily handles deletion of SINGLE, NON-RECURRING gigs.
+    // The logic for recurring gigs is handled by _handleRecurringGigDeletion.
     try {
       final prefs = await SharedPreferences.getInstance();
-      final String? gigsJsonString = prefs.getString(_keyGigsList);
-      List<Gig> allGigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
-      allGigs.removeWhere((g) => g.id == gigToDelete.id);
-      await prefs.setString(_keyGigsList, Gig.encode(allGigs));
+      // We need to operate on the master list, _allGigs
+      _allGigs.removeWhere((g) => g.id == gigToDelete.getBaseId());
+
+      await prefs.setString(_keyGigsList, Gig.encode(_allGigs));
       globalRefreshNotifier.notify();
 
     } catch (e) {

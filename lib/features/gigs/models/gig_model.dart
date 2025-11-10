@@ -4,8 +4,7 @@ import 'package:the_money_gigs/core/models/enums.dart';
 
 class Gig {
   String id;
-  String venueName;
-  double latitude;
+  String venueName;  double latitude;
   double longitude;
   String address;
   String? placeId;
@@ -25,6 +24,7 @@ class Gig {
   int? recurrenceNthValue;
   DateTime? recurrenceEndDate;
   bool isFromRecurring;
+  List<DateTime>? recurrenceExceptions; // <<< NEW FIELD
 
   Gig({
     required this.id,
@@ -47,9 +47,9 @@ class Gig {
     this.recurrenceNthValue,
     this.recurrenceEndDate,
     this.isFromRecurring = false,
+    this.recurrenceExceptions, // <<< ADDED TO CONSTRUCTOR
   });
 
-  // --- `copyWith` REVERTED TO SIMPLE, CORRECT IMPLEMENTATION ---
   Gig copyWith({
     String? id,
     String? venueName,
@@ -71,6 +71,7 @@ class Gig {
     int? recurrenceNthValue,
     DateTime? recurrenceEndDate,
     bool? isFromRecurring,
+    List<DateTime>? recurrenceExceptions, // <<< ADDED TO COPYWITH
   }) {
     return Gig(
       id: id ?? this.id,
@@ -93,10 +94,31 @@ class Gig {
       recurrenceNthValue: recurrenceNthValue ?? this.recurrenceNthValue,
       recurrenceEndDate: recurrenceEndDate ?? this.recurrenceEndDate,
       isFromRecurring: isFromRecurring ?? this.isFromRecurring,
+      recurrenceExceptions: recurrenceExceptions ?? this.recurrenceExceptions, // <<< ADDED TO COPYWITH
     );
   }
 
-  // --- `toJson` and `fromJson` remain correct ---
+  /// Gets the base ID for a gig. For a recurring instance (e.g., 'gig1_20240101'),
+  /// it returns the original ID (e.g., 'gig1'). For regular gigs, it returns its own ID.
+  String getBaseId() {
+    if (isFromRecurring && id.contains('_')) {
+      // For a standard recurring gig instance like 'baseid_20251108'
+      final parts = id.split('_');
+      if (parts.length > 1) {
+        // Re-join in case the base ID itself had underscores, though this is unlikely/bad practice.
+        return parts.sublist(0, parts.length - 1).join('_');
+      }
+    } else if (isJamOpenMic && id.startsWith('jam_')) {
+      // For a jam session like 'jam_placeId_sessionId_20251108'
+      final parts = id.split('_');
+      if (parts.length > 3) {
+        return parts.sublist(0, parts.length -1).join('_');
+      }
+    }
+    // For a base recurring gig, a non-recurring gig, or if splitting fails
+    return id;
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -118,6 +140,8 @@ class Gig {
       'recurrenceDay': recurrenceDay?.toString(),
       'recurrenceNthValue': recurrenceNthValue,
       'recurrenceEndDate': recurrenceEndDate?.toIso8601String(),
+      // <<< ADDED TO TOJSON
+      'recurrenceExceptions': recurrenceExceptions?.map((date) => date.toIso8601String()).toList(),
     };
   }
 
@@ -129,6 +153,17 @@ class Gig {
       } catch (e) {
         return null;
       }
+    }
+
+    // <<< ADDED TO FROMJSON
+    List<DateTime>? parseRecurrenceExceptions(dynamic jsonField) {
+      if (jsonField is List) {
+        return jsonField
+            .map((dateString) => DateTime.tryParse(dateString as String))
+            .whereType<DateTime>()
+            .toList();
+      }
+      return null;
     }
 
     return Gig(
@@ -151,6 +186,7 @@ class Gig {
       recurrenceDay: safeParseEnum(DayOfWeek.values, json['recurrenceDay'] as String?),
       recurrenceNthValue: json['recurrenceNthValue'] as int?,
       recurrenceEndDate: json['recurrenceEndDate'] != null ? DateTime.tryParse(json['recurrenceEndDate'] as String) : null,
+      recurrenceExceptions: parseRecurrenceExceptions(json['recurrenceExceptions']), // <<< ADDED TO FROMJSON
     );
   }
 

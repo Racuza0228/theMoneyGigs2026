@@ -37,11 +37,14 @@ class _DialogDemoStep {
 }
 
 enum GigEditResultAction { updated, deleted, noChange }
+enum RecurringCancelChoice { thisInstanceOnly, allFutureInstances, doNothing }
 
 class GigEditResult {
   final GigEditResultAction action;
   final Gig? gig;
-  GigEditResult({required this.action, this.gig});
+  final RecurringCancelChoice? cancelChoice; // Pass the choice
+
+  GigEditResult({required this.action, this.gig, this.cancelChoice});
 }
 
 class BookingDialog extends StatefulWidget {
@@ -807,6 +810,50 @@ class _BookingDialogState extends State<BookingDialog> {
 
   Future<void> _handleGigCancellation() async {
     if (!_isEditingMode || widget.editingGig == null) return;
+
+    Gig gigToCancel = widget.editingGig!;
+    bool isRecurringTemplate = gigToCancel.isRecurring;
+    bool isFromRecurringSeries = gigToCancel.isFromRecurring;
+
+    // Show a special dialog for recurring gigs
+    if (isRecurringTemplate || isFromRecurringSeries) {
+      final RecurringCancelChoice? choice = await showDialog<RecurringCancelChoice>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: const Text('Cancel Recurring Gig'),
+            content: Text('This is part of a recurring series. What would you like to do with the gig at "${gigToCancel.venueName}" on ${DateFormat.yMMMEd().format(gigToCancel.dateTime)}?'),
+            actions: <Widget>[
+              TextButton(
+                child: const Text('CANCEL THIS EVENT ONLY'),
+                onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.thisInstanceOnly),
+              ),
+              TextButton(
+                child: Text('CANCEL ALL FUTURE EVENTS', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.allFutureInstances),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                child: const Text('NEVERMIND'),
+                onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.doNothing),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (choice == null || choice == RecurringCancelChoice.doNothing) {
+        return; // User cancelled the action
+      }
+
+      if (mounted) setState(() => _isProcessing = true);
+      // Pass the choice and the gig to the parent page to handle the logic
+      Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.deleted, gig: gigToCancel, cancelChoice: choice));
+      return; // Stop execution here
+    }
+
+
+    // --- This is the original logic for non-recurring gigs ---
     if(mounted) setState(() => _isProcessing = true);
     final bool confirmCancel = await showDialog<bool>(
       context: context,
