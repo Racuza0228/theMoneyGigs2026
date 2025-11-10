@@ -20,11 +20,27 @@ import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.d
 import 'package:the_money_gigs/features/notes/views/notes_page.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 import 'package:the_money_gigs/core/services/gig_embed_service.dart';
-// Add this line with your other imports
 import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
+// <<< --- REFACTORING: ADD IMPORT FOR THE NEW VENUES TAB WIDGET --- >>>
+import 'package:the_money_gigs/features/venues/views/venues_list_tab.dart';
+
 
 import '../../app_demo/providers/demo_provider.dart';
+
+class MonthlySeparator {
+  final DateTime month;
+  final int gigCount;
+  final double totalPay;
+  final double averagePayPerHour;
+
+  MonthlySeparator({
+    required this.month,
+    required this.gigCount,
+    required this.totalPay,
+    required this.averagePayPerHour,
+  });
+}
 
 enum GigsViewType { list, calendar }
 
@@ -252,8 +268,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       setState(() { _isMoreGigsLoading = false; });
     }
   }
-
-  // lib/features/gigs/views/gigs.dart
 
   void _generateAndSetDisplayedGigs() {
     List<Gig> allOccurrences = [];
@@ -893,28 +907,20 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-  List<Gig> _getGigsForVenue(StoredLocation venue, {bool futureOnly = false}) {
-    DateTime comparisonDate = DateTime.now();
-    // This now correctly checks against the displayed (generated) gigs
-    return _displayedGigs.where((gig) {
-      bool venueMatch = (gig.placeId != null && gig.placeId!.isNotEmpty && gig.placeId == venue.placeId) ||
-          (gig.placeId == null && gig.venueName.toLowerCase().contains(venue.name.toLowerCase()));
-      bool dateMatch = true;
-      if (futureOnly) {
-        DateTime gigDayStart = DateTime(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day);
-        DateTime todayStart = DateTime(comparisonDate.year, comparisonDate.month, comparisonDate.day);
-        dateMatch = !gigDayStart.isBefore(todayStart);
-      }
-      return venueMatch && dateMatch;
-    }).toList();
-  }
-
   Future<void> _showVenueDetailsDialog(StoredLocation venue) async {
     if (!mounted) return;
 
-    List<Gig> upcomingGigsAtVenue = _getGigsForVenue(venue, futureOnly: true)
-        .where((g) => !g.isJamOpenMic)
-        .toList();
+    List<Gig> upcomingGigsAtVenue = _displayedGigs.where((gig) {
+      bool venueMatch = gig.placeId == venue.placeId;
+      if (!venueMatch) return false;
+
+      // Check if the gig is in the future
+      bool dateMatch = gig.dateTime.isAfter(DateTime.now());
+
+      // Ensure it's not a jam/open mic session
+      return dateMatch && !gig.isJamOpenMic;
+    }).toList();
+
     upcomingGigsAtVenue.sort((a, b) => a.dateTime.compareTo(b.dateTime));
     Gig? nextUpcomingGig = upcomingGigsAtVenue.isNotEmpty ? upcomingGigsAtVenue.first : null;
 
@@ -1090,7 +1096,13 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             controller: _tabController,
             children: [
               _buildGigsTabContent(),
-              _buildVenuesList(),
+              // <<< --- REFACTORING: REPLACE THE OLD METHOD CALL WITH THE NEW WIDGET --- >>>
+              VenuesListTab(
+                isLoading: _isLoadingVenues,
+                displayableVenues: _displayableVenues,
+                displayedGigs: _displayedGigs,
+                onVenueTapped: _showVenueDetailsDialog,
+              ),
             ],
           ),
         ),
@@ -1167,96 +1179,229 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     );
   }
 
+  // lib/features/gigs/views/gigs.dart -> inside _GigsPageState
+
   Widget _buildGigsListView() {
-    if (_displayedGigs.isEmpty) return const Center(child: Text('No gigs or jam nights to display.', textAlign: TextAlign.center));
+    if (_displayedGigs.isEmpty) {
+      return const Center(
+          child: Text('No gigs or jam nights to display.',              textAlign: TextAlign.center));
+    }
+
+    // --- REWRITTEN LOGIC TO CORRECTLY GROUP AND DISPLAY GIGS ---
+
+    // 1. Group gigs by month using a LinkedHashMap to maintain chronological order.
+    final gigsByMonth = LinkedHashMap<DateTime, List<Gig>>(
+      equals: (a, b) => a.year == b.year && a.month == b.month,
+      hashCode: (key) => key.month.hashCode ^ key.year.hashCode,
+    );
+
+    for (final gig in _displayedGigs) {
+      final monthKey = DateTime(gig.dateTime.year, gig.dateTime.month, 1);
+      gigsByMonth.putIfAbsent(monthKey, () => []).add(gig);
+    }
+
+    // 2. Create a new flat list containing separators followed by their gigs.
+    final List<dynamic> listItems = [];
+    gigsByMonth.forEach((month, gigsInMonth) {
+      // First, calculate the summary for this month.
+      int gigCount = 0;
+      double totalPay = 0;
+      double totalHours = 0;
+
+      for (final gig in gigsInMonth) {
+        if (!gig.isJamOpenMic) {
+          gigCount++;
+          totalPay += gig.pay;
+          totalHours += gig.gigLengthHours;
+        }
+      }
+      final averagePayPerHour = totalHours > 0 ? totalPay / totalHours : 0.0;
+
+      // Add the separator for this month.
+      listItems.add(MonthlySeparator(
+        month: month,
+        gigCount: gigCount,
+        totalPay: totalPay,
+        averagePayPerHour: averagePayPerHour,
+      ));
+
+      // Then, add all the gigs for this month.
+      listItems.addAll(gigsInMonth);
+    });
+
+    // 3. Build the ListView.
     return ListView.builder(
-      controller: _scrollController, // Attach scroll controller
-      itemCount: _displayedGigs.length,
+      controller: _scrollController,
+      itemCount: listItems.length,
       itemBuilder: (context, index) {
-        final gig = _displayedGigs[index];
-        bool isPast;
-        DateTime gigEndTime = gig.dateTime.add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
-        isPast = gigEndTime.isBefore(DateTime.now());
+        final item = listItems[index];
 
-        bool isJam = gig.isJamOpenMic;
-        bool hasNotes = (gig.notes?.isNotEmpty ?? false) || (gig.notesUrl?.isNotEmpty ?? false);
+        // --- RENDER SEPARATOR ---
+        if (item is MonthlySeparator) {
+          if (item.gigCount == 0) return const SizedBox.shrink();
 
-        // --- START OF FIX: Identify if the gig is part of a recurring series ---
-        // A gig is part of a recurring series if it's a template OR was generated from one.
-        final bool isRecurringGig = gig.isRecurring || gig.isFromRecurring;
-        // --- END OF FIX ---
-
-        return Card(
-          elevation: isPast ? 0.5 : (isJam ? 1.5 : 2),
-          color: isPast ? Colors.grey.shade300 : (isJam ? Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.7) : Theme.of(context).cardColor),
-          margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: isJam ? Theme.of(context).colorScheme.tertiary : (isPast ? Colors.grey.shade400 : Theme.of(context).colorScheme.primary),
-              foregroundColor: isJam? Theme.of(context).colorScheme.onTertiary : Colors.white,
-              child: isJam ? const Icon(Icons.music_note, size: 20) : Text(DateFormat('d').format(gig.dateTime)),
-            ),
-            // --- START OF FIX: Add recurrence icon to title ---
-            title: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    gig.venueName,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isPast ? Colors.grey.shade700 : (isJam ? Theme.of(context).colorScheme.onSecondaryContainer : Theme.of(context).textTheme.titleLarge?.color),
-                    ),
-                  ),
-                ),
-                // Display the icon if it's a recurring gig (and not a jam session, which is implicitly recurring)
-                if (isRecurringGig && !isJam)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8.0),
-                    child: Icon(
-                      Icons.event_repeat, // A more fitting icon for recurrence
-                      size: 16,
-                      color: isPast ? Colors.grey.shade600 : Theme.of(context).colorScheme.secondary,
-                      semanticLabel: "Recurring Gig",
-                    ),
-                  ),
-              ],
-            ),
-            // --- END OF FIX ---
-            subtitle: Column(
+          return Container(
+            padding:
+            const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+            margin: const EdgeInsets.only(top: 16, left: 8, right: 8),
+            decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: Theme.of(context).primaryColor.withOpacity(0.2))),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${DateFormat.yMMMEd().format(gig.dateTime)} at ${DateFormat.jm().format(gig.dateTime)}',
-                  style: TextStyle(color: isPast ? Colors.grey.shade600 : (isJam ? Theme.of(context).colorScheme.onSecondaryContainer.withOpacity(0.8) : Theme.of(context).textTheme.bodyMedium?.color)),
-                ),
-                if (!isJam)
-                  Text(
-                    'Pay: \$${gig.pay.toStringAsFixed(0)} - ${gig.gigLengthHours.toStringAsFixed(1)} hrs',
-                    style: TextStyle(color: isPast ? Colors.grey.shade600 : Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.9)),
-                  )
-                else
-                  const Text(
-                    "Open Mic / Jam Session",
-                    style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+                  DateFormat.yMMMM().format(item.month),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Theme.of(context).primaryColorLight,
                   ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('${item.gigCount} Gigs'),
+                    Text(
+                      '\$${item.totalPay.toStringAsFixed(0)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text('Avg. \$${item.averagePayPerHour.toStringAsFixed(2)}/hr'),
+                  ],
+                ),
               ],
             ),
-            trailing: isJam
-                ? null
-                : IconButton(
-              icon: Icon(
-                hasNotes ? Icons.speaker_notes : Icons.speaker_notes_off_outlined,
-                color: hasNotes ? Theme.of(context).colorScheme.primary : Colors.grey,
+          );
+        }
+
+        // --- RENDER GIG TILE (existing logic) ---
+        if (item is Gig) {
+          final gig = item;
+          bool isPast;
+          DateTime gigEndTime = gig.dateTime
+              .add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
+          isPast = gigEndTime.isBefore(DateTime.now());
+
+          bool isJam = gig.isJamOpenMic;
+          bool hasNotes =
+              (gig.notes?.isNotEmpty ?? false) || (gig.notesUrl?.isNotEmpty ?? false);
+          final bool isRecurringGig = gig.isRecurring || gig.isFromRecurring;
+
+          return Card(
+            elevation: isPast ? 0.5 : (isJam ? 1.5 : 2),
+            color: isPast
+                ? Colors.grey.shade300
+                : (isJam
+                ? Theme.of(context)
+                .colorScheme
+                .secondaryContainer
+                .withOpacity(0.7)
+                : Theme.of(context).cardColor),
+            margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: isJam
+                    ? Theme.of(context).colorScheme.tertiary
+                    : (isPast
+                    ? Colors.grey.shade400
+                    : Theme.of(context).colorScheme.primary),
+                foregroundColor: isJam
+                    ? Theme.of(context).colorScheme.onTertiary
+                    : Colors.white,
+                child: isJam
+                    ? const Icon(Icons.music_note, size: 20)
+                    : Text(DateFormat('d').format(gig.dateTime)),
               ),
-              onPressed: () => _launchNotesPageForGig(gig),
-              tooltip: 'View/Edit Notes',
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      gig.venueName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isPast
+                            ? Colors.grey.shade700
+                            : (isJam
+                            ? Theme.of(context).colorScheme.onSecondaryContainer
+                            : Theme.of(context).textTheme.titleLarge?.color),
+                      ),
+                    ),
+                  ),
+                  if (isRecurringGig && !isJam)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8.0),
+                      child: Icon(
+                        Icons.event_repeat,
+                        size: 16,
+                        color: isPast
+                            ? Colors.grey.shade600
+                            : Theme.of(context).colorScheme.secondary,
+                        semanticLabel: "Recurring Gig",
+                      ),
+                    ),
+                ],
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${DateFormat.yMMMEd().format(gig.dateTime)} at ${DateFormat.jm().format(gig.dateTime)}',
+                    style: TextStyle(
+                        color: isPast
+                            ? Colors.grey.shade600
+                            : (isJam
+                            ? Theme.of(context)
+                            .colorScheme
+                            .onSecondaryContainer
+                            .withOpacity(0.8)
+                            : Theme.of(context).textTheme.bodyMedium?.color)),
+                  ),
+                  if (!isJam)
+                    Text(
+                      'Pay: \$${gig.pay.toStringAsFixed(0)} - ${gig.gigLengthHours.toStringAsFixed(1)} hrs',
+                      style: TextStyle(
+                          color: isPast
+                              ? Colors.grey.shade600
+                              : Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.color
+                              ?.withOpacity(0.9)),
+                    )
+                  else
+                    const Text(
+                      "Open Mic / Jam Session",
+                      style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+                    ),
+                ],
+              ),
+              trailing: isJam
+                  ? null
+                  : IconButton(
+                icon: Icon(
+                  hasNotes
+                      ? Icons.speaker_notes
+                      : Icons.speaker_notes_off_outlined,
+                  color: hasNotes
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.grey,
+                ),
+                onPressed: () => _launchNotesPageForGig(gig),
+                tooltip: 'View/Edit Notes',
+              ),
+              onTap: () => _launchBookingDialogForGig(gig),
             ),
-            onTap: () => _launchBookingDialogForGig(gig),
-          ),
-        );
+          );
+        }
+        // Fallback for any unexpected item type
+        return const SizedBox.shrink();
       },
     );
   }
+
 
 
   Widget _buildGigsCalendarView() {
@@ -1408,74 +1553,4 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     );
   }
 
-
-  Widget _buildVenuesList() {
-    if (_isLoadingVenues && _displayableVenues.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_displayableVenues.isEmpty) {
-      return const Center( child: Text("No venues saved yet. Add a new venue when booking a gig!", textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey)) );
-    }
-    List<StoredLocation> sortedDisplayableVenues = List.from(_displayableVenues)..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    return ListView.builder(
-      itemCount: sortedDisplayableVenues.length,
-      itemBuilder: (context, index) {
-        final venue = sortedDisplayableVenues[index];
-        final int futureGigsCount = _getGigsForVenue(venue, futureOnly: true).where((g) => !g.isJamOpenMic).toList().length;
-        final bool hasVenueNotes = (venue.venueNotes?.isNotEmpty ?? false) || (venue.venueNotesUrl?.isNotEmpty ?? false);
-        final venueContact = venue.contact;
-
-        String venueDisplayName = venue.isPrivate ? '[PRIVATE] ${venue.name}' : venue.name;
-
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-          child: ListTile(
-            leading: Icon(Icons.business, color: Theme.of(context).colorScheme.secondary),
-            title: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(child: Text(venueDisplayName, style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
-                if (futureGigsCount > 0)
-                  Text(
-                    ' ($futureGigsCount upcoming)',
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontStyle: FontStyle.italic),
-                  ),
-              ],
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(venue.address.isNotEmpty ? venue.address : 'Address not specified', style: TextStyle(color: Colors.grey.shade600)),
-                if (venueContact != null && venueContact.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '${venueContact.name} ${venueContact.phone}'.trim(),
-                    style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
-                  ),
-                  if (venueContact.email.isNotEmpty)
-                    Text(
-                      venueContact.email,
-                      style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
-                    ),
-                ]
-              ],
-            ),
-            trailing: IconButton(
-              icon: Icon(
-                hasVenueNotes ? Icons.speaker_notes : Icons.speaker_notes_off_outlined,
-                color: hasVenueNotes ? Theme.of(context).colorScheme.primary : Colors.grey,
-              ),
-              tooltip: 'View/Edit Venue Notes',
-              onPressed: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (context) => NotesPage(editingVenueId: venue.placeId),
-                ));
-              },
-            ),
-            onTap: () => _showVenueDetailsDialog(venue),
-          ),
-        );
-      },
-    );
-  }
 }
