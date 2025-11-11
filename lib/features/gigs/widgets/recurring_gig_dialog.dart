@@ -85,7 +85,7 @@ class _RecurringGigDialogState extends State<RecurringGigDialog> {
               const SizedBox(height: 8),
               DropdownButtonFormField<DayOfWeek>(
                 decoration: const InputDecoration(labelText: 'Day of Week'),
-                value: _editableGig.recurrenceDay ?? DayOfWeek.values[_editableGig.dateTime.weekday - 1],
+                initialValue: _editableGig.recurrenceDay ?? DayOfWeek.values[_editableGig.dateTime.weekday - 1],
                 items: DayOfWeek.values.map((d) => DropdownMenuItem(value: d, child: Text(toBeginningOfSentenceCase(d.name)!))).toList(),
                 onChanged: (value) {
                   if (value != null) {
@@ -98,7 +98,7 @@ class _RecurringGigDialogState extends State<RecurringGigDialog> {
               const SizedBox(height: 12),
               DropdownButtonFormField<JamFrequencyType>(
                 decoration: const InputDecoration(labelText: 'Frequency'),
-                value: _editableGig.recurrenceFrequency ?? JamFrequencyType.weekly,
+                initialValue: _editableGig.recurrenceFrequency ?? JamFrequencyType.weekly,
                 isExpanded: true,
                 items: JamFrequencyType.values.map((f) {
                   String text;

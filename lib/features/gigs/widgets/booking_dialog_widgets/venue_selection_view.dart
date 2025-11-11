@@ -47,7 +47,7 @@ class VenueSelectionView extends StatelessWidget {
 
     return DropdownButtonFormField<StoredLocation>(
       decoration: const InputDecoration(labelText: 'Select or Add Venue', border: OutlineInputBorder()),
-      value: selectedVenue,
+      initialValue: selectedVenue,
       isExpanded: true,
       items: selectableVenues.map<DropdownMenuItem<StoredLocation>>((StoredLocation venue) {
         bool isEnabled = !venue.isArchived || venue.placeId == addNewVenuePlaceholder.placeId;

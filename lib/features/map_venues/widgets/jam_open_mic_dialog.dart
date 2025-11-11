@@ -214,7 +214,7 @@ class _JamSessionEditorState extends State<_JamSessionEditor> {
             const SizedBox(height: 8),
             DropdownButtonFormField<DayOfWeek>(
               decoration: const InputDecoration(labelText: 'Day'),
-              value: _sessionData.day,
+              initialValue: _sessionData.day,
               items: DayOfWeek.values.map((d) => DropdownMenuItem(value: d, child: Text(toBeginningOfSentenceCase(d.name)!))).toList(),
               onChanged: (value) {
                 if (value != null) {
@@ -227,11 +227,11 @@ class _JamSessionEditorState extends State<_JamSessionEditor> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text('Time: ${_sessionData.time.format(context)}'),
-              trailing: TextButton(child: const Text('SELECT'), onPressed: _pickTime),
+              trailing: TextButton(onPressed: _pickTime, child: const Text('SELECT')),
             ),
             DropdownButtonFormField<JamFrequencyType>(
               decoration: const InputDecoration(labelText: 'Frequency'),
-              value: _sessionData.frequency,
+              initialValue: _sessionData.frequency,
               isExpanded: true,
               items: JamFrequencyType.values.map((f) {
                 // This makes the dropdown text more readable

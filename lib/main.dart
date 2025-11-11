@@ -5,8 +5,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:google_maps_flutter_android/google_maps_flutter_android.dart'; // <<< 1. ADD THIS IMPORT
-import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart'; // <<< 1. ADD THIS IMPORT
+// <<< 1. ADD THIS IMPORT
+// <<< 1. ADD THIS IMPORT
 
 import 'package:provider/provider.dart';
 import 'features/app_demo/providers/demo_provider.dart';

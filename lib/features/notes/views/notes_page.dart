@@ -376,9 +376,9 @@ class _NotesPageState extends State<NotesPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
                   textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ).copyWith(
-                  backgroundColor: MaterialStateProperty.resolveWith<Color?>(
-                        (Set<MaterialState> states) {
-                      if (states.contains(MaterialState.disabled)) {
+                  backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+                        (Set<WidgetState> states) {
+                      if (states.contains(WidgetState.disabled)) {
                         return Colors.grey.shade700;
                       }
                       return Theme.of(context).colorScheme.primary;

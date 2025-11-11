@@ -15,6 +15,7 @@ import 'package:the_money_gigs/core/services/places_service.dart';
 import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
+import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/map_venues/models/place_models.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
@@ -40,6 +41,7 @@ class _MapPageState extends State<MapPage> {
   List<StoredLocation> _allKnownMapVenues = [];
   List<StoredLocation> _jamSessionVenues = [];
   bool _showJamSessions = false;
+  DayOfWeek? _selectedJamDay;
   BitmapDescriptor _jamSessionMarkerIcon = BitmapDescriptor.defaultMarker;
   BitmapDescriptor? _gigMarkerIcon;
 
@@ -365,8 +367,7 @@ class _MapPageState extends State<MapPage> {
     if (!mounted || _gigMarkerIcon == null) {
       return;
     }
-    final Set<Marker> newMarkers = {};
-    final Set<String> placedMarkerIds = {};
+    final Set<Marker> newMarkers = {};final Set<String> placedMarkerIds = {};
     final now = DateTime.now();
     final upcomingGigVenuePlaceIds = _allLoadedGigs
         .where((gig) => gig.dateTime.isAfter(now))
@@ -394,7 +395,10 @@ class _MapPageState extends State<MapPage> {
     }
     if (_showJamSessions) {
       for (var jamVenue in _jamSessionVenues) {
-        if (!placedMarkerIds.contains(jamVenue.placeId)) {
+        final bool dayMatches = _selectedJamDay == null ||
+            jamVenue.jamSessions.any((session) => session.day == _selectedJamDay);
+
+        if (!placedMarkerIds.contains(jamVenue.placeId) && dayMatches) {
           newMarkers.add(Marker(
             markerId: MarkerId('jam_${jamVenue.placeId}'),
             position: jamVenue.coordinates,
@@ -408,6 +412,7 @@ class _MapPageState extends State<MapPage> {
     }
     setState(() { _markers = newMarkers; });
   }
+
 
   Future<void> _updateAndSaveLocationReview(StoredLocation updatedLocation) async {
     List<StoredLocation> updatedAllVenues = List.from(_allKnownMapVenues);
@@ -779,13 +784,48 @@ class _MapPageState extends State<MapPage> {
                               _updateMarkers();
                             });
                           },
-                          activeColor: Colors.orange.shade600,
+                          activeThumbColor: Colors.orange.shade600,
                         ),
                       ],
                     ),
                   ],
                 ),
               ),
+              if (_showJamSessions)
+                Card(
+                  margin: const EdgeInsets.only(top: 6.0),
+                  elevation: 2.0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: DayOfWeek.values.map((day) {
+                        final bool isSelected = _selectedJamDay == day;
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              if (isSelected) {
+                                _selectedJamDay = null; // Unselect if tapped again
+                              } else {
+                                _selectedJamDay = day;
+                              }
+                              _updateMarkers(); // Refresh markers with new filter
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isSelected ? Colors.orange.shade600 : Colors.lightBlue,
+                              borderRadius: BorderRadius.circular(8.0),
+                            ),
+                            child: Text(day.toString().split('.').last.substring(0, 3), style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.black54)),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
               if (_isSearchVisible && _autocompleteResults.isNotEmpty)
                 Card(
                   margin: const EdgeInsets.only(top: 8.0),

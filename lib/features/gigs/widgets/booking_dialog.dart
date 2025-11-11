@@ -1071,13 +1071,13 @@ class _BookingDialogState extends State<BookingDialog> {
           actions: <Widget>[
             if (_isEditingMode)
               TextButton(
-                child: Text('CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)),
                 onPressed: isDialogProcessing ? null : _handleGigCancellation,
+                child: Text('CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)),
               )
             else
               TextButton(
-                child: const Text('CANCEL'),
                 onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(),
+                child: const Text('CANCEL'),
               ),
             Row(
               key: _confirmBtnKey,
@@ -1085,8 +1085,8 @@ class _BookingDialogState extends State<BookingDialog> {
               children: [
                 if (_isEditingMode)
                   TextButton(
-                    child: const Text('CLOSE'),
                     onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange)),
+                    child: const Text('CLOSE'),
                   ),
                 const SizedBox(width: 8),
                 ElevatedButton(

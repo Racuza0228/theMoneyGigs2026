@@ -13,7 +13,7 @@ import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHA
 
 // Import your models
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
-import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart'; // <<<--- IMPORT THE NEW MODEL
+// <<<--- IMPORT THE NEW MODEL
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.dart';
@@ -534,7 +534,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
     allCalendarGigs.addAll(_generateJamOpenMicGigs(calendarRangeEnd));
 
-    final uniqueGigs = Map<String, Gig>.fromIterable(allCalendarGigs, key: (g) => g.id, value: (g) => g);
+    final uniqueGigs = { for (var g in allCalendarGigs) g.id : g };
 
     for (var gig in uniqueGigs.values) {
       final date = DateTime.utc(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day);

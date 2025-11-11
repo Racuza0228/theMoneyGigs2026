@@ -385,7 +385,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           style: TextStyle(color: formTextColor, fontSize: 16),
                           decoration: _formInputDecoration(labelText: 'State'),
                           dropdownColor: Colors.grey[850],
-                          value: _selectedState,
+                          initialValue: _selectedState,
                           hint: Text('Select', style: TextStyle(color: Colors.white70)),
                           isExpanded: true,
                           items: _usStates.map<DropdownMenuItem<String>>((String value) {
@@ -460,9 +460,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
                   minimumSize: const Size(double.infinity, 50),
                 ).copyWith(
-                  backgroundColor: MaterialStateProperty.resolveWith<Color?>(
-                        (Set<MaterialState> states) {
-                      if (states.contains(MaterialState.disabled)) return Colors.grey.shade700;
+                  backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+                        (Set<WidgetState> states) {
+                      if (states.contains(WidgetState.disabled)) return Colors.grey.shade700;
                       return Theme.of(context).colorScheme.primary;
                     },
                   ),

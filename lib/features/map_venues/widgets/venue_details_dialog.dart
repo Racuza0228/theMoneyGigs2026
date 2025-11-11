@@ -223,8 +223,8 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
             Text(widget.venue.jamOpenMicDisplayString(context)),
             Center(
               child: TextButton(
-                child: const Text('Edit Jam/Open Mic Settings'),
                 onPressed: widget.onEditJamSettings,
+                child: const Text('Edit Jam/Open Mic Settings'),
               ),
             ),
           ],
