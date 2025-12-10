@@ -97,6 +97,13 @@
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
+      <EnvironmentVariables>
+         <EnvironmentVariable
+            key = "GOOGLE_API_KEY"
+            value = "AIzaSyCjyQbNWIXnY5L9AHXhZrhzqsDwYAZPKVo"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Profile"

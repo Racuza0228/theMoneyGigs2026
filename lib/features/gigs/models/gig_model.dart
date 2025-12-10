@@ -16,7 +16,7 @@ class Gig {
   bool isJamOpenMic;
   String? notes;
   String? notesUrl;
-
+  String? setlistId;
   // --- RECURRENCE FIELDS ---
   bool isRecurring;
   JamFrequencyType? recurrenceFrequency;
@@ -41,6 +41,7 @@ class Gig {
     this.isJamOpenMic = false,
     this.notes,
     this.notesUrl,
+    this.setlistId,
     this.isRecurring = false,
     this.recurrenceFrequency,
     this.recurrenceDay,
@@ -65,6 +66,7 @@ class Gig {
     bool? isJamOpenMic,
     String? notes,
     String? notesUrl,
+    String? setlistId,
     bool? isRecurring,
     JamFrequencyType? recurrenceFrequency,
     DayOfWeek? recurrenceDay,
@@ -88,6 +90,7 @@ class Gig {
       isJamOpenMic: isJamOpenMic ?? this.isJamOpenMic,
       notes: notes ?? this.notes,
       notesUrl: notesUrl ?? this.notesUrl,
+      setlistId: setlistId ?? this.setlistId,
       isRecurring: isRecurring ?? this.isRecurring,
       recurrenceFrequency: recurrenceFrequency ?? this.recurrenceFrequency,
       recurrenceDay: recurrenceDay ?? this.recurrenceDay,
@@ -96,6 +99,20 @@ class Gig {
       isFromRecurring: isFromRecurring ?? this.isFromRecurring,
       recurrenceExceptions: recurrenceExceptions ?? this.recurrenceExceptions, // <<< ADDED TO COPYWITH
     );
+  }
+
+  double get trueHourlyRate {
+    // Sum up all the hours invested in the gig.
+    final double totalHours =
+        gigLengthHours + driveSetupTimeHours + rehearsalLengthHours;
+
+    // To prevent division by zero if all hours are 0, return 0.
+    if (pay <= 0 || totalHours <= 0) {
+      return 0.0;
+    }
+
+    // Calculate the true rate.
+    return pay / totalHours;
   }
 
   /// Gets the base ID for a gig. For a recurring instance (e.g., 'gig1_20240101'),
@@ -135,6 +152,7 @@ class Gig {
       'isJamOpenMic': isJamOpenMic,
       'notes': notes,
       'notesUrl': notesUrl,
+      'setlistId': setlistId,
       'isRecurring': isRecurring,
       'recurrenceFrequency': recurrenceFrequency?.toString(),
       'recurrenceDay': recurrenceDay?.toString(),
@@ -181,6 +199,7 @@ class Gig {
       isJamOpenMic: json['isJamOpenMic'] as bool? ?? false,
       notes: json['notes'] as String?,
       notesUrl: json['notesUrl'] as String?,
+      setlistId: json['setlistId'] as String?, // <<< ADD TO FROMJSON
       isRecurring: json['isRecurring'] as bool? ?? false,
       recurrenceFrequency: safeParseEnum(JamFrequencyType.values, json['recurrenceFrequency'] as String?),
       recurrenceDay: safeParseEnum(DayOfWeek.values, json['recurrenceDay'] as String?),

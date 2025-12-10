@@ -1,14 +1,13 @@
 // lib/main.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-// <<< 1. ADD THIS IMPORT
-// <<< 1. ADD THIS IMPORT
-
 import 'package:provider/provider.dart';
+import 'core/services/app_update_service.dart';
+import 'core/services/notification_service.dart';
 import 'features/app_demo/providers/demo_provider.dart';
 import 'features/app_demo/widgets/tutorial_overlay.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,6 +19,10 @@ import 'core/widgets/page_background_wrapper.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'global_refresh_notifier.dart';
 import 'features/app_demo/widgets/animated_text.dart'; // <<< IMPORT THE NEW WIDGET
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:purchases_flutter/purchases_flutter.dart';
 
 
 // A flexible class for the global demo steps
@@ -44,14 +47,56 @@ class _GlobalDemoStep {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // final GoogleMapsFlutterPlatform mapsImplementation = GoogleMapsFlutterPlatform.instance;
-  // if (mapsImplementation is GoogleMapsFlutterAndroid) {
-  //   mapsImplementation.useAndroidViewSurface = false;
-  // }
+  tz.initializeTimeZones();
+
+// Initialize notification service
+  final NotificationService notificationService = NotificationService();
+
+  // Initialize the service
+  await notificationService.init();
+  await notificationService.debugPendingNotifications();
+
+
+  // Initialize Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+
+
+  Future<void> initializeRevenueCat() async {
+    // Platform-specific API keys
+    String apiKey;
+    if (Platform.isIOS) {
+      apiKey = 'test_sFBpSvZPjpQyWyuLyPobraUtyfL';  // Replace with real iOS key later
+    } else if (Platform.isAndroid) {
+      apiKey = 'test_sFBpSvZPjpQyWyuLyPobraUtyfL';  // Replace with real Android key later
+    } else {
+      throw UnsupportedError('Platform not supported');
+    }
+
+    await Purchases.configure(PurchasesConfiguration(apiKey));
+    print('✅ RevenueCat initialized');
+  }
+  await NotificationService().requestPermissions();
+
+  try {
+    // Test Firestore
+    await FirebaseFirestore.instance
+        .collection('test')
+        .doc('hello')
+        .set({'message': 'Hello Firebase!', 'timestamp': DateTime.now()});
+
+    print('✅ Firebase working!');
+  } catch (e) {
+    print('❌ Error: $e');
+  }
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
+
+  await initializeRevenueCat();
 
   runApp(
     MultiProvider(
@@ -133,6 +178,7 @@ class _MainPageState extends State<MainPage> {
     Provider.of<GlobalRefreshNotifier>(context, listen: false).addListener(_onSettingsChanged);
     Provider.of<DemoProvider>(context, listen: false).addListener(_onDemoStateChanged);
     _checkAndRunFirstTimeDemo();
+    _checkForAppUpdate();
 
     // Define the script for the global overlays shown on this page
     _globalDemoScript = [
@@ -164,6 +210,15 @@ class _MainPageState extends State<MainPage> {
         ),
       ),
     ];
+  }
+
+  Future<void> _checkForAppUpdate() async {
+    // In-app updates are only supported on Android.
+    // This check prevents errors if you ever build for iOS.
+    if (Platform.isAndroid) {
+      final AppUpdateService updateService = AppUpdateService();
+      await updateService.checkForUpdate();
+    }
   }
 
   Future<void> _checkAndRunFirstTimeDemo() async {

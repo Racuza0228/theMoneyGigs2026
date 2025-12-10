@@ -5,7 +5,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle:8.1.0")
+        classpath("com.android.tools.build:gradle:8.9.1")
         classpath("com.google.gms:google-services:4.4.0")  // ADD THIS
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0")
     }
@@ -17,6 +17,7 @@ allprojects {
         mavenCentral()
     }
 }
+
 
 val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
 rootProject.layout.buildDirectory.value(newBuildDir)
@@ -33,3 +34,4 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+

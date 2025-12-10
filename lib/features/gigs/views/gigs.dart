@@ -76,6 +76,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   DateTime? _selectedDay;
   List<Gig> _selectedDayGigs = [];
   static const String _keyGigsList = 'gigs_list';
+
   static const String _keySavedLocations = 'saved_locations';
 
   final Gig _demoGig = Gig(
@@ -225,7 +226,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     if (!mounted) return;
     setState(() { _isLoadingGigs = true; });
     final prefs = await SharedPreferences.getInstance();
+
+    // --- ALWAYS load from the original, correct key ---
     final String? gigsJsonString = prefs.getString(_keyGigsList);
+
     List<Gig> loadedGigs = [];
     if (gigsJsonString != null && gigsJsonString.isNotEmpty) {
       try {
@@ -234,17 +238,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading gigs: $e')));
       }
     }
-
-    // --- START OF DEBUGGING PRINT ---
-    print("--- 1. Gigs Loaded From SharedPreferences ---");
-    for (var gig in loadedGigs) {
-      String recurrenceInfo = gig.isRecurring
-          ? "[RECURRING: ${gig.recurrenceFrequency}, on ${gig.recurrenceDay}]"
-          : "[Not Recurring]";
-      print("  - Loaded Gig: ${gig.venueName} on ${DateFormat('yyyy-MM-dd').format(gig.dateTime)}. $recurrenceInfo");
-    }
-    print("------------------------------------------");
-    // --- END OF DEBUGGING PRINT ---
 
     if (mounted) {
       _allGigs = loadedGigs;
@@ -395,7 +388,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       return occurrences;
     }
 
-    print("\n--- 2. Generating Occurrences for: ${baseGig.venueName} (Base Date: ${baseGig.dateTime}) ---");
+    //print("\n--- 2. Generating Occurrences for: ${baseGig.venueName} (Base Date: ${baseGig.dateTime}) ---");
 
     DateTime recurrenceSeriesStart = baseGig.dateTime;
 
@@ -419,7 +412,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         DateTime testDate = _findNextDayOfWeek(iteratorDate, targetWeekday, sameDayOk: true);
         while (testDate.isBefore(calculationRangeEnd) || isSameDay(testDate, calculationRangeEnd)) {
           // --- START OF DEBUGGING PRINT ---
-          print("     - [Weekly] Found potential date: ${DateFormat('yyyy-MM-dd').format(testDate)}");
+          //print("     - [Weekly] Found potential date: ${DateFormat('yyyy-MM-dd').format(testDate)}");
           // --- END OF DEBUGGING PRINT ---
           _addOccurrenceIfApplicable(occurrences, baseGig, testDate);
           testDate = testDate.add(const Duration(days: 7)); // Simply jump to the next week.
@@ -481,7 +474,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     // Check if the specific date of this potential occurrence is in the base gig's exception list.
     if (baseGig.recurrenceExceptions != null &&
         baseGig.recurrenceExceptions!.any((exceptionDate) => isSameDay(exceptionDate, dateOfOccurrence))) {
-      print("  - 🚫 SKIPPING OCCURRENCE on ${DateFormat('yyyy-MM-dd').format(dateOfOccurrence)} due to exception.");
+      //print("  - 🚫 SKIPPING OCCURRENCE on ${DateFormat('yyyy-MM-dd').format(dateOfOccurrence)} due to exception.");
       return; // Do not generate this gig instance.
     }
     // --- END OF EXCEPTION LOGIC ---
@@ -503,7 +496,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     // Create a unique ID for this specific occurrence to avoid collisions
     final String uniqueId = '${baseGig.id}_${DateFormat('yyyyMMdd').format(gigDateTime)}';
 
-    print("     ✅ ADDING OCCURRENCE for ${DateFormat('yyyy-MM-dd').format(gigDateTime)}");
+    //print("     ✅ ADDING OCCURRENCE for ${DateFormat('yyyy-MM-dd').format(gigDateTime)}");
 
     occurrences.add(
       baseGig.copyWith(
@@ -624,20 +617,35 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-  void _launchNotesPageForGig(Gig gig) {
+  Future<void> _launchNotesPageForGig(Gig gig) async {
     if (gig.isJamOpenMic) return;
 
-    // The ID of a recurring gig instance is modified, so we need the base ID
-    String baseGigId = gig.id;
-    if (gig.id.contains('_') && !gig.id.startsWith('jam_')) {
-      baseGigId = gig.id.substring(0, gig.id.lastIndexOf('_'));
-    }
+    // --- START DEBUGGING ---
+    //print("--- [GigsPage] Debugging _launchNotesPageForGig ---");
+    //print("1. Gig Tapped: '${gig.venueName}' (ID: ${gig.id})");
+    //print("2. Is it from a recurring series? ${gig.isFromRecurring}");
 
-    Navigator.of(context).push(
+    final String gigIdForNotes = gig.getBaseId();
+
+    //print("3. Calculated Base ID to pass: $gigIdForNotes");
+    //print("----------------------------------------------------");
+    // --- END DEBUGGING ---
+
+    final result = await Navigator.of(context).push<Gig>(
       MaterialPageRoute(
-        builder: (context) => NotesPage(editingGigId: baseGigId),
+        builder: (context) => NotesPage(editingGigId: gigIdForNotes),
       ),
     );
+
+    if (result != null) {
+      setState(() {
+        final index = _allGigs.indexWhere((g) => g.id == result.id);
+        if (index != -1) {
+          _allGigs[index] = result;
+          _generateAndSetDisplayedGigs();
+        }
+      });
+    }
   }
 
   Future<void> _launchBookingDialogForGig(Gig gigToEdit) async {
@@ -1184,52 +1192,60 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   Widget _buildGigsListView() {
     if (_displayedGigs.isEmpty) {
       return const Center(
-          child: Text('No gigs or jam nights to display.',              textAlign: TextAlign.center));
+          child: Text('No gigs or jam nights to display.', textAlign: TextAlign.center));
     }
 
-    // --- REWRITTEN LOGIC TO CORRECTLY GROUP AND DISPLAY GIGS ---
-
-    // 1. Group gigs by month using a LinkedHashMap to maintain chronological order.
+    // Use a LinkedHashMap to group gigs by the first day of their month.
     final gigsByMonth = LinkedHashMap<DateTime, List<Gig>>(
       equals: (a, b) => a.year == b.year && a.month == b.month,
       hashCode: (key) => key.month.hashCode ^ key.year.hashCode,
     );
 
+    // *** THE CORE FIX IS HERE ***
+    // Group the gigs that are ACTUALLY being displayed (_displayedGigs)
+    // instead of the raw data from storage (_allGigs).
     for (final gig in _displayedGigs) {
       final monthKey = DateTime(gig.dateTime.year, gig.dateTime.month, 1);
       gigsByMonth.putIfAbsent(monthKey, () => []).add(gig);
     }
 
-    // 2. Create a new flat list containing separators followed by their gigs.
+    // 2. Create the final flat list for the ListView builder
     final List<dynamic> listItems = [];
-    gigsByMonth.forEach((month, gigsInMonth) {
-      // First, calculate the summary for this month.
-      int gigCount = 0;
-      double totalPay = 0;
-      double totalHours = 0;
+    gigsByMonth.keys.toList()
+      ..sort((a, b) => a.compareTo(b)) // Sort months chronologically
+      ..forEach((month) {
+        // Get the gigs for this month from our new, correct grouping.
+        final gigsInMonth = gigsByMonth[month]!;
 
-      for (final gig in gigsInMonth) {
-        if (!gig.isJamOpenMic) {
-          gigCount++;
-          totalPay += gig.pay;
-          totalHours += gig.gigLengthHours;
+        // Calculate summary for this month from the correct list of gigs.
+        int gigCount = 0;
+        double totalPay = 0;
+        double sumOfTrueHourlyRates = 0.0;
+
+        for (final gig in gigsInMonth) {
+          if (!gig.isJamOpenMic) {
+            gigCount++;
+            totalPay += gig.pay;
+            sumOfTrueHourlyRates += gig.trueHourlyRate;
+          }
         }
-      }
-      final averagePayPerHour = totalHours > 0 ? totalPay / totalHours : 0.0;
+        final averagePayPerHour = (gigCount > 0) ? sumOfTrueHourlyRates / gigCount : 0.0;
 
-      // Add the separator for this month.
-      listItems.add(MonthlySeparator(
-        month: month,
-        gigCount: gigCount,
-        totalPay: totalPay,
-        averagePayPerHour: averagePayPerHour,
-      ));
+        // Add the separator with the CORRECT totals.
+        listItems.add(MonthlySeparator(
+          month: month,
+          gigCount: gigCount,
+          totalPay: totalPay,
+          averagePayPerHour: averagePayPerHour,
+        ));
 
-      // Then, add all the gigs for this month.
-      listItems.addAll(gigsInMonth);
-    });
+        // Add the gigs for this month, ensuring they are sorted chronologically.
+        gigsInMonth.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+        listItems.addAll(gigsInMonth);
+      });
 
     // 3. Build the ListView.
+    // The rest of this method remains the same as it correctly renders the items.
     return ListView.builder(
       controller: _scrollController,
       itemCount: listItems.length,
@@ -1241,8 +1257,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           if (item.gigCount == 0) return const SizedBox.shrink();
 
           return Container(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
             margin: const EdgeInsets.only(top: 16, left: 8, right: 8),
             decoration: BoxDecoration(
                 color: Theme.of(context).primaryColor.withOpacity(0.1),
@@ -1286,8 +1301,11 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           isPast = gigEndTime.isBefore(DateTime.now());
 
           bool isJam = gig.isJamOpenMic;
-          bool hasNotes =
-              (gig.notes?.isNotEmpty ?? false) || (gig.notesUrl?.isNotEmpty ?? false);
+          final bool hasSetlist = gig.setlistId?.isNotEmpty ?? false;
+
+          final bool hasNotes = (gig.notes?.isNotEmpty ?? false) ||
+              (gig.notesUrl?.isNotEmpty ?? false) ||
+              hasSetlist;
           final bool isRecurringGig = gig.isRecurring || gig.isFromRecurring;
 
           return Card(

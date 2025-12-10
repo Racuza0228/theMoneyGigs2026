@@ -24,6 +24,9 @@ import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.
 import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 
+import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
+
+
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
 
@@ -44,6 +47,13 @@ class _MapPageState extends State<MapPage> {
   DayOfWeek? _selectedJamDay;
   BitmapDescriptor _jamSessionMarkerIcon = BitmapDescriptor.defaultMarker;
   BitmapDescriptor? _gigMarkerIcon;
+
+  late final VenueRepository _venueRepository;
+  BitmapDescriptor _publicVenueMarkerIcon = BitmapDescriptor.defaultMarker;
+  BitmapDescriptor _privateVenueMarkerIcon = BitmapDescriptor.defaultMarker;
+
+  static const String _isConnectedKey = 'is_connected_to_network';
+
 
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
@@ -81,6 +91,7 @@ class _MapPageState extends State<MapPage> {
 
     // 2. Now that permissions are handled, initialize services and add listeners.
     _placesService = PlacesService(apiKey: _googleApiKey);
+    _venueRepository = VenueRepository(); // VVV INITIALIZE REPOSITORY VVV
 
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
     Provider.of<DemoProvider>(context, listen: false)
@@ -230,16 +241,10 @@ class _MapPageState extends State<MapPage> {
     );
   }
 
-  Future<void> _loadCustomMarker() async {
+  Future<BitmapDescriptor> _loadCustomMarker() async {
     final Uint8List markerIconBytes = await _getBytesFromAsset('assets/mapmarker.png', 100);
-    final BitmapDescriptor icon = BitmapDescriptor.fromBytes(markerIconBytes);
-
-    if (mounted) {
-      setState(() {
-        _gigMarkerIcon = icon;
-        _updateMarkers();
-      });
-    }
+    // Just return the descriptor. Do not set state or update markers here.
+    return BitmapDescriptor.fromBytes(markerIconBytes);
   }
 
   Future<Uint8List> _getBytesFromAsset(String path, int width) async {
@@ -285,82 +290,181 @@ class _MapPageState extends State<MapPage> {
 
   void _handleGlobalRefresh() {
     if (mounted) {
+      print("🗺️ MapPage received global refresh signal. Reloading all map data.");
       _loadAllMapData();
     }
   }
+
 
   Future<void> _loadAllMapData() async {
     if (!mounted) return;
     setState(() { _isLoading = true; });
 
-    await _loadCustomMarker();
+    _setCustomMarkerStyles();
+    final loadedGigIcon = await _loadCustomMarker();
 
-    await Future.wait([
-      _loadSavedLocations(),
-      _loadJamSessionAsset(),
-      _loadAllGigs(),
-    ]);
+    // --- START: CORRECTED LOADING AND MERGING LOGIC ---
 
-    _setJamSessionMarkerStyle();
+    // 1. Load all local assets first.
+    final localVenues = await _loadSavedLocations();
+    final localGigs = await _loadAllGigs();
+    final localJamVenues = await _loadJamSessionAsset();
+
+    // 2. This will be our single source of truth for venues.
+    // Start by populating the map with all local venues, keyed by their placeId.
+    Map<String, StoredLocation> finalVenuesMap = {
+      for (var venue in localVenues) venue.placeId: venue
+    };
+
+    // 3. Check for network connection.
+    final prefs = await SharedPreferences.getInstance();
+    final bool isConnected = prefs.getBool(_isConnectedKey) ?? false;
+
+    if (isConnected) {
+      print("🔌 Network connection detected. Fetching public data to merge...");
+      const String userId = 'default_user_id'; // Placeholder for your auth service
+      final publicVenues = await _venueRepository.getAllPublicVenues(userId);
+      print("✅ Fetched ${publicVenues.length} public venues from Firebase.");
+
+      // 4. MERGE the public data into our local data map.
+      // This is the most critical part of the logic.
+      for (var publicVenue in publicVenues) {
+        // The publicVenue object has isPublic:true and the correct rating/comment from the DB.
+
+        // Check if we have a local version of this venue.
+        if (finalVenuesMap.containsKey(publicVenue.placeId)) {
+          // --- THIS VENUE EXISTS IN BOTH PLACES ---
+          // Take the existing local version...
+          final localVersion = finalVenuesMap[publicVenue.placeId]!;
+          // ...and update it with the authoritative data from the public database.
+          // This preserves local-only fields (like private notes/contacts) while
+          // overwriting the stale local rating/comment with fresh data from the cloud.
+          finalVenuesMap[publicVenue.placeId] = localVersion.copyWith(
+            isPublic: true,                // It's confirmed to be public.
+            rating: publicVenue.rating,    // Use rating from DB.
+            comment: publicVenue.comment,  // Use comment from DB.
+          );
+        } else {
+          // --- THIS VENUE IS PUBLIC BUT NOT SAVED LOCALLY ---
+          // Add it directly to our map.
+          finalVenuesMap[publicVenue.placeId] = publicVenue;
+        }
+      }
+    } else {
+      print("🚫 No network. Using local SharedPreferences data only.");
+      // If offline, iterate through the loaded local venues and ensure they are all marked as not public.
+      for (var entry in finalVenuesMap.entries) {
+        finalVenuesMap[entry.key] = entry.value.copyWith(isPublic: false);
+      }
+    }
+
+    // 5. Commit all loaded and merged data to the state in a single call.
+    if (mounted) {
+      setState(() {
+        _gigMarkerIcon = loadedGigIcon;
+        _allKnownMapVenues = finalVenuesMap.values.toList();
+        _allLoadedGigs = localGigs;
+        _jamSessionVenues = localJamVenues;
+      });
+    }
+
+    // 6. Now that the state is fully set, update the map markers.
+    print("--- All data loaded and merged. Triggering a single marker update. ---");
+    _updateMarkers();
+
+    // --- END: CORRECTED LOADING AND MERGING LOGIC ---
 
     if (mounted) { setState(() { _isLoading = false; }); }
   }
 
-  Future<void> _loadJamSessionAsset() async {
+  Future<void> _refreshVenuesFromFirebase() async {
+    print("🔄 Refreshing venues from Firebase...");
+    try {
+      const String userId = 'current_user_id'; // TODO: Get from FirebaseAuth
+
+      // Fetch updated venues with user's ratings
+      final publicVenues = await _venueRepository.getAllPublicVenues(userId);
+
+      if (!mounted) return;
+
+      setState(() {
+        // Update only the venues that exist in both lists
+        for (var publicVenue in publicVenues) {
+          final index = _allKnownMapVenues.indexWhere(
+                  (v) => v.placeId == publicVenue.placeId
+          );
+          if (index != -1) {
+            // Replace with updated venue (has new rating/comment)
+            _allKnownMapVenues[index] = publicVenue;
+          }
+        }
+
+        // Rebuild markers with updated data
+        _updateMarkers();
+      });
+
+      print("✅ Venues refreshed: ${publicVenues.length} public venues updated");
+    } catch (e) {
+      print("❌ Error refreshing venues: $e");
+    }
+  }
+
+
+
+  Future<List<StoredLocation>> _loadJamSessionAsset() async {
     try {
       final String jsonString = await rootBundle.loadString('assets/jam_sessions.json');
       final List<dynamic> jsonList = json.decode(jsonString);
-      final List<StoredLocation> allLoadedJams = jsonList.map((json) => StoredLocation.fromJson(json)).toList();
       final Map<String, StoredLocation> uniqueVenues = {};
+      final allLoadedJams = jsonList.map((json) => StoredLocation.fromJson(json)).toList();
       for (final venue in allLoadedJams) {
         if (venue.placeId.isNotEmpty) {
           uniqueVenues.putIfAbsent(venue.placeId, () => venue);
         }
       }
-      if (mounted) {
-        setState(() { _jamSessionVenues = uniqueVenues.values.toList(); });
-      }
+      return uniqueVenues.values.toList();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not load Jam Session data: ${e.toString()}'), backgroundColor: Colors.red));
       }
     }
+    return [];
   }
 
-  void _setJamSessionMarkerStyle() {
+
+  void _setCustomMarkerStyles() {
+    // Set style for Jam Sessions
     _jamSessionMarkerIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+
+    // VVV DEFINE PUBLIC AND PRIVATE MARKER STYLES VVV
+    _publicVenueMarkerIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
+    _privateVenueMarkerIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
   }
 
-  Future<void> _loadSavedLocations() async {
+  Future<List<StoredLocation>> _loadSavedLocations() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final List<String>? locationsJson = prefs.getStringList(_keySavedLocations);
-      List<StoredLocation> loadedFromPrefs = [];
       if (locationsJson != null) {
-        loadedFromPrefs = locationsJson.map((jsonString) => StoredLocation.fromJson(jsonDecode(jsonString))).toList();
-      }
-      if (mounted) {
-        setState(() {
-          _allKnownMapVenues = loadedFromPrefs;
-          _updateMarkers();
-        });
+        return locationsJson.map((jsonString) => StoredLocation.fromJson(jsonDecode(jsonString))).toList();
       }
     } catch (e) {
-      // Handle error
+      print("Error loading saved locations: $e");
     }
+    return []; // Return empty list on error or if null
   }
 
   Future<List<Gig>> _loadAllGigs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? gigsJsonString = prefs.getString(_keyGigsList);
-    final gigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : <Gig>[];
-    if (mounted) {
-      setState(() {
-        _allLoadedGigs = gigs;
-        _updateMarkers();
-      });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? gigsJsonString = prefs.getString(_keyGigsList);
+      if (gigsJsonString != null) {
+        return Gig.decode(gigsJsonString);
+      }
+    } catch (e) {
+      print("Error loading gigs: $e");
     }
-    return gigs;
+    return [];
   }
 
   void _updateMarkers() {
@@ -375,6 +479,7 @@ class _MapPageState extends State<MapPage> {
         .toSet();
 
     final currentDisplayableVenues = _allKnownMapVenues.where((v) => !v.isArchived).toList();
+
     for (var loc in currentDisplayableVenues) {
       final bool hasUpcomingGig = upcomingGigVenuePlaceIds.contains(loc.placeId);
       String snippetText = loc.address;
@@ -382,13 +487,27 @@ class _MapPageState extends State<MapPage> {
         final String formattedRating = loc.rating.toStringAsFixed(1);
         snippetText = '${loc.address}  $formattedRating ⭐';
       }
+
+      // --- START: MARKER COLOR LOGIC ---
+      final bool isPublic = loc.isPublic; // <-- MUCH CLEANER!
+      BitmapDescriptor venueIcon;
+
+      if (hasUpcomingGig) {
+        venueIcon = _gigMarkerIcon!; // Custom PNG icon for upcoming gigs always wins.
+      } else if (isPublic) {
+        //print("public venue");
+        venueIcon = _publicVenueMarkerIcon; // GREEN for public venues.
+      } else {
+        print("private venue");
+        venueIcon = _privateVenueMarkerIcon; // BLUE for private/local venues.
+      }
+      // --- END: MARKER COLOR LOGIC ---
+
       newMarkers.add(Marker(
         markerId: MarkerId('saved_${loc.placeId}'),
         position: loc.coordinates,
         infoWindow: InfoWindow(title: loc.name, snippet: snippetText),
-        icon: hasUpcomingGig
-            ? _gigMarkerIcon!
-            : BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        icon: venueIcon, // Use the 'venueIcon' variable we just figured out.
         onTap: () => _showLocationDetailsDialog(loc),
       ));
       placedMarkerIds.add(loc.placeId);
@@ -675,6 +794,9 @@ class _MapPageState extends State<MapPage> {
             if (result != null && result.settingsChanged && result.updatedVenue != null) {
               await _updateVenueJamNightSettings(result.updatedVenue!);
             }
+          },
+          onDataChanged: () async {
+            await _refreshVenuesFromFirebase();
           },
         );
       },

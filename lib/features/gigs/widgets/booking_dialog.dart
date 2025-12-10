@@ -18,6 +18,7 @@ import 'package:the_money_gigs/features/app_demo/widgets/tutorial_overlay.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/calculator_summary_view.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/financial_inputs_view.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/venue_selection_view.dart';
+import 'package:the_money_gigs/core/services/notification_service.dart'; // <-- ADD THIS
 import 'package:the_money_gigs/features/gigs/widgets/recurring_gig_dialog.dart';
 
 class _DialogDemoStep {
@@ -218,6 +219,65 @@ class _BookingDialogState extends State<BookingDialog> {
         _newVenueAddressController.text.trim().isNotEmpty) {
       _fetchDriveTimeForManualAddress();
     }
+  }
+
+  // Inside _BookingDialogState class in booking_dialog.dart
+
+  Future<void> _scheduleGigNotifications(Gig gig) async {
+    final prefs = await SharedPreferences.getInstance();
+    final notificationService = NotificationService();
+    final int baseNotificationId = gig.id.hashCode;
+
+    // --- Schedule notification for the day of the gig ---
+    final bool notifyOnDayOfGig = prefs.getBool('notify_on_day_of_gig') ?? false;
+    final int dayOfGigNotificationId = baseNotificationId;
+
+    if (notifyOnDayOfGig) {
+      // THIS IS THE TEST CODE WE NEED. IT SETS THE NOTIFICATION FOR 1 MINUTE FROM NOW.
+      final DateTime scheduledDate = DateTime.now().add(const Duration(minutes: 1));
+
+      if (scheduledDate.isAfter(DateTime.now())) {
+        // We will use the detailed scheduleNotification method from notification_service.dart
+        // which has the try/catch block for debugging.
+        await notificationService.scheduleNotification(
+          id: dayOfGigNotificationId,
+          title: '[TEST] Gig Reminder',
+          body: 'Your gig "${gig.venueName}" is scheduled for ${DateFormat.jm().format(gig.dateTime)}.',
+          scheduledDate: scheduledDate,
+        );
+      }
+    } else {
+      await notificationService.cancelNotification(dayOfGigNotificationId);
+    }
+
+    // --- Schedule notification for 'days before' the gig ---
+    final int? daysBefore = prefs.getInt('notify_days_before');
+    final int daysBeforeNotificationId = baseNotificationId + 1;
+
+    if (daysBefore != null && daysBefore > 0) {
+      final DateTime notificationDate = gig.dateTime.subtract(Duration(days: daysBefore));
+      final DateTime scheduledDate = DateTime(notificationDate.year, notificationDate.month, notificationDate.day, 9, 0);
+
+      if (scheduledDate.isAfter(DateTime.now())) {
+        await notificationService.scheduleNotification(
+          id: daysBeforeNotificationId,
+          title: 'Upcoming Gig Reminder',
+          body: 'Your gig "${gig.venueName}" is in $daysBefore day(s).',
+          scheduledDate: scheduledDate,
+        );
+      }
+    } else {
+      await notificationService.cancelNotification(daysBeforeNotificationId);
+    }
+  }
+
+  Future<void> _cancelGigNotifications(Gig gig) async {
+    final notificationService = NotificationService();
+    final int baseNotificationId = gig.id.hashCode;
+
+    // Cancel both potential notifications
+    await notificationService.cancelNotification(baseNotificationId);      // Day-of notification
+    await notificationService.cancelNotification(baseNotificationId + 1);  // Days-before notification
   }
 
   Future<void> _loadProfileAddress() async {
@@ -620,6 +680,11 @@ class _BookingDialogState extends State<BookingDialog> {
 
     await _audioPlayer.play(AssetSource('sounds/thetone.wav'));
     await Future.delayed(const Duration(milliseconds: 2500));
+
+
+    await _scheduleGigNotifications(newOrUpdatedGigData);
+    print("scheduled gig notifications ${newOrUpdatedGigData.id}");
+
     if (mounted) setState(() => _isProcessing = false);
 
     if (_isEditingMode) {
@@ -846,6 +911,9 @@ class _BookingDialogState extends State<BookingDialog> {
         return; // User cancelled the action
       }
 
+      if (choice == RecurringCancelChoice.thisInstanceOnly) {
+        await _cancelGigNotifications(gigToCancel);
+      }
       if (mounted) setState(() => _isProcessing = true);
       // Pass the choice and the gig to the parent page to handle the logic
       Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.deleted, gig: gigToCancel, cancelChoice: choice));
@@ -872,6 +940,7 @@ class _BookingDialogState extends State<BookingDialog> {
     if (!mounted) return;
     setState(() => _isProcessing = false);
     if (confirmCancel) {
+      await _cancelGigNotifications(widget.editingGig!);
       Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.deleted, gig: widget.editingGig));
     }
   }

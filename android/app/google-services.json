@@ -12,7 +12,12 @@
           "package_name": "com.themoneygigs.moneygigs"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "759371429570-aqmt0q5dvj5l8vajkoeuosplr6u4spkn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAaeUyThBtTn3mDT8mcGOP40Ijpk1Ay_H8"
@@ -20,7 +25,20 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "759371429570-aqmt0q5dvj5l8vajkoeuosplr6u4spkn.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "759371429570-9h1qrfqbcmoolte84q4nht0fddget2q3.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.themoneygigs.moneygigs",
+                "app_store_id": "6752310856"
+              }
+            }
+          ]
         }
       }
     }

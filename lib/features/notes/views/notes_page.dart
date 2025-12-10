@@ -8,6 +8,9 @@ import 'package:the_money_gigs/features/map_venues/models/venue_model.dart'; // 
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 
+// Import the SetlistPage
+import 'package:the_money_gigs/features/setlists/views/setlist_page.dart';
+
 class NotesPage extends StatefulWidget {
   // Can edit notes for a gig OR a venue. One of these must be provided.
   final String? editingGigId;
@@ -27,6 +30,8 @@ class NotesPage extends StatefulWidget {
 class _NotesPageState extends State<NotesPage> {
   late final TextEditingController _notesController;
   late final TextEditingController _urlController;
+
+  Gig? _currentGig;
 
   // Generic properties to hold the data, regardless of source
   String _displayName = '';
@@ -85,12 +90,14 @@ class _NotesPageState extends State<NotesPage> {
 
   Future<void> _loadGigDetails() async {
     final prefs = await SharedPreferences.getInstance();
+    // --- FIX: Revert to the original key ---
     final gigsJsonString = prefs.getString('gigs_list') ?? '[]';
     final List<Gig> allGigs = Gig.decode(gigsJsonString);
     final gigIndex = allGigs.indexWhere((g) => g.id == widget.editingGigId);
 
     if (gigIndex != -1) {
       final gig = allGigs[gigIndex];
+      _currentGig = gig;
       _displayName = gig.venueName;
       _displaySubtext = DateFormat.yMMMEd().add_jm().format(gig.dateTime);
       _initialNotes = gig.notes;
@@ -113,7 +120,7 @@ class _NotesPageState extends State<NotesPage> {
       _initialNotes = venue.venueNotes;
       _initialUrl = venue.venueNotesUrl;
 
-      // Load and filter gigs for historical notes
+      // --- ALSO FIX THE KEY HERE for consistency and correctness ---
       final gigsJsonString = prefs.getString('gigs_list') ?? '[]';
       final List<Gig> allGigs = Gig.decode(gigsJsonString);
 
@@ -122,7 +129,6 @@ class _NotesPageState extends State<NotesPage> {
       gig.placeId == widget.editingVenueId && (gig.notes?.isNotEmpty ?? false))
           .toList();
 
-      // Sort in reverse chronological order
       _historicalGigsForVenue.sort((a, b) => b.dateTime.compareTo(a.dateTime));
 
     } else {
@@ -155,8 +161,11 @@ class _NotesPageState extends State<NotesPage> {
     setState(() => _isSaving = true);
 
     try {
+      // Create a variable to hold the potentially updated gig
+      Gig? gigToReturn;
+
       if (_isEditingGig) {
-        await _saveGigNotes();
+        gigToReturn = await _saveGigNotes();
       } else {
         await _saveVenueNotes();
       }
@@ -165,7 +174,8 @@ class _NotesPageState extends State<NotesPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Notes saved successfully!'), backgroundColor: Colors.green),
         );
-        Navigator.of(context).pop();
+        // Pop with the updated gig object if it exists
+        Navigator.of(context).pop(gigToReturn ?? _currentGig);
       }
     } catch (e) {
       if (mounted) {
@@ -178,8 +188,9 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
-  Future<void> _saveGigNotes() async {
+  Future<Gig?> _saveGigNotes() async {
     final prefs = await SharedPreferences.getInstance();
+    // --- FIX: Revert to the original key for reading AND writing ---
     final String gigsJsonString = prefs.getString('gigs_list') ?? '[]';
     List<Gig> currentGigs = Gig.decode(gigsJsonString);
     final gigIndex = currentGigs.indexWhere((g) => g.id == widget.editingGigId);
@@ -187,16 +198,20 @@ class _NotesPageState extends State<NotesPage> {
     if (gigIndex != -1) {
       final newNotes = _notesController.text.trim();
       final newUrl = _urlController.text.trim();
-      currentGigs[gigIndex] = currentGigs[gigIndex].copyWith(
+      final updatedGig = currentGigs[gigIndex].copyWith(
         notes: newNotes.isEmpty ? null : newNotes,
         notesUrl: newUrl.isEmpty ? null : newUrl,
       );
-      await prefs.setString('gigs_list', Gig.encode(currentGigs));
+      currentGigs[gigIndex] = updatedGig;
+
+      await prefs.setString('gigs_list', Gig.encode(currentGigs)); // Save to the correct key
       globalRefreshNotifier.notify();
+      return updatedGig;
     } else {
       throw Exception("Could not find gig to update.");
     }
   }
+
 
   Future<void> _saveVenueNotes() async {
     final prefs = await SharedPreferences.getInstance();
@@ -232,22 +247,55 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
+  // --- REVISED NAVIGATION METHOD ---
+  Future<void> _navigateToSetlist(BuildContext context) async {
+    if (!_isEditingGig || _currentGig == null) return;
+
+    // Await the result from SetlistPage
+    final resultFromSetlist = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SetlistPage(gig: _currentGig!),
+      ),
+    );
+
+    // Check if an updated Gig object was returned
+    if (resultFromSetlist != null && resultFromSetlist is Gig) {
+      // An updated gig was returned from the setlist page.
+      // Immediately pop the NotesPage and pass the result along to GigsPage.
+      if (mounted) {
+        Navigator.of(context).pop(resultFromSetlist);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Determine the titles based on the mode
     final String appBarTitle = _isEditingGig ? 'GIG NOTES' : 'VENUE NOTES';
     final String labelText = _isEditingGig ? 'Gig-Specific Notes' : 'General Venue Notes';
     final String hintText = _isEditingGig
         ? 'Load-in details, sound engineer name, etc.'
         : 'Gate codes, parking info, regular contact...';
 
+    String formatGigLength(double? hours) {
+      if (hours == null || hours <= 0) return '';
+      if (hours == hours.truncate()) {
+        return ' (${hours.toInt()} hour${hours == 1 ? '' : 's'})';
+      }
+      return ' ($hours hours)';
+    }
+
     return Scaffold(
       appBar: AppBar(
-        // *** THE FIX IS HERE ***
-        // The title is now dynamic based on the context.
         title: Text(appBarTitle),
         centerTitle: true,
-        automaticallyImplyLeading: true,
+        // --- REVISED BACK BUTTON to pop with the current gig data ---
+        leading: BackButton(
+          onPressed: () {
+            // Pop with the current state of the gig, whether it was saved or not
+            Navigator.of(context).pop(_currentGig);
+          },
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -265,11 +313,38 @@ class _NotesPageState extends State<NotesPage> {
             if(_displaySubtext != null && _displaySubtext!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 2.0),
-                child: Text(
-                  _displaySubtext!,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.grey.shade600),
+                child: RichText(
+                  text: TextSpan(
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.grey.shade600),
+                    children: [
+                      TextSpan(text: _displaySubtext!),
+                      TextSpan(
+                        text: formatGigLength(_currentGig?.gigLengthHours),
+                        style: const TextStyle(fontWeight: FontWeight.normal),
+                      ),
+                    ],
+                  ),
                 ),
               ),
+
+            // "Manage Setlist" Button
+            if (_isEditingGig)
+              Padding(
+                padding: const EdgeInsets.only(top: 24.0, bottom: 8.0),
+                child: Center(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _navigateToSetlist(context),
+                    icon: const Icon(Icons.list_alt_rounded),
+                    label: const Text('Manage Setlist'),
+                    style: ElevatedButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                ),
+              ),
+
             const SizedBox(height: 20),
             TextField(
               controller: _notesController,
@@ -345,7 +420,6 @@ class _NotesPageState extends State<NotesPage> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 4),
-                        // Ensure notes are not null before displaying
                         Text(gig.notes ?? 'No notes for this gig.'),
                       ],
                     ),
@@ -364,7 +438,7 @@ class _NotesPageState extends State<NotesPage> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton(
-                onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                onPressed: _isSaving ? null : () => Navigator.of(context).pop(_currentGig),
                 child: const Text('CANCEL'),
               ),
               const SizedBox(width: 12),

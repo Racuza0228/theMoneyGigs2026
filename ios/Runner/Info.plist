@@ -2,6 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>GIDClientID</key>
+	<string>759371429570-9h1qrfqbcmoolte84q4nht0fddget2q3.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+ 	 <dict>
+	    <key>CFBundleTypeRole</key>
+    	    <string>Editor</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+              <string>com.googleusercontent.apps.759371429570-9h1qrfqbcmoolte84q4nht0fddget2q3</string>
+            </array>
+     	 </dict>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -17,13 +30,13 @@
 	<key>CFBundleName</key>
 	<string>the_money_gigs</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.1.2</string>
+	<string>1.1.4</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>13</string>
+	<string>15</string>
 	<key>GMPAPIKey</key>
 	<string>AIzaSyCjyQbNWIXnY5L9AHXhZrhzqsDwYAZPKVo</string>
 	<key>GoogleMapsApiKey</key>

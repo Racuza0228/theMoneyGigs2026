@@ -1,6 +1,9 @@
 // lib/features/map_venues/widgets/venue_details_dialog.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_rating_bar/flutter_rating_bar.dart';import 'package:intl/intl.dart';
+import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
@@ -9,11 +12,11 @@ class VenueDetailsDialog extends StatefulWidget {
   final StoredLocation venue;
   final Gig? nextGig;
   final VoidCallback onArchive;
-  // MODIFIED: onBook now passes back the venue to be saved and booked.
   final Function(StoredLocation) onBook;
   final Function(StoredLocation) onSave;
   final VoidCallback onEditContact;
   final VoidCallback onEditJamSettings;
+  final VoidCallback? onDataChanged;
 
   const VenueDetailsDialog({
     super.key,
@@ -24,6 +27,7 @@ class VenueDetailsDialog extends StatefulWidget {
     required this.onSave,
     required this.onEditContact,
     required this.onEditJamSettings,
+    this.onDataChanged,
   });
 
   @override
@@ -31,16 +35,39 @@ class VenueDetailsDialog extends StatefulWidget {
 }
 
 class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
+  // State for editable fields
   late double _currentRating;
   late final TextEditingController _commentController;
-  late bool _isPrivateVenue; // <<<--- 1. ADD NEW STATE VARIABLE
+  late bool _isPrivateVenue;
+
+  // Repository and connection state
+  final _venueRepository = VenueRepository();
+  bool _isConnected = false;
+  static const String _isConnectedKey = 'is_connected_to_network';
 
   @override
   void initState() {
     super.initState();
+    print("--- 🔵 DEBUG: VenueDetailsDialog initState ---");
+    print("   - Loading venue: ${widget.venue.name}");
+    print("   - Initial isPublic: ${widget.venue.isPublic}");
+    print("   - Initial isPrivate: ${widget.venue.isPrivate}");
+    print("   - Initial rating: ${widget.venue.rating}");
+    print("   - Initial comment: '${widget.venue.comment}'");
+
     _currentRating = widget.venue.rating;
     _commentController = TextEditingController(text: widget.venue.comment);
-    _isPrivateVenue = widget.venue.isPrivate; // <<<--- 2. INITIALIZE IT
+    _isPrivateVenue = widget.venue.isPrivate;
+    _checkConnectionStatus();
+  }
+
+  Future<void> _checkConnectionStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _isConnected = prefs.getBool(_isConnectedKey) ?? false;
+      });
+    }
   }
 
   @override
@@ -67,21 +94,64 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
     return widget.venue.copyWith(
       rating: _currentRating,
       comment: _commentController.text.trim().isEmpty ? null : _commentController.text.trim(),
-      isPrivate: _isPrivateVenue, // <<<--- 3. INCLUDE isPrivate
+      isPrivate: _isPrivateVenue,
     );
   }
 
-  void _handleSave({bool popOnSave = true}) {
+  void _handleSave({bool popOnSave = true}) async {
     final updatedVenue = _buildUpdatedVenue();
+    print("--- 🔵 DEBUG: _handleSave triggered ---");
 
-    // Check if any of the editable fields have changed.
-    final bool hasRatingChanged = updatedVenue.rating != widget.venue.rating;
-    final bool hasCommentChanged = updatedVenue.comment != widget.venue.comment;
-    final bool hasPrivacyChanged = updatedVenue.isPrivate != widget.venue.isPrivate;
+    // 1. Always save the complete venue object locally.
+    widget.onSave(updatedVenue);
+    print("💾 DEBUG: Local save callback (onSave) has been called.");
 
-    // Only save if a change was made
-    if (hasRatingChanged || hasCommentChanged || hasPrivacyChanged) {
-      widget.onSave(updatedVenue);
+    // 2. If online and the venue is NOT marked as private, save relevant data to the cloud.
+    if (_isConnected && !updatedVenue.isPrivate) {
+      try {
+        const String userId = 'current_user_id';
+        print("☁️ DEBUG: Preparing to save to Firebase...");
+        print("   - isConnected: $_isConnected");
+        print("   - isPrivate: ${updatedVenue.isPrivate}");
+
+        // 2a. If the venue wasn't already public, this user is submitting it.
+        if (!widget.venue.isPublic) {
+          print("-> This is a NEW public venue submission. Saving core venue data.");
+          await _venueRepository.saveVenue(updatedVenue, userId);
+        } else {
+          print("-> This is an EXISTING public venue. Skipping core data save.");
+        }
+
+        // 2b. ALWAYS save the user's rating and comment for any non-private venue.
+        print("   - Calling repository to save rating/comment with data:");
+        print("     - userId: $userId");
+        print("     - placeId: ${updatedVenue.placeId}");
+        print("     - rating: ${updatedVenue.rating}");
+        print("     - comment: ${updatedVenue.comment}");
+
+        final bool saveVerified = await _venueRepository.saveVenueRating(
+          userId: userId,
+          placeId: updatedVenue.placeId,
+          rating: updatedVenue.rating,
+          comment: updatedVenue.comment,
+        );
+        if(saveVerified) {
+          print("✅ DEBUG: Firebase save and verification successful!");
+
+          // ← ADD THIS: Notify parent to refresh venues
+          widget.onDataChanged?.call();
+        } else {
+          print("🔥 DEBUG: Firebase save verification FAILED!");
+        }
+
+      } catch (e) {
+        print("❌ DEBUG: Firebase save operation threw an error: $e");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error saving to cloud: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
     }
 
     if (popOnSave && mounted) {
@@ -90,8 +160,9 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   }
 
   void _handleBook() {
-    final venueWithPendingChanges = _buildUpdatedVenue();
-    widget.onBook(venueWithPendingChanges);
+    _handleSave(popOnSave: false); // Save any pending changes before booking
+    final venueToBook = _buildUpdatedVenue();
+    widget.onBook(venueToBook);
   }
 
   @override
@@ -134,58 +205,80 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
               const SizedBox(height: 16),
             ],
 
-            // Rating
-            const Text('Your Rating:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Center(
-              child: RatingBar.builder(
-                initialRating: _currentRating,
-                minRating: 0,
-                direction: Axis.horizontal,
-                allowHalfRating: true,
-                itemCount: 5,
-                itemPadding: const EdgeInsets.symmetric(horizontal: 4.0),
-                itemBuilder: (context, _) => const Icon(Icons.star, color: Colors.amber),
-                onRatingUpdate: (rating) {
-                  setState(() {
-                    _currentRating = rating;
-                  });
-                },
+            // --- "SHARED INFORMATION" BOX ---
+            Container(
+              padding: const EdgeInsets.all(12.0),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(8.0),
               ),
-            ),
-            const SizedBox(height: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Shared Information',
+                    style: textTheme.titleMedium?.copyWith(color: theme.colorScheme.primary),
+                  ),
+                  const SizedBox(height: 12),
 
-            // Comment
-            const Text('Your Comments:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _commentController,
-              decoration: const InputDecoration(
-                hintText: 'e.g., Great sound, load-in info...',
-                border: OutlineInputBorder(),
+                  // RATING
+                  const Text('Your Rating:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: RatingBar.builder(
+                      initialRating: _currentRating,
+                      minRating: 0,
+                      direction: Axis.horizontal,
+                      allowHalfRating: true,
+                      itemCount: 5,
+                      itemPadding: const EdgeInsets.symmetric(horizontal: 4.0),
+                      itemBuilder: (context, _) => const Icon(Icons.star, color: Colors.amber),
+                      onRatingUpdate: (rating) => setState(() => _currentRating = rating),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // COMMENTS
+                  const Text('Your Comments:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _commentController,
+                    decoration: const InputDecoration(
+                      hintText: 'e.g., Great sound, load-in info...',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 2,
+                    textCapitalization: TextCapitalization.sentences,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // JAM SESSION
+                  const Text('Jam/Open Mic:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(widget.venue.jamOpenMicDisplayString(context)),
+                  Center(
+                    child: TextButton(
+                      onPressed: widget.onEditJamSettings,
+                      child: const Text('Edit Jam/Open Mic Settings'),
+                    ),
+                  ),
+                ],
               ),
-              maxLines: 2,
-              textCapitalization: TextCapitalization.sentences,
             ),
             const SizedBox(height: 16),
             const Divider(),
 
-            // <<<--- 4. ADD THE SWITCH UI ELEMENT HERE ---
-            SwitchListTile(
-              title: const Text('Private Venue'),
-              subtitle: const Text('Will not be shared in the cloud'),
-              value: _isPrivateVenue,
-              onChanged: (bool value) {
-                setState(() {
-                  _isPrivateVenue = value;
-                });
-              },
-              contentPadding: const EdgeInsets.symmetric(horizontal: 0),
-              dense: true,
-            ),
-            const SizedBox(height: 8),
+            // --- "PRIVATE VENUE" SWITCH (Conditional) ---
+            if (!widget.venue.isPublic)
+              SwitchListTile(
+                title: const Text('Private Venue'),
+                subtitle: const Text('Will not be shared in the cloud'),
+                value: _isPrivateVenue,
+                onChanged: (bool value) => setState(() => _isPrivateVenue = value),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
 
-            // Contact Person
+            // --- CONTACT INFO (Always Private) ---
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -216,27 +309,21 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
                 padding: EdgeInsets.only(left: 8.0, bottom: 8.0),
                 child: Text('No contact saved.', style: TextStyle(fontStyle: FontStyle.italic)),
               ),
-            const SizedBox(height: 8),
-
-            // Jam/Open Mic Setup
-            const Text('Jam/Open Mic:', style: TextStyle(fontWeight: FontWeight.bold)),
-            Text(widget.venue.jamOpenMicDisplayString(context)),
-            Center(
-              child: TextButton(
-                onPressed: widget.onEditJamSettings,
-                child: const Text('Edit Jam/Open Mic Settings'),
-              ),
-            ),
           ],
         ),
       ),
       actionsAlignment: MainAxisAlignment.spaceBetween,
       actions: <Widget>[
-        // Buttons
-        TextButton(
-          onPressed: widget.onArchive,
-          child: Text('ARCHIVE', style: TextStyle(color: theme.colorScheme.error)),
-        ),
+        // --- "ARCHIVE" BUTTON (Conditional) ---
+        if (!widget.venue.isPublic)
+          TextButton(
+            onPressed: widget.onArchive,
+            child: Text('ARCHIVE', style: TextStyle(color: theme.colorScheme.error)),
+          )
+        else
+          const SizedBox(), // Use a SizedBox to maintain the alignment
+
+        // --- SAVE / BOOK BUTTONS ---
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [

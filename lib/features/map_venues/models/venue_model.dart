@@ -2,17 +2,25 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHARED ENUMS
+import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart';
 
 class StoredLocation {
   final String placeId;
+  final bool isPublic;
   final String name;
   final String address;
   final LatLng coordinates;
+
+  // USER'S PERSONAL rating/comment (for local storage compatibility)
   double rating;
   String? comment;
+
+  // AGGREGATED rating from all users (for Firebase)
+  final double averageRating;  // ← NEW: Average from all users
+  final int totalRatings;      // ← NEW: Count of ratings
+
   bool isArchived;
   final bool isMuted;
   final bool isPrivate;
@@ -28,11 +36,14 @@ class StoredLocation {
 
   StoredLocation({
     required this.placeId,
+    this.isPublic = false,
     required this.name,
     required this.address,
     required this.coordinates,
     this.rating = 0.0,
     this.comment,
+    this.averageRating = 0.0,  // ← NEW: Defaults to 0
+    this.totalRatings = 0,     // ← NEW: Defaults to 0
     this.isArchived = false,
     this.jamSessions = const [],
     this.isMuted = false,
@@ -54,6 +65,8 @@ class StoredLocation {
     'longitude': coordinates.longitude,
     'rating': rating,
     'comment': comment,
+    'averageRating': averageRating,  // ← NEW
+    'totalRatings': totalRatings,    // ← NEW
     'isArchived': isArchived,
     'jamSessions': jamSessions.map((js) => js.toJson()).toList(),
     'isMuted': isMuted,
@@ -106,6 +119,7 @@ class StoredLocation {
 
     return StoredLocation(
       placeId: json['placeId'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      isPublic: json['isPublic'] as bool? ?? false,
       name: json['name'] ?? 'Unnamed Venue',
       address: json['address'] ?? 'No address',
       coordinates: LatLng(
@@ -114,6 +128,8 @@ class StoredLocation {
       ),
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
       comment: json['comment'] as String?,
+      averageRating: (json['averageRating'] as num?)?.toDouble() ?? 0.0,  // ← NEW: Read from JSON, default 0
+      totalRatings: json['totalRatings'] as int? ?? 0,                    // ← NEW: Read from JSON, default 0
       isArchived: json['isArchived'] as bool? ?? false,
       jamSessions: sessions,
       isMuted: json['isMuted'] as bool? ?? false,
@@ -128,11 +144,14 @@ class StoredLocation {
 
   StoredLocation copyWith({
     String? placeId,
+    bool? isPublic,
     String? name,
     String? address,
     LatLng? coordinates,
     double? rating,
     String? comment,
+    double? averageRating,      // ← NEW
+    int? totalRatings,          // ← NEW
     bool? isArchived,
     List<JamSession>? jamSessions,
     bool? isMuted,
@@ -145,11 +164,14 @@ class StoredLocation {
   }) {
     return StoredLocation(
       placeId: placeId ?? this.placeId,
+      isPublic: isPublic ?? this.isPublic,
       name: name ?? this.name,
       address: address ?? this.address,
       coordinates: coordinates ?? this.coordinates,
       rating: rating ?? this.rating,
       comment: comment ?? this.comment,
+      averageRating: averageRating ?? this.averageRating,  // ← NEW
+      totalRatings: totalRatings ?? this.totalRatings,      // ← NEW
       isArchived: isArchived ?? this.isArchived,
       jamSessions: jamSessions ?? this.jamSessions,
       isMuted: isMuted ?? this.isMuted,
@@ -162,22 +184,17 @@ class StoredLocation {
     );
   }
 
-  // --- REVISED and CORRECTED ---
-  // This method now correctly displays all jam sessions without any incorrect filtering.
   String jamOpenMicDisplayString(BuildContext context) {
     if (jamSessions.isEmpty) {
       return 'Not set up';
     }
-    // Return a summary of all configured jam sessions.
     return jamSessions.map((session) {
       String dayString = toBeginningOfSentenceCase(session.day.toString().split('.').last) ?? '';
       String timeString = session.time.format(context);
       String styleString = (session.style != null && session.style!.isNotEmpty) ? ' (${session.style})' : '';
       return '$dayString at $timeString$styleString';
-    }).join('\n'); // Separate each jam session with a new line
+    }).join('\n');
   }
-
-  // --- REMOVED `recurringGigsDisplayString` as it was based on a false premise ---
 
   @override
   bool operator ==(Object other) {
@@ -190,4 +207,3 @@ class StoredLocation {
     return placeId.hashCode;
   }
 }
-

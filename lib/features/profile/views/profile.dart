@@ -7,9 +7,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:the_money_gigs/core/services/export_service.dart';
-import 'package:the_money_gigs/global_refresh_notifier.dart'; // <<< 1. IMPORT THE CORRECT NOTIFIER
+import 'package:the_money_gigs/global_refresh_notifier.dart';
 
 import '../../app_demo/providers/demo_provider.dart';
+import 'widgets/address_display.dart';
+import 'widgets/address_form_fields.dart';
+import 'package:the_money_gigs/features/profile/views/widgets/connect_widget.dart';
+import 'widgets/notification_settings_dialog.dart';
+import 'widgets/rate_display.dart';
+import 'widgets/rate_form_field.dart';
+import 'package:the_money_gigs/core/services/auth_service.dart';
+import 'package:the_money_gigs/core/services/network_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -38,8 +47,6 @@ class _ProfilePageState extends State<ProfilePage> {
   static const String _keyMinHourlyRate = 'profile_min_hourly_rate';
   final List<String> _usStates = [ 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY' ];
 
-  // --- All methods from initState() to _buildSectionTitle() are unchanged ---
-  // --- They are included here for completeness of the file. ---
   @override
   void initState() {
     super.initState();
@@ -54,6 +61,16 @@ class _ProfilePageState extends State<ProfilePage> {
     _zipCodeController.dispose();
     _minHourlyRateController.dispose();
     super.dispose();
+  }
+
+  //<<< NEW: Method to show the notification settings dialog
+  void _showNotificationSettings() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return const NotificationSettingsDialog();
+      },
+    );
   }
 
   Future<void> _loadProfileData() async {
@@ -198,56 +215,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildAddressDisplay() {
-    String displayAddress1 = _address1Controller.text;
-    String displayAddress2 = _address2Controller.text;
-    String displayCity = _cityController.text;
-    String? displayState = _selectedState;
-    String displayZip = _zipCodeController.text;
-
-    if (displayAddress1.isEmpty && displayAddress2.isEmpty && displayCity.isEmpty && displayState == null && displayZip.isEmpty) {
-      return const Center(child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 8.0),
-        child: Text("No address information available. Tap edit to add.", style: TextStyle(color: Colors.white70)),
-      ));
-    }
-
-    TextStyle textStyle = const TextStyle(color: Colors.white, fontSize: 16, height: 1.5);
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          if (displayAddress1.isNotEmpty) Text(displayAddress1, style: textStyle),
-          if (displayAddress2.isNotEmpty) Text(displayAddress2, style: textStyle),
-          if (displayCity.isNotEmpty || displayState != null || displayZip.isNotEmpty)
-            Text(
-              "${displayCity.isNotEmpty ? displayCity : ''}"
-                  "${(displayCity.isNotEmpty && displayState != null) ? ', ' : ''}"
-                  "${displayState ?? ''} ${displayZip.isNotEmpty ? displayZip : ''}".trim(),
-              style: textStyle,
-            ),
-          const SizedBox(height: 10),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRateDisplay() {
-    String displayRate = _minHourlyRateController.text;
-    if (displayRate.isEmpty) {
-      return const Center(child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 8.0),
-        child: Text("No minimum rate set. Tap edit to add.", style: TextStyle(color: Colors.white70)),
-      ));
-    }
-    TextStyle textStyle = const TextStyle(color: Colors.white, fontSize: 16, height: 1.5);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-      child: Text("\$ $displayRate per hour", style: textStyle),
-    );
-  }
-
   Widget _buildSectionTitle(String title, {bool showEditIcon = false, VoidCallback? onEditPressed, String tooltip = 'Edit', bool showSettingsIcon = false}) {
     return Padding(
       padding: const EdgeInsets.only(top: 20.0, bottom: 4.0),
@@ -283,7 +250,6 @@ class _ProfilePageState extends State<ProfilePage> {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        // [FIX] Use ChangeNotifierProvider.value for a Listenable/ChangeNotifier.
         return ChangeNotifierProvider.value(
           value: context.read<GlobalRefreshNotifier>(),
           child: const BackgroundSettingsDialog(),
@@ -299,7 +265,6 @@ class _ProfilePageState extends State<ProfilePage> {
     }
 
     final formBackgroundColor = Colors.black.withAlpha(128);
-    final formTextColor = Colors.white;
 
     bool hasAddressData = _address1Controller.text.isNotEmpty ||
         _address2Controller.text.isNotEmpty ||
@@ -308,7 +273,6 @@ class _ProfilePageState extends State<ProfilePage> {
         _zipCodeController.text.isNotEmpty;
 
     bool hasRateData = _minHourlyRateController.text.isNotEmpty;
-
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
@@ -332,124 +296,73 @@ class _ProfilePageState extends State<ProfilePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              // <<< NEW: Notifications button
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _showNotificationSettings,
+                  icon: const Icon(Icons.notifications_outlined),
+                  label: const Text('Notifications'),
+                  style: TextButton.styleFrom(
+                      foregroundColor: Colors.orangeAccent.shade100),
+                ),
+              ),
+
+              // <<< NEW: Connect to Network widget
+              const ConnectWidget(),
+
+              // Background Settings section
               _buildSectionTitle(
                 'Background Settings',
                 showSettingsIcon: true,
               ),
               Divider(color: Colors.grey.shade700, height: 1),
+
+              // Your Address section
               _buildSectionTitle(
                 'Your Address',
                 showEditIcon: !_isEditingAddress && hasAddressData,
                 onEditPressed: () => setState(() => _isEditingAddress = true),
                 tooltip: 'Edit Address',
               ),
-              if (_isEditingAddress) ...[
-                TextFormField(
-                  controller: _address1Controller,
-                  style: TextStyle(color: formTextColor, fontSize: 16),
-                  decoration: _formInputDecoration(
-                    labelText: 'Address 1',
-                    hintText: 'Street address, P.O. box, company name, c/o',
-                    icon: Icons.home_outlined,
-                  ),
-                  validator: (value) => null,
+              if (_isEditingAddress)
+                AddressFormFields(
+                  address1Controller: _address1Controller,
+                  address2Controller: _address2Controller,
+                  cityController: _cityController,
+                  zipCodeController: _zipCodeController,
+                  selectedState: _selectedState,
+                  usStates: _usStates,
+                  onStateChanged: (newValue) => setState(() => _selectedState = newValue),
+                  formInputDecoration: ({required String labelText, String? hintText, IconData? icon, String? prefixText}) =>
+                      _formInputDecoration(labelText: labelText, hintText: hintText, icon: icon),
+                )
+              else
+                AddressDisplay(
+                  address1: _address1Controller.text,
+                  address2: _address2Controller.text,
+                  city: _cityController.text,
+                  state: _selectedState,
+                  zip: _zipCodeController.text,
                 ),
-                const SizedBox(height: 16.0),
-                TextFormField(
-                  controller: _address2Controller,
-                  style: TextStyle(color: formTextColor, fontSize: 16),
-                  decoration: _formInputDecoration(
-                    labelText: 'Address 2 (Optional)',
-                    hintText: 'Apartment, suite, unit, building, floor, etc.',
-                    icon: Icons.apartment_outlined,
-                  ),
-                ),
-                const SizedBox(height: 16.0),
-                TextFormField(
-                  controller: _cityController,
-                  style: TextStyle(color: formTextColor, fontSize: 16),
-                  decoration: _formInputDecoration(
-                    labelText: 'City',
-                    icon: Icons.location_city_outlined,
-                  ),
-                ),
-                const SizedBox(height: 16.0),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Expanded(
-                      flex: 2,
-                      child: Theme(
-                        data: Theme.of(context).copyWith(canvasColor: Colors.grey[800]),
-                        child: DropdownButtonFormField<String>(
-                          style: TextStyle(color: formTextColor, fontSize: 16),
-                          decoration: _formInputDecoration(labelText: 'State'),
-                          dropdownColor: Colors.grey[850],
-                          initialValue: _selectedState,
-                          hint: Text('Select', style: TextStyle(color: Colors.white70)),
-                          isExpanded: true,
-                          items: _usStates.map<DropdownMenuItem<String>>((String value) {
-                            return DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(value, style: TextStyle(color: formTextColor)),
-                            );
-                          }).toList(),
-                          onChanged: (String? newValue) => setState(() => _selectedState = newValue),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16.0),
-                    Expanded(
-                      flex: 3,
-                      child: TextFormField(
-                        controller: _zipCodeController,
-                        style: TextStyle(color: formTextColor, fontSize: 16),
-                        decoration: _formInputDecoration(labelText: 'Zip Code'),
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(5),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16.0),
-              ] else ...[
-                _buildAddressDisplay(),
-              ],
+
+              // Work Preferences section
               _buildSectionTitle(
                 'Work Preferences',
                 showEditIcon: !_isEditingRate && hasRateData,
                 onEditPressed: () => setState(() => _isEditingRate = true),
                 tooltip: 'Edit Minimum Rate',
               ),
-              if (_isEditingRate) ...[
-                TextFormField(
-                  controller: _minHourlyRateController,
-                  style: TextStyle(color: formTextColor, fontSize: 16),
-                  decoration: _formInputDecoration(
-                    labelText: 'Minimum Hourly Rate',
-                    hintText: 'e.g., 25',
-                    prefixText: '\$ ',
-                    icon: Icons.price_change_outlined,
-                  ),
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  validator: (value) {
-                    if (value != null && value.isNotEmpty) {
-                      final rate = int.tryParse(value);
-                      if (rate == null) return 'Please enter a valid number';
-                      if (rate <= 0) return 'Rate must be > 0';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 10),
-              ] else ...[
-                _buildRateDisplay(),
-              ],
+              if (_isEditingRate)
+                RateFormField(
+                  minHourlyRateController: _minHourlyRateController,
+                  formInputDecoration: _formInputDecoration,
+                )
+              else
+                RateDisplay(rate: _minHourlyRateController.text),
               const SizedBox(height: 32.0),
+
+              // Save Changes button
               ElevatedButton(
                 onPressed: (_isEditingAddress || _isEditingRate) && !_isExporting ? _saveProfile : null,
                 style: ElevatedButton.styleFrom(
@@ -470,6 +383,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: Text((_isEditingAddress || _isEditingRate) ? 'Save Changes' : 'Profile Saved'),
               ),
               const SizedBox(height: 20.0),
+
+              // Support section
               Divider(color: Colors.grey.shade700, height: 40),
               Text(
                 "Support",
@@ -477,6 +392,202 @@ class _ProfilePageState extends State<ProfilePage> {
                 style: TextStyle(color: Colors.orangeAccent.shade200, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10.0),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.login),
+                label: const Text('Test Google Sign-In'),
+                onPressed: () async {
+                  final authService = AuthService();
+
+                  // Show loading
+                  if (!mounted) return;
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => const Center(child: CircularProgressIndicator()),
+                  );
+
+                  final result = await authService.signInWithGoogle();
+
+                  // Close loading
+                  if (!mounted) return;
+                  Navigator.pop(context);
+
+                  // Show result
+                  if (result != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('✅ Signed in as: ${result.user?.email}\nUser ID: ${result.user?.uid}'),
+                        backgroundColor: Colors.green,
+                        duration: const Duration(seconds: 5),
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('❌ Sign-in failed or cancelled'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12.0),
+                  textStyle: const TextStyle(fontSize: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                ),
+              ),
+              // TESTING: Reset Network State
+              ElevatedButton.icon(
+                icon: const Icon(Icons.refresh),
+                label: const Text('🧪 Reset Network State'),
+                onPressed: () async {
+                  final authService = AuthService();
+                  final prefs = await SharedPreferences.getInstance();
+
+                  // Confirm reset
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Reset Network State'),
+                      content: const Text(
+                          'This will:\n'
+                              '• Delete your networkMember record in Firestore\n'
+                              '• Clear local network settings\n'
+                              '• Keep you signed in to Google\n\n'
+                              'Use this to test the invite code flow again.'
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                          child: const Text('Reset'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirm != true) return;
+
+                  // Delete from Firestore
+                  final userId = authService.currentUserId;
+                  await FirebaseFirestore.instance
+                      .collection('networkMembers')
+                      .doc(userId)
+                      .delete();
+
+                  // Clear local state
+                  await prefs.setBool('is_connected_to_network', false);
+                  await prefs.remove('network_invite_code');
+
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('✅ Network state reset! You can test invite codes again.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12.0),
+                  textStyle: const TextStyle(fontSize: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                ),
+              ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.key),
+                label: const Text('Test Code Validation'),
+                onPressed: () async {
+                  final networkService = NetworkService();
+
+                  // Test founder code
+                  final founderCode = await networkService.validateInviteCode('FOUNDER-8KJ3MP');
+                  print('Founder code: ${founderCode?.isFounderCode}');
+
+                  // Test regular code
+                  final regularCode = await networkService.validateInviteCode('TEST-REGULAR-1');
+                  print('Regular code: ${regularCode?.isFounderCode}');
+
+                  // Test invalid code
+                  final invalidCode = await networkService.validateInviteCode('FAKE-CODE');
+                  print('Invalid code: $invalidCode');
+
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          'Founder: ${founderCode?.isFounderCode}\n'
+                              'Regular: ${regularCode?.isFounderCode}\n'
+                              'Invalid: ${invalidCode == null}'
+                      ),
+                      duration: Duration(seconds: 5),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue.shade700,
+                ),
+              ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.logout),
+                label: const Text('Sign Out'),
+                onPressed: () async {
+                  // Confirm sign out
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Sign Out'),
+                      content: const Text('Are you sure you want to sign out?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                          child: const Text('Sign Out'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirm != true) return;
+
+                  // Sign out from Google/Firebase
+                  final authService = AuthService();
+                  await authService.signOut();
+
+                  // Clear network connection state
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool('is_connected_to_network', false);
+                  await prefs.remove('network_invite_code');
+
+                  // Show confirmation
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('✅ Signed out successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12.0),
+                  textStyle: const TextStyle(fontSize: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                ),
+              ),
+              const SizedBox(height: 12.0),
               ElevatedButton.icon(
                 icon: _isExporting
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -521,7 +632,6 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
               const SizedBox(height: 8),
-              // <<< 3. NEW "RESET DEMO" BUTTON FOR TESTING
               TextButton(
                 onPressed: () {
                   context.read<DemoProvider>().resetDemoFlagForTesting();
@@ -611,7 +721,6 @@ class BackgroundSettingsDialog extends StatelessWidget {
     }
 
     if (context.mounted) {
-      // <<< 4. USE THE CORRECT NOTIFIER TYPE
       context.read<GlobalRefreshNotifier>().notify();
       Navigator.of(context).pop(); // Pop the parent dialog
     }
