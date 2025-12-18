@@ -356,8 +356,8 @@ class _SongEditorDialogState extends State<SongEditorDialog> {
                     focusNode: fieldFocusNode,
                     // Only autofocus when creating a new song
                     autofocus: !_isEditing,
-                    // Prevent autocomplete from running in edit mode
-                    readOnly: _isEditing,
+                    // --- FIX: Prevent editing title if a song is selected or being edited ---
+                    readOnly: _isEditing || _selectedExistingSong != null,
                     decoration: const InputDecoration(
                       labelText: 'Song Title *',
                       border: OutlineInputBorder(),

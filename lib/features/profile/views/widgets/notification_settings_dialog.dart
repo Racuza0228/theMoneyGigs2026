@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/core/services/notification_service.dart';
+import 'package:timezone/data/latest_all.dart' as tz;  // ← Add this import
 
 class NotificationSettingsDialog extends StatefulWidget {
   const NotificationSettingsDialog({super.key});
@@ -47,6 +48,11 @@ class _NotificationSettingsDialogState
       _formKey.currentState!.save();
       final prefs = await SharedPreferences.getInstance();
 
+      // ✅ Check if notifications were previously disabled
+      final wasDisabled = !(prefs.getBool(_keyNotifyOnDayOfGig) ?? false) &&
+          prefs.getInt(_keyNotifyDaysBefore) == null;
+
+      // Save new settings
       await prefs.setBool(_keyNotifyOnDayOfGig, _notifyOnDayOfGig);
       final daysBefore = int.tryParse(_daysBeforeController.text);
       if (daysBefore != null) {
@@ -55,36 +61,78 @@ class _NotificationSettingsDialogState
         await prefs.remove(_keyNotifyDaysBefore);
       }
 
-      // --- START: TRIGGER THE UPDATE ---
-      // Show a loading indicator to the user
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext context) {
-          return const Dialog(
-            child: Padding(
-              padding: EdgeInsets.all(20.0),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(width: 20),
-                  Text("Updating all notifications..."),
-                ],
-              ),
-            ),
-          );
-        },
-      );
+      // ✅ Check if notifications are now enabled
+      final nowEnabled = _notifyOnDayOfGig || daysBefore != null;
 
-      // Call the new service method and wait for it to complete
-      try {
-        await NotificationService().updateAllGigNotifications();
-      } finally {
-        // Ensure the loading dialog is closed even if an error occurs
-        if(mounted) Navigator.of(context, rootNavigator: true).pop();
+      // ✅ If enabling notifications for the first time, initialize service
+      if (wasDisabled && nowEnabled && mounted) {
+        print('📬 First-time notification enable - initializing service...');
+
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return const Dialog(
+              child: Padding(
+                padding: EdgeInsets.all(20.0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(width: 20),
+                    Text("Setting up notifications..."),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+
+        try {
+          // Initialize timezone data (required for scheduling)
+          tz.initializeTimeZones();
+
+          // Initialize and request permissions
+          final notificationService = NotificationService();
+          await notificationService.init();
+          await notificationService.requestPermissions();
+
+          print('✅ Notification service initialized on-demand');
+        } catch (e) {
+          print('❌ Error initializing notifications: $e');
+        } finally {
+          if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        }
       }
-      // --- END: TRIGGER THE UPDATE ---
+
+      // --- UPDATE ALL NOTIFICATIONS ---
+      if (nowEnabled && mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return const Dialog(
+              child: Padding(
+                padding: EdgeInsets.all(20.0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(width: 20),
+                    Text("Updating all notifications..."),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+
+        try {
+          await NotificationService().updateAllGigNotifications();
+        } finally {
+          if(mounted) Navigator.of(context, rootNavigator: true).pop();
+        }
+      }
 
       if (mounted) {
         Navigator.of(context).pop();

@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -19,6 +20,8 @@ import 'widgets/rate_form_field.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
 import 'package:the_money_gigs/core/services/network_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -165,12 +168,93 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  Future<void> _exportAppData() async {
+  Future<void> _sendFeedbackEmail() async {
     if (!mounted) return;
+
+    // Show dialog asking if user wants to include diagnostic data
+    final bool? includeData = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Send Feedback'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Would you like to include diagnostic data with your feedback?',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Diagnostic data helps us troubleshoot issues faster.',
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.check_circle, size: 16, color: Colors.green.shade700),
+                      const SizedBox(width: 8),
+                      const Text('Included:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('• Gig dates, times, venues'),
+                  const Text('• Venue names and addresses'),
+                  const Text('• App settings'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.lock, size: 16, color: Colors.red.shade700),
+                      const SizedBox(width: 8),
+                      const Text('NOT Included:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('• Pay amounts'),
+                  const Text('• Contact names, phone numbers, emails'),
+                  const Text('• Private venue details'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null), // Cancel
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false), // No data
+            child: const Text('Send Without Data'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true), // Include data
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.shade700,
+            ),
+            child: const Text('Include Data'),
+          ),
+        ],
+      ),
+    );
+
+    // User cancelled
+    if (includeData == null) return;
+
+    // Proceed with export
     setState(() => _isExporting = true);
 
     final exportService = ExportService();
-    await exportService.export(context);
+    await exportService.sendFeedback(context, includeData: includeData);
 
     if (mounted) {
       setState(() => _isExporting = false);
@@ -392,149 +476,121 @@ class _ProfilePageState extends State<ProfilePage> {
                 style: TextStyle(color: Colors.orangeAccent.shade200, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10.0),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.login),
-                label: const Text('Test Google Sign-In'),
-                onPressed: () async {
-                  final authService = AuthService();
 
-                  // Show loading
-                  if (!mounted) return;
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (context) => const Center(child: CircularProgressIndicator()),
-                  );
+              // TEST BUTTONS (only visible in debug mode)
+              if (kDebugMode) ...[
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.login),
+                  label: const Text('Test Google Sign-In'),
+                  onPressed: () async {
+                    final authService = AuthService();
 
-                  final result = await authService.signInWithGoogle();
+                    // Show loading
+                    if (!mounted) return;
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => const Center(child: CircularProgressIndicator()),
+                    );
 
-                  // Close loading
-                  if (!mounted) return;
-                  Navigator.pop(context);
+                    final result = await authService.signInWithGoogle();
 
-                  // Show result
-                  if (result != null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('✅ Signed in as: ${result.user?.email}\nUser ID: ${result.user?.uid}'),
-                        backgroundColor: Colors.green,
-                        duration: const Duration(seconds: 5),
+                    // Close loading
+                    if (!mounted) return;
+                    Navigator.pop(context);
+
+                    // Show result
+                    if (result != null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('✅ Signed in as: ${result.user?.email}\nUser ID: ${result.user?.uid}'),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 5),
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('❌ Sign-in failed or cancelled'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    textStyle: const TextStyle(fontSize: 15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                  ),
+                ),
+                const SizedBox(height: 10.0),
+                // TESTING: Reset Network State
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('🧪 Reset Network State'),
+                  onPressed: () async {
+                    final authService = AuthService();
+                    final prefs = await SharedPreferences.getInstance();
+
+                    // Confirm reset
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Reset Network State'),
+                        content: const Text(
+                            'This will:\n'
+                                '• Delete your networkMember record in Firestore\n'
+                                '• Clear local network settings\n'
+                                '• Keep you signed in to Google\n\n'
+                                'Use this to test the invite code flow again.'
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                            child: const Text('Reset'),
+                          ),
+                        ],
                       ),
                     );
-                  } else {
+
+                    if (confirm != true) return;
+
+                    // Delete from Firestore
+                    final userId = authService.currentUserId;
+                    await FirebaseFirestore.instance
+                        .collection('networkMembers')
+                        .doc(userId)
+                        .delete();
+
+                    // Clear local state
+                    await prefs.setBool('is_connected_to_network', false);
+                    await prefs.remove('network_invite_code');
+
+                    if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('❌ Sign-in failed or cancelled'),
-                        backgroundColor: Colors.red,
+                        content: Text('✅ Network state reset! You can test invite codes again.'),
+                        backgroundColor: Colors.green,
                       ),
                     );
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12.0),
-                  textStyle: const TextStyle(fontSize: 15),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    textStyle: const TextStyle(fontSize: 15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                  ),
                 ),
-              ),
-              // TESTING: Reset Network State
-              ElevatedButton.icon(
-                icon: const Icon(Icons.refresh),
-                label: const Text('🧪 Reset Network State'),
-                onPressed: () async {
-                  final authService = AuthService();
-                  final prefs = await SharedPreferences.getInstance();
+              ], // End of debug-only buttons
 
-                  // Confirm reset
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Reset Network State'),
-                      content: const Text(
-                          'This will:\n'
-                              '• Delete your networkMember record in Firestore\n'
-                              '• Clear local network settings\n'
-                              '• Keep you signed in to Google\n\n'
-                              'Use this to test the invite code flow again.'
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel'),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                          child: const Text('Reset'),
-                        ),
-                      ],
-                    ),
-                  );
-
-                  if (confirm != true) return;
-
-                  // Delete from Firestore
-                  final userId = authService.currentUserId;
-                  await FirebaseFirestore.instance
-                      .collection('networkMembers')
-                      .doc(userId)
-                      .delete();
-
-                  // Clear local state
-                  await prefs.setBool('is_connected_to_network', false);
-                  await prefs.remove('network_invite_code');
-
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('✅ Network state reset! You can test invite codes again.'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12.0),
-                  textStyle: const TextStyle(fontSize: 15),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
-                ),
-              ),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.key),
-                label: const Text('Test Code Validation'),
-                onPressed: () async {
-                  final networkService = NetworkService();
-
-                  // Test founder code
-                  final founderCode = await networkService.validateInviteCode('FOUNDER-8KJ3MP');
-                  print('Founder code: ${founderCode?.isFounderCode}');
-
-                  // Test regular code
-                  final regularCode = await networkService.validateInviteCode('TEST-REGULAR-1');
-                  print('Regular code: ${regularCode?.isFounderCode}');
-
-                  // Test invalid code
-                  final invalidCode = await networkService.validateInviteCode('FAKE-CODE');
-                  print('Invalid code: $invalidCode');
-
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          'Founder: ${founderCode?.isFounderCode}\n'
-                              'Regular: ${regularCode?.isFounderCode}\n'
-                              'Invalid: ${invalidCode == null}'
-                      ),
-                      duration: Duration(seconds: 5),
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade700,
-                ),
-              ),
               ElevatedButton.icon(
                 icon: const Icon(Icons.logout),
                 label: const Text('Sign Out'),
@@ -591,9 +647,9 @@ class _ProfilePageState extends State<ProfilePage> {
               ElevatedButton.icon(
                 icon: _isExporting
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.email_outlined),
-                label: const Text('Export App Data'),
-                onPressed: _isExporting ? null : _exportAppData,
+                    : const Icon(Icons.feedback_outlined),
+                label: const Text('Send Feedback Email'),
+                onPressed: _isExporting ? null : _sendFeedbackEmail,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.teal.shade700,
                   foregroundColor: Colors.white,
@@ -677,8 +733,9 @@ class BackgroundSettingsDialog extends StatelessWidget {
               children: [
                 ListTile(
                   leading: const Icon(Icons.photo_library_outlined),
-                  title: const Text('Default Image'),
-                  onTap: () => _setBackground(context, pageIndex, isDefault: true),
+                  // Change "Default Image" to "The Stage"
+                  title: const Text('The Stage'),
+                  onTap: () => _setBackground(context, pageIndex, imagePath: 'USE_STAGE_DEFAULT'),
                 ),
                 ListTile(
                   leading: const Icon(Icons.color_lens_outlined),
@@ -712,9 +769,9 @@ class BackgroundSettingsDialog extends StatelessWidget {
     await prefs.remove(imageKey);
     await prefs.remove(colorKey);
 
-    if (isDefault) {
-      // Settings cleared
-    } else if (imagePath != null) {
+    if (imagePath != null) {
+      // This now handles both custom images (e.g., '/path/to/image.jpg')
+      // and our special keyword for "The Stage".
       await prefs.setString(imageKey, imagePath);
     } else if (color != null) {
       await prefs.setInt(colorKey, color.value);

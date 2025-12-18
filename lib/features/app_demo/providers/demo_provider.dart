@@ -11,8 +11,6 @@ class DemoProvider with ChangeNotifier {
 
   static const String demoGigId = 'demo_gig_id_kroger';
   static const String demoVenuePlaceId = 'demo_venue_place_id_kroger';
-
-  // <<< 1. ADD KEY FOR THE "HAS SEEN DEMO" FLAG >>>
   static const String hasSeenIntroKey = 'has_seen_intro_v1';
 
   bool get isDemoModeActive => _isDemoModeActive;
@@ -33,9 +31,9 @@ class DemoProvider with ChangeNotifier {
     }
   }
 
-  void endDemo() {
+  Future<void> endDemo() async {
     if (_isDemoModeActive) {
-      _cleanUpDemoData(); // This is correct, we still need this.
+      await _cleanUpDemoData(); // This is correct, we still need this.
 
       _isDemoModeActive = false;
       _currentStep = 0;

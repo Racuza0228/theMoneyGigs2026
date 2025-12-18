@@ -12,9 +12,11 @@ import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the noti
 import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHARED ENUMS
 
 // Import your models
+import 'package:in_app_review/in_app_review.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 // <<<--- IMPORT THE NEW MODEL
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
+import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.dart';
 import 'package:the_money_gigs/features/notes/views/notes_page.dart';
@@ -55,12 +57,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   late TabController _tabController;
   late ScrollController _scrollController;
 
-  // --- STATE FOR LAZY LOADING AND RECURRENCE ---
   List<Gig> _allGigs = []; // Raw data from SharedPreferences, including recurring templates
   List<Gig> _displayedGigs = []; // Generated, displayable occurrences for the list view
   DateTime _gigListEndDate = DateTime.now().add(const Duration(days: 90));
   bool _isMoreGigsLoading = false;
-  // --- END OF STATE ---
 
   Map<DateTime, List<Gig>> _calendarEvents = {};
 
@@ -127,20 +127,51 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-  void _onDemoStateChanged() {
+  void _onDemoStateChanged() async { // Make async
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-
     if (!mounted) return;
 
-    if (demoProvider.isDemoModeActive && demoProvider.currentStep == 13) {
-      _allGigs.removeWhere((g) => g.id == _demoGig.id);
-      _allGigs.insert(0, _demoGig);
-    } else if (!demoProvider.isDemoModeActive) {
-      _allGigs.removeWhere((g) => g.id == _demoGig.id);
-    }
+    // --- START OF FIX ---
+    // Check if the demo is ending. This is the crucial condition.
+    if (!demoProvider.isDemoModeActive) {
+      // The demo has just ended. Request the review *before* doing the UI cleanup.
+      // We also add a small delay to ensure the review dialog can launch safely
+      // before we start removing elements from the UI.
+      try {
+        final InAppReview inAppReview = InAppReview.instance;
+        if (await inAppReview.isAvailable()) {
+          // Awaiting this is not necessary as we don't need the result,
+          // but it helps ensure the call is initiated.
+          inAppReview.requestReview();
+        }
+      } catch (e) {
+        // Silently fail. The review is not critical.
+        print("In-app review failed: $e");
+      }
 
-    // Regenerate displayed gigs and calendar events after any change
-    _generateAndSetDisplayedGigs();
+      // Add a small buffer to let the native UI call process.
+      await Future.delayed(const Duration(milliseconds: 250));
+    }
+    // --- END OF FIX ---
+
+    // Now, proceed with the UI update state logic.
+    if (!mounted) return; // Re-check if the widget is still mounted after the delay.
+    setState(() {
+      if (demoProvider.isDemoModeActive && demoProvider.currentStep == 13) {
+        final bool alreadyExists = _displayedGigs.any((g) => g.id == _demoGig.id);
+        if (!alreadyExists) {
+          _displayedGigs.insert(0, _demoGig);
+          _displayedGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+        }
+      } else if (!demoProvider.isDemoModeActive) {
+        // The logic to remove the gig remains the same.
+        _allGigs.removeWhere((g) => g.id == _demoGig.id);
+        _displayedGigs.removeWhere((g) => g.id == _demoGig.id);
+      }
+
+      _prepareCalendarEvents();
+      _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
+    });
   }
 
   Future<void> _handleRecurringGigDeletion(Gig gigInstance, RecurringCancelChoice choice) async {
@@ -158,12 +189,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     String message = '';
 
     if (choice == RecurringCancelChoice.allFutureInstances) {
-      // CORRECTED LOGIC: Set the end date to the day before the selected instance.
-      // This preserves all past occurrences.
       DateTime newEndDate = gigInstance.dateTime.subtract(const Duration(days: 1));
-
-      // Check if the new end date is before the series even started.
-      // If so, it's equivalent to deleting the whole series.
       if (newEndDate.isBefore(baseGig.dateTime)) {
         _allGigs.removeAt(index);
         message = 'The entire recurring series for "${baseGig.venueName}" has been cancelled.';
@@ -212,7 +238,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   Future<void> _loadAllDataForGigsPage() async {
-     await Future.wait([_loadVenues(), _loadGigs()]);
+    await Future.wait([_loadVenues(), _loadGigs()]);
   }
 
   void _handleTabSelection() {
@@ -697,7 +723,65 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                 child: Text('HIDE FROM MY GIGS', style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer)),
                 onPressed: () async {
                   Navigator.of(dialogContext).pop();
-                  await _setVenueMutedState(sourceVenue, true);
+                  if (originalGig == null) return;
+
+                  // --- START OF DEFINITIVE FIX ---
+                  print("--- HIDE BUTTON TAPPED ---");  // 1. Get the base ID, which correctly removes the date suffix.
+                  final String baseGigId = originalGig.getBaseId();
+                  print("1. Base Gig ID for processing: $baseGigId");
+
+                  // 2. We have the sourceVenue, so we know its exact placeId.
+                  final String knownPlaceId = sourceVenue.placeId;
+
+                  // 3. The session ID is everything in the baseGigId *after* "jam_" and the known placeId.
+                  //    We construct the prefix we expect to find.
+                  final String prefix = 'jam_${knownPlaceId}_';
+
+                  if (baseGigId.startsWith(prefix)) {
+                    // 4. The true session ID is whatever remains after stripping the prefix.
+                    //    This is robust and handles underscores in both the placeId and sessionId.
+                    final String sessionId = baseGigId.substring(prefix.length);
+                    print("2. Extracted TRUE Session ID: $sessionId");
+
+                    final venueIndex = _allKnownVenues.indexWhere((v) => v.placeId == sourceVenue.placeId);
+                    final sessionIndex = sourceVenue.jamSessions.indexWhere((s) => s.id == sessionId);
+
+                    if (venueIndex != -1 && sessionIndex != -1) {
+                      print("3. Found Venue '${sourceVenue.name}' and Session. Proceeding to update.");
+
+                      // Create a mutable copy of the venue list to modify in memory.
+                      List<StoredLocation> updatedAllVenues = List.from(_allKnownVenues);
+                      StoredLocation venueToUpdate = updatedAllVenues[venueIndex];
+                      List<JamSession> updatedSessions = List.from(venueToUpdate.jamSessions);
+
+                      // 4. Update the session's visibility and save the venue.
+                      updatedSessions[sessionIndex] = updatedSessions[sessionIndex].copyWith(showInGigsList: false);
+                      final updatedVenue = venueToUpdate.copyWith(jamSessions: updatedSessions);
+                      updatedAllVenues[venueIndex] = updatedVenue;
+                      await _updateVenueJamNightSettings(updatedVenue);
+
+                      print("4. Saved to SharedPreferences. Forcing immediate UI refresh.");
+
+                      // 5. Force the UI to refresh with the updated in-memory data.
+                      if (mounted) {
+                        setState(() {
+                          // This is the crucial step: update the page's local state immediately.
+                          _allKnownVenues = updatedAllVenues;
+                        });
+                        // Now regenerate the gigs list using the corrected local data.
+                        _generateAndSetDisplayedGigs();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Jam session hidden.'), backgroundColor: Colors.blueAccent),
+                        );
+                        print("5. Refresh complete. The session should now be hidden.");
+                      }
+                    } else {
+                      print("Error: Could not find Venue (index: $venueIndex) or Session (index: $sessionIndex). This indicates a logic bug.");
+                    }
+                  } else {
+                    print("Error: Could not parse the baseGigId '$baseGigId' using the known placeId '$knownPlaceId'.");
+                  }
+                  // --- END OF DEFINITIVE FIX ---
                 },
               ),
             ],
@@ -904,7 +988,22 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     if (index != -1) {
       List<StoredLocation> updatedAllVenuesList = List.from(_allKnownVenues);
       updatedAllVenuesList[index] = updatedVenue;
-      final List<String> updatedVenuesJson = updatedAllVenuesList.map((v) => jsonEncode(v.toJson())).toList();
+
+      // FILTER: Only save venues the user has actually interacted with
+      // Don't persist read-only JSON jam venues unless user has modified them
+      final List<StoredLocation> venuesToSave = updatedAllVenuesList.where((v) {
+        final hasVisibleJamSessions = v.jamSessions.any((s) => s.showInGigsList);
+        return v.placeId == updatedVenue.placeId || // Always save the venue being updated
+            hasVisibleJamSessions ||
+            v.rating > 0 ||
+            v.isArchived ||
+            v.isMuted ||
+            v.isPrivate ||
+            v.contact != null ||
+            v.venueNotes != null;
+      }).toList();
+
+      final List<String> updatedVenuesJson = venuesToSave.map((v) => jsonEncode(v.toJson())).toList();
       await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
       if (mounted) {
         globalRefreshNotifier.notify();
@@ -1116,6 +1215,35 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         ),
       ],
     );
+  }
+
+  /// Merges public venue data with local user preferences for jam sessions
+  /// Preserves showInGigsList setting from local version
+  StoredLocation _mergeVenueJamPreferences(
+      StoredLocation publicVenue,
+      StoredLocation? localVenue,
+      ) {
+    if (localVenue == null || localVenue.jamSessions.isEmpty) {
+      return publicVenue; // No local preferences to preserve
+    }
+
+    // Create map of local jam preferences by session ID
+    final Map<String, bool> localPreferences = {
+      for (var session in localVenue.jamSessions)
+        session.id: session.showInGigsList,
+    };
+
+    // Merge: Use public jam data but preserve local showInGigsList setting
+    final mergedJamSessions = publicVenue.jamSessions.map((publicSession) {
+      final localPref = localPreferences[publicSession.id];
+      if (localPref != null) {
+        // User has a preference for this session, preserve it
+        return publicSession.copyWith(showInGigsList: localPref);
+      }
+      return publicSession; // New session, use public default
+    }).toList();
+
+    return publicVenue.copyWith(jamSessions: mergedJamSessions);
   }
 
   Widget _buildGigsTabContent() {

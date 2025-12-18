@@ -99,25 +99,39 @@ class ExportService {
     };
   }
 
-  /// Main method to trigger the export process.
-  /// It gathers data, formats it as JSON, and attempts to open the user's email client.
-  Future<void> export(BuildContext context) async {
+  /// Main method to trigger the feedback email.
+  /// If includeData is true, diagnostic data is attached (with sensitive info removed).
+  /// If includeData is false, only a blank feedback email is opened.
+  Future<void> sendFeedback(BuildContext context, {required bool includeData}) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final allData = await _gatherData(prefs);
-
-      // Convert the data map to a nicely formatted JSON string.
-      String prettyJsonData = const JsonEncoder.withIndent('  ').convert(allData);
-
-      // Prepare the 'mailto' link with the recipient, subject, and body.
       final String emailTo = 'cliff@themoneygigs.com';
-      final String emailSubject = 'MoneyGigs App - User Data Export';
+      final String emailSubject = 'MoneyGigs App - Feedback';
+      String emailBody;
+
+      if (includeData) {
+        // Gather and sanitize data
+        final prefs = await SharedPreferences.getInstance();
+        final allData = await _gatherData(prefs);
+        String prettyJsonData = const JsonEncoder.withIndent('  ').convert(allData);
+
+        emailBody = 'Hi Developer,\n\n'
+            'Please find my feedback below:\n\n'
+            '[Type your feedback here]\n\n'
+            '--- Diagnostic Data (Pay and contact info excluded) ---\n\n'
+            '$prettyJsonData';
+      } else {
+        // Just a blank feedback email
+        emailBody = 'Hi Developer,\n\n'
+            'Please find my feedback below:\n\n'
+            '[Type your feedback here]';
+      }
+
       final Uri emailLaunchUri = Uri(
         scheme: 'mailto',
         path: emailTo,
         queryParameters: {
           'subject': emailSubject,
-          'body': 'Hi Developer,\n\nPlease find my app data attached below for troubleshooting purposes:\n\n$prettyJsonData',
+          'body': emailBody,
         },
       );
 
@@ -126,24 +140,51 @@ class ExportService {
       if (await canLaunchUrl(emailLaunchUri)) {
         await launchUrl(emailLaunchUri);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please send the prepared email.')),
-        );
-      } else {
-        // Fallback if no email client is available: copy to clipboard.
-        await Clipboard.setData(ClipboardData(text: prettyJsonData));
-        ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Could not open email app. Data copied to clipboard.'),
-            backgroundColor: Colors.orange,
+            content: Text('✉️ Feedback email opened. Please send when ready.'),
+            backgroundColor: Colors.green,
           ),
         );
+      } else {
+        // Fallback if no email client is available
+        if (includeData) {
+          final prefs = await SharedPreferences.getInstance();
+          final allData = await _gatherData(prefs);
+          String prettyJsonData = const JsonEncoder.withIndent('  ').convert(allData);
+          await Clipboard.setData(ClipboardData(text: prettyJsonData));
+
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not open email app. Data copied to clipboard.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not open email app. Please email cliff@themoneygigs.com'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error exporting data: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error preparing feedback: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
+  }
+
+  /// Legacy export method - kept for backward compatibility
+  /// Use sendFeedback() instead for new implementations
+  Future<void> export(BuildContext context) async {
+    await sendFeedback(context, includeData: true);
   }
 }

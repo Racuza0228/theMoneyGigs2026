@@ -185,14 +185,30 @@ class _SetlistPageState extends State<SetlistPage> {
 
     if (result != null) {
       setState(() {
+        // --- START FIX ---
+
         final songIndex = _allSongs.indexWhere((s) => s.id == result.id);
-        if (songIndex != -1) {
-          _allSongs[songIndex] = result;
-        } else {
+        final bool isEditing = song != null;
+        final bool songIsNewToMasterList = songIndex == -1;
+
+        if (songIsNewToMasterList) {
+          // This is a brand new song, never seen before.
           _allSongs.add(result);
-          final set = targetSet ?? _setlist.sets.first;
-          set.songIds.add(result.id);
+        } else {
+          // The song already exists in the master list, so update it.
+          _allSongs[songIndex] = result;
         }
+
+        // Now, determine if we need to add it to a set.
+        // We add it if we are NOT in edit mode.
+        // `targetSet` must not be null.
+        if (!isEditing && targetSet != null) {
+          // Ensure the song isn't already in this specific set.
+          if (!targetSet.songIds.contains(result.id)) {
+            targetSet.songIds.add(result.id);
+          }
+        }
+        // --- END FIX ---
       });
       _saveAllData();
     }

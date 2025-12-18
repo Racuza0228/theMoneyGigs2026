@@ -25,13 +25,39 @@ import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 
 import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
-
+import 'package:the_money_gigs/main.dart';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
 
   @override
   State<MapPage> createState() => _MapPageState();
+}
+
+StoredLocation _mergeJamPreferences(
+    StoredLocation publicVenue,
+    StoredLocation localVenue,
+    ) {
+  if (localVenue.jamSessions.isEmpty) {
+    return publicVenue; // No local preferences to preserve
+  }
+
+  // Create map of local jam preferences by session ID
+  final Map<String, bool> localPrefs = {
+    for (var session in localVenue.jamSessions)
+      session.id: session.showInGigsList,
+  };
+
+  // Merge: Use public jam data but preserve local showInGigsList
+  final mergedSessions = publicVenue.jamSessions.map((pubSession) {
+    final localPref = localPrefs[pubSession.id];
+    if (localPref != null) {
+      return pubSession.copyWith(showInGigsList: localPref);
+    }
+    return pubSession; // New session, use default
+  }).toList();
+
+  return publicVenue.copyWith(jamSessions: mergedSessions);
 }
 
 class _MapPageState extends State<MapPage> {
@@ -41,14 +67,15 @@ class _MapPageState extends State<MapPage> {
   Set<Marker> _markers = {};
 
   List<Gig> _allLoadedGigs = [];
+  Set<String> _userSavedPlaceIds = {};
   List<StoredLocation> _allKnownMapVenues = [];
-  List<StoredLocation> _jamSessionVenues = [];
   bool _showJamSessions = false;
   DayOfWeek? _selectedJamDay;
   BitmapDescriptor _jamSessionMarkerIcon = BitmapDescriptor.defaultMarker;
   BitmapDescriptor? _gigMarkerIcon;
 
-  late final VenueRepository _venueRepository;
+  VenueRepository? _venueRepository;
+
   BitmapDescriptor _publicVenueMarkerIcon = BitmapDescriptor.defaultMarker;
   BitmapDescriptor _privateVenueMarkerIcon = BitmapDescriptor.defaultMarker;
 
@@ -76,23 +103,16 @@ class _MapPageState extends State<MapPage> {
   @override
   void initState() {
     super.initState();
-    // Replace the multiple calls in initState with a single async method
-    // to control the order of operations.
     _initializeMapPage();
   }
 
   /// This new method controls the initialization sequence to prevent race conditions.
   Future<void> _initializeMapPage() async {
-    // 1. First, wait for the permission check to complete.
     await _checkAndRequestLocationPermission();
 
-    // After an async gap, always check if the widget is still mounted.
     if (!mounted) return;
 
-    // 2. Now that permissions are handled, initialize services and add listeners.
     _placesService = PlacesService(apiKey: _googleApiKey);
-    _venueRepository = VenueRepository(); // VVV INITIALIZE REPOSITORY VVV
-
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
     Provider.of<DemoProvider>(context, listen: false)
         .addListener(_onDemoStateChanged);
@@ -108,7 +128,6 @@ class _MapPageState extends State<MapPage> {
       });
     });
 
-    // 3. Check for the Google API Key.
     if (_googleApiKey.isEmpty) {
       // Use addPostFrameCallback to ensure the widget is built before showing a SnackBar.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -124,7 +143,6 @@ class _MapPageState extends State<MapPage> {
       });
     }
 
-    // 4. Finally, with everything set up, load the map data.
     await _loadAllMapData();
 
     if (mounted) {
@@ -133,8 +151,6 @@ class _MapPageState extends State<MapPage> {
       });
     }
   }
-
-  // --- END OF MODIFICATIONS ---
 
   Future<void> _checkAndRequestLocationPermission() async {
     var status = await Permission.location.status;
@@ -302,19 +318,31 @@ class _MapPageState extends State<MapPage> {
 
     _setCustomMarkerStyles();
     final loadedGigIcon = await _loadCustomMarker();
-
-    // --- START: CORRECTED LOADING AND MERGING LOGIC ---
-
-    // 1. Load all local assets first.
     final localVenues = await _loadSavedLocations();
     final localGigs = await _loadAllGigs();
     final localJamVenues = await _loadJamSessionAsset();
 
-    // 2. This will be our single source of truth for venues.
-    // Start by populating the map with all local venues, keyed by their placeId.
-    Map<String, StoredLocation> finalVenuesMap = {
+    _userSavedPlaceIds = localVenues.map((v) => v.placeId).toSet();
+
+    // ✅ ADD DEBUG LOGGING
+    print("🔍 DEBUG: Loaded ${localVenues.length} venues from SharedPreferences");
+    for (var v in localVenues) {
+      print("   - ${v.name} (${v.placeId})");
+    }
+    print("🔍 DEBUG: _userSavedPlaceIds has ${_userSavedPlaceIds.length} items:");
+    for (var id in _userSavedPlaceIds) {
+      print("   - $id");
+    }
+
+     Map<String, StoredLocation> finalVenuesMap = {
       for (var venue in localVenues) venue.placeId: venue
     };
+
+    for (var jamVenue in localJamVenues) {
+      if (!finalVenuesMap.containsKey(jamVenue.placeId)) {
+        finalVenuesMap[jamVenue.placeId] = jamVenue;
+      }
+    }
 
     // 3. Check for network connection.
     final prefs = await SharedPreferences.getInstance();
@@ -322,41 +350,44 @@ class _MapPageState extends State<MapPage> {
 
     if (isConnected) {
       print("🔌 Network connection detected. Fetching public data to merge...");
+      await initializeNetworkServices();
+
       const String userId = 'default_user_id'; // Placeholder for your auth service
-      final publicVenues = await _venueRepository.getAllPublicVenues(userId);
-      print("✅ Fetched ${publicVenues.length} public venues from Firebase.");
 
-      // 4. MERGE the public data into our local data map.
-      // This is the most critical part of the logic.
-      for (var publicVenue in publicVenues) {
-        // The publicVenue object has isPublic:true and the correct rating/comment from the DB.
+      if (mounted){
+        _venueRepository = VenueRepository();
+        final publicVenues = await _venueRepository!.getAllPublicVenues(userId);
+        print("✅ Fetched ${publicVenues.length} public venues from Firebase.");
 
-        // Check if we have a local version of this venue.
-        if (finalVenuesMap.containsKey(publicVenue.placeId)) {
-          // --- THIS VENUE EXISTS IN BOTH PLACES ---
-          // Take the existing local version...
-          final localVersion = finalVenuesMap[publicVenue.placeId]!;
-          // ...and update it with the authoritative data from the public database.
-          // This preserves local-only fields (like private notes/contacts) while
-          // overwriting the stale local rating/comment with fresh data from the cloud.
-          finalVenuesMap[publicVenue.placeId] = localVersion.copyWith(
-            isPublic: true,                // It's confirmed to be public.
-            rating: publicVenue.rating,    // Use rating from DB.
-            comment: publicVenue.comment,  // Use comment from DB.
-          );
-        } else {
-          // --- THIS VENUE IS PUBLIC BUT NOT SAVED LOCALLY ---
-          // Add it directly to our map.
-          finalVenuesMap[publicVenue.placeId] = publicVenue;
+        for (var publicVenue in publicVenues) {
+          if (finalVenuesMap.containsKey(publicVenue.placeId)) {
+            final localVenue = finalVenuesMap[publicVenue.placeId]!;
+
+            // First merge jam preferences
+            final mergedVenue = _mergeJamPreferences(publicVenue, localVenue);
+
+            finalVenuesMap[publicVenue.placeId] = localVenue.copyWith(
+              isPublic: true,
+              rating: publicVenue.rating,    // User's personal rating from DB
+              comment: publicVenue.comment,  // User's personal comment from DB
+              averageRating: publicVenue.averageRating,  // Community average
+              totalRatings: publicVenue.totalRatings,    // Rating count
+              jamSessions: mergedVenue.jamSessions,      // ✅ MERGED jam sessions
+            );
+          } else {
+            // New public venue not in local storage
+            finalVenuesMap[publicVenue.placeId] = publicVenue;
+          }
+        }
+      } else {
+        print("🚫 No network. Using local SharedPreferences data only.");
+        // If offline, iterate through the loaded local venues and ensure they are all marked as not public.
+        for (var entry in finalVenuesMap.entries) {
+          finalVenuesMap[entry.key] = entry.value.copyWith(isPublic: false);
         }
       }
-    } else {
-      print("🚫 No network. Using local SharedPreferences data only.");
-      // If offline, iterate through the loaded local venues and ensure they are all marked as not public.
-      for (var entry in finalVenuesMap.entries) {
-        finalVenuesMap[entry.key] = entry.value.copyWith(isPublic: false);
       }
-    }
+
 
     // 5. Commit all loaded and merged data to the state in a single call.
     if (mounted) {
@@ -364,13 +395,15 @@ class _MapPageState extends State<MapPage> {
         _gigMarkerIcon = loadedGigIcon;
         _allKnownMapVenues = finalVenuesMap.values.toList();
         _allLoadedGigs = localGigs;
-        _jamSessionVenues = localJamVenues;
+        // Removed: _jamSessionVenues now filtered dynamically from _allKnownMapVenues
       });
     }
 
     // 6. Now that the state is fully set, update the map markers.
     print("--- All data loaded and merged. Triggering a single marker update. ---");
     _updateMarkers();
+    print("🔍 DEBUG: _allKnownMapVenues has ${_allKnownMapVenues.length} venues");
+    print("🔍 DEBUG: Created ${_markers.length} markers on map");
 
     // --- END: CORRECTED LOADING AND MERGING LOGIC ---
 
@@ -378,12 +411,17 @@ class _MapPageState extends State<MapPage> {
   }
 
   Future<void> _refreshVenuesFromFirebase() async {
+    if (_venueRepository == null) {
+      print("⚠️ Cannot refresh from Firebase, repository not initialized. (User may be offline).");
+      return; // Exit the function safely.
+    }
+
     print("🔄 Refreshing venues from Firebase...");
     try {
       const String userId = 'current_user_id'; // TODO: Get from FirebaseAuth
 
       // Fetch updated venues with user's ratings
-      final publicVenues = await _venueRepository.getAllPublicVenues(userId);
+      final publicVenues = await _venueRepository!.getAllPublicVenues(userId);
 
       if (!mounted) return;
 
@@ -431,7 +469,6 @@ class _MapPageState extends State<MapPage> {
     return [];
   }
 
-
   void _setCustomMarkerStyles() {
     // Set style for Jam Sessions
     _jamSessionMarkerIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
@@ -471,100 +508,155 @@ class _MapPageState extends State<MapPage> {
     if (!mounted || _gigMarkerIcon == null) {
       return;
     }
-    final Set<Marker> newMarkers = {};final Set<String> placedMarkerIds = {};
+    final Set<Marker> newMarkers = {};
     final now = DateTime.now();
     final upcomingGigVenuePlaceIds = _allLoadedGigs
         .where((gig) => gig.dateTime.isAfter(now))
         .map((gig) => gig.placeId)
         .toSet();
 
+    // Exclude archived venues from display
     final currentDisplayableVenues = _allKnownMapVenues.where((v) => !v.isArchived).toList();
 
-    for (var loc in currentDisplayableVenues) {
+    // FILTER: Determine which venues to show based on Jams toggle
+    List<StoredLocation> venuesToShow;
+
+    if (_showJamSessions) {
+      // Jams Toggle ON: Show venues with jam sessions
+      venuesToShow = currentDisplayableVenues.where((v) {
+        if (v.jamSessions.isEmpty) return false;
+
+        // Apply day filter if selected
+        if (_selectedJamDay != null) {
+          return v.jamSessions.any((session) => session.day == _selectedJamDay);
+        }
+        return true;
+      }).toList();
+    } else {
+      // Jams Toggle OFF: Show only user-saved venues and public venues
+      venuesToShow = currentDisplayableVenues.where((v) {
+        // Show public venues from network edition
+        if (v.isPublic) {
+          return true;
+        }
+
+        // Show if user explicitly saved this venue
+        return _userSavedPlaceIds.contains(v.placeId);
+      }).toList();
+    }
+
+    print("🔍 DEBUG _updateMarkers:");
+    print("   - Jams toggle: $_showJamSessions");
+    print("   - Total venues in memory: ${_allKnownMapVenues.length}");
+    print("   - After archive filter: ${currentDisplayableVenues.length}");
+    print("   - Venues to show: ${venuesToShow.length}");
+    print("   - User saved IDs: $_userSavedPlaceIds");
+    for (var v in venuesToShow) {
+      print("   - Will show: ${v.name} (public=${v.isPublic}, placeId=${v.placeId})");
+    }
+
+    // Create markers for all venues to show
+    for (var loc in venuesToShow) {
       final bool hasUpcomingGig = upcomingGigVenuePlaceIds.contains(loc.placeId);
       String snippetText = loc.address;
-      if (loc.rating > 0) {
-        final String formattedRating = loc.rating.toStringAsFixed(1);
-        snippetText = '${loc.address}  $formattedRating ⭐';
+
+      if (_showJamSessions && loc.jamSessions.isNotEmpty) {
+        // Show jam session info in snippet
+        snippetText = loc.jamOpenMicDisplayString(context);
+      } else if (loc.rating > 0) {
+        snippetText = '${loc.address}  ${loc.rating.toStringAsFixed(1)} ⭐';
       }
 
-      // --- START: MARKER COLOR LOGIC ---
-      final bool isPublic = loc.isPublic; // <-- MUCH CLEANER!
+      // MARKER COLOR LOGIC
       BitmapDescriptor venueIcon;
 
       if (hasUpcomingGig) {
-        venueIcon = _gigMarkerIcon!; // Custom PNG icon for upcoming gigs always wins.
-      } else if (isPublic) {
-        //print("public venue");
-        venueIcon = _publicVenueMarkerIcon; // GREEN for public venues.
+        venueIcon = _gigMarkerIcon!; // RED/CUSTOM for upcoming gigs
+      } else if (_showJamSessions) {
+        venueIcon = _jamSessionMarkerIcon; // ORANGE for jam sessions
+      } else if (loc.isPublic) {
+        venueIcon = _publicVenueMarkerIcon; // GREEN for public/network venues
       } else {
-        print("private venue");
-        venueIcon = _privateVenueMarkerIcon; // BLUE for private/local venues.
+        venueIcon = _privateVenueMarkerIcon; // BLUE for user-saved venues
       }
-      // --- END: MARKER COLOR LOGIC ---
 
       newMarkers.add(Marker(
-        markerId: MarkerId('saved_${loc.placeId}'),
+        markerId: MarkerId(loc.placeId),
         position: loc.coordinates,
         infoWindow: InfoWindow(title: loc.name, snippet: snippetText),
-        icon: venueIcon, // Use the 'venueIcon' variable we just figured out.
+        icon: venueIcon,
         onTap: () => _showLocationDetailsDialog(loc),
       ));
-      placedMarkerIds.add(loc.placeId);
     }
-    if (_showJamSessions) {
-      for (var jamVenue in _jamSessionVenues) {
-        final bool dayMatches = _selectedJamDay == null ||
-            jamVenue.jamSessions.any((session) => session.day == _selectedJamDay);
 
-        if (!placedMarkerIds.contains(jamVenue.placeId) && dayMatches) {
-          newMarkers.add(Marker(
-            markerId: MarkerId('jam_${jamVenue.placeId}'),
-            position: jamVenue.coordinates,
-            icon: _jamSessionMarkerIcon,
-            infoWindow: InfoWindow(title: jamVenue.name, snippet: jamVenue.jamOpenMicDisplayString(context)),
-            onTap: () => _showLocationDetailsDialog(jamVenue),
-          ));
-          placedMarkerIds.add(jamVenue.placeId);
-        }
-      }
-    }
     setState(() { _markers = newMarkers; });
   }
 
 
   Future<void> _updateAndSaveLocationReview(StoredLocation updatedLocation) async {
-    List<StoredLocation> updatedAllVenues = List.from(_allKnownMapVenues);
-    int index = updatedAllVenues.indexWhere((loc) => loc.placeId == updatedLocation.placeId);
-    if (index != -1) {
-      updatedAllVenues[index] = updatedLocation;
-    } else {
-      updatedAllVenues.add(updatedLocation);
-    }
     try {
       final prefs = await SharedPreferences.getInstance();
-      final List<String> locationsJson = updatedAllVenues.map((loc) => jsonEncode(loc.toJson())).toList();
+
+      // Load ONLY user-saved venues from SharedPreferences
+      final List<String>? existingSavedJson = prefs.getStringList(_keySavedLocations);
+      List<StoredLocation> userSavedVenues = [];
+
+      if (existingSavedJson != null) {
+        userSavedVenues = existingSavedJson
+            .map((jsonString) => StoredLocation.fromJson(jsonDecode(jsonString)))
+            .toList();
+      }
+
+      // Update or add the modified venue
+      int index = userSavedVenues.indexWhere((loc) => loc.placeId == updatedLocation.placeId);
+      if (index != -1) {
+        userSavedVenues[index] = updatedLocation;
+      } else {
+        userSavedVenues.add(updatedLocation);
+      }
+
+      // ✅ Save ALL user-saved venues (no filter needed)
+      // They're already filtered by being user-saved!
+      _userSavedPlaceIds = userSavedVenues.map((v) => v.placeId).toSet();
+
+      // Save back to SharedPreferences
+      final List<String> locationsJson = userSavedVenues
+          .map((loc) => jsonEncode(loc.toJson()))
+          .toList();
       await prefs.setStringList(_keySavedLocations, locationsJson);
+
       globalRefreshNotifier.notify();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${updatedLocation.name} saved!'), backgroundColor: Colors.green),
+          SnackBar(
+            content: Text('${updatedLocation.name} saved!'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving venue: $e'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving venue: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
 
+
   Future<void> _saveLocation(PlaceApiResult placeToSave) async {
+    // Check if venue already exists in memory
     if (_allKnownMapVenues.any((loc) => loc.placeId == placeToSave.placeId)) {
       final existingLoc = _allKnownMapVenues.firstWhere((l) => l.placeId == placeToSave.placeId);
       _showLocationDetailsDialog(existingLoc);
       return;
     }
 
+    // Create new venue
     final newLocation = StoredLocation(
       placeId: placeToSave.placeId,
       name: placeToSave.name,
@@ -572,14 +664,40 @@ class _MapPageState extends State<MapPage> {
       coordinates: placeToSave.coordinates,
     );
 
-    List<StoredLocation> updatedAllVenues = List.from(_allKnownMapVenues)..add(newLocation);
+    // ✅ CRITICAL: Load ONLY user-saved venues from SharedPreferences
+    // DO NOT save jam_sessions.json or public venues
     final prefs = await SharedPreferences.getInstance();
-    final List<String> locationsJson = updatedAllVenues.map((loc) => jsonEncode(loc.toJson())).toList();
-    await prefs.setStringList(_keySavedLocations, locationsJson);
-    globalRefreshNotifier.notify();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${newLocation.name} added to saved venues!')));
+    final List<String>? existingSavedJson = prefs.getStringList(_keySavedLocations);
+    List<StoredLocation> userSavedVenues = [];
+
+    if (existingSavedJson != null) {
+      userSavedVenues = existingSavedJson
+          .map((jsonString) => StoredLocation.fromJson(jsonDecode(jsonString)))
+          .toList();
     }
+
+    // Add new venue to user's saved list
+    userSavedVenues.add(newLocation);
+
+    // ✅ Track this venue as user-saved
+    _userSavedPlaceIds.add(newLocation.placeId);
+
+    // Save ONLY user-saved venues back to SharedPreferences
+    final List<String> locationsJson = userSavedVenues
+        .map((loc) => jsonEncode(loc.toJson()))
+        .toList();
+    await prefs.setStringList(_keySavedLocations, locationsJson);
+
+    // Trigger global refresh to reload map
+    globalRefreshNotifier.notify();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${newLocation.name} added to saved venues!'))
+      );
+    }
+
+    // Show venue details dialog
     _showLocationDetailsDialog(newLocation);
   }
 
@@ -722,9 +840,20 @@ class _MapPageState extends State<MapPage> {
   Future<void> _archiveVenue(StoredLocation venueToArchive) async {
     final index = _allKnownMapVenues.indexWhere((v) => v.placeId == venueToArchive.placeId);
     if (index != -1) {
-      final updatedVenue = _allKnownMapVenues[index].copyWith(isArchived: true);
+      // ✅ FIXED: Toggle based on CURRENT state in memory, not the parameter
+      final currentVenue = _allKnownMapVenues[index];
+      final updatedVenue = currentVenue.copyWith(
+          isArchived: !currentVenue.isArchived  // ← Use current state from memory
+      );
+
       await _updateAndSaveLocationReview(updatedVenue);
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${venueToArchive.name} archived.')));
+
+      if(mounted) {
+        final action = updatedVenue.isArchived ? 'archived' : 'restored';
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${venueToArchive.name} $action.'))
+        );
+      }
     }
   }
 
@@ -981,4 +1110,3 @@ class _MapPageState extends State<MapPage> {
     );
   }
 }
-

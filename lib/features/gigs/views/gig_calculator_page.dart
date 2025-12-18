@@ -501,7 +501,7 @@ class _GigCalculatorState extends State<GigCalculator>
   }
 
   Widget _buildCalculatorUI(BuildContext context) {
-    _loadUserMinHourlyRate();
+    //_loadUserMinHourlyRate();
 
     final formBackgroundColor = Colors.black.withAlpha(128);
     final formTextColor = Colors.white;
@@ -574,7 +574,7 @@ class _GigCalculatorState extends State<GigCalculator>
                 const Padding(
                   padding: EdgeInsets.fromLTRB(8.0, 0.0, 8.0, 24.0),
                   child: Text(
-                    "Your data is stored on your device only and never shared.",
+                    "Your pay data is stored on your device only and never shared.",
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 12,
