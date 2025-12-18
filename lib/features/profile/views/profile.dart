@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -203,25 +204,25 @@ class _ProfilePageState extends State<ProfilePage> {
                     children: [
                       Icon(Icons.check_circle, size: 16, color: Colors.green.shade700),
                       const SizedBox(width: 8),
-                      const Text('Included:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Text('Included:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  const Text('• Gig dates, times, venues'),
-                  const Text('• Venue names and addresses'),
-                  const Text('• App settings'),
+                  const Text('• Gig dates, times, venues', style: TextStyle(color: Colors.black)),
+                  const Text('• Venue names and addresses', style: TextStyle(color: Colors.black)),
+                  const Text('• App settings', style: TextStyle(color: Colors.black)),
                   const SizedBox(height: 8),
                   Row(
                     children: [
                       Icon(Icons.lock, size: 16, color: Colors.red.shade700),
                       const SizedBox(width: 8),
-                      const Text('NOT Included:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Text('NOT Included:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  const Text('• Pay amounts'),
-                  const Text('• Contact names, phone numbers, emails'),
-                  const Text('• Private venue details'),
+                  const Text('• Pay amounts', style: TextStyle(color: Colors.black)),
+                  const Text('• Contact names, phone numbers, emails', style: TextStyle(color: Colors.black)),
+                  const Text('• Private venue details', style: TextStyle(color: Colors.black)),
                 ],
               ),
             ),
