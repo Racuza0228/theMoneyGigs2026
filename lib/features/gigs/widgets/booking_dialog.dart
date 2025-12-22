@@ -233,16 +233,15 @@ class _BookingDialogState extends State<BookingDialog> {
     final int dayOfGigNotificationId = baseNotificationId;
 
     if (notifyOnDayOfGig) {
-      // THIS IS THE TEST CODE WE NEED. IT SETS THE NOTIFICATION FOR 1 MINUTE FROM NOW.
-      final DateTime scheduledDate = DateTime.now().add(const Duration(minutes: 1));
+      // --- FIX: Use the actual gig date, not a test date ---
+      // This schedules the notification for 9:00 AM on the day of the gig.
+      final DateTime scheduledDate = DateTime(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day, 9, 0);
 
       if (scheduledDate.isAfter(DateTime.now())) {
-        // We will use the detailed scheduleNotification method from notification_service.dart
-        // which has the try/catch block for debugging.
         await notificationService.scheduleNotification(
           id: dayOfGigNotificationId,
-          title: '[TEST] Gig Reminder',
-          body: 'Your gig "${gig.venueName}" is scheduled for ${DateFormat.jm().format(gig.dateTime)}.',
+          title: 'Gig Reminder: Today!', // Production-ready title
+          body: 'Your gig "${gig.venueName}" is today at ${DateFormat.jm().format(gig.dateTime)}.',
           scheduledDate: scheduledDate,
         );
       }
@@ -682,8 +681,19 @@ class _BookingDialogState extends State<BookingDialog> {
     await Future.delayed(const Duration(milliseconds: 2500));
 
 
-    await _scheduleGigNotifications(newOrUpdatedGigData);
-    print("scheduled gig notifications ${newOrUpdatedGigData.id}");
+    if (await _areNotificationsEnabled()) {
+      // 2. Wrap the call in a try-catch block for absolute safety.
+      try {
+        // This now only runs if the user wants notifications.
+        await _scheduleGigNotifications(newOrUpdatedGigData);
+        print("✅ Successfully scheduled notifications for gig ${newOrUpdatedGigData.id}");
+      } catch (e) {
+        // If notifications fail for any reason, log the error but DO NOT stop the booking process.
+        print("⚠️ Error scheduling notifications, but continuing with booking. Error: $e");
+      }
+    } else {
+      print("🔕 Notifications are disabled by the user. Skipping scheduling.");
+    }
 
     if (mounted) setState(() => _isProcessing = false);
 
@@ -692,6 +702,13 @@ class _BookingDialogState extends State<BookingDialog> {
     } else {
       Navigator.of(context).pop(newOrUpdatedGigData);
     }
+  }
+
+  Future<bool> _areNotificationsEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    final bool notifyOnDayOfGig = prefs.getBool('notify_on_day_of_gig') ?? false;
+    final int? daysBefore = prefs.getInt('notify_days_before');
+    return notifyOnDayOfGig || (daysBefore != null && daysBefore > 0);
   }
 
   // ... (All other helper methods like _loadAllKnownVenuesInternal, _calculateDynamicRate, etc., remain the same)
