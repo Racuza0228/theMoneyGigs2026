@@ -1,6 +1,7 @@
 // lib/main.dart
 import 'package:in_app_review/in_app_review.dart';
 import 'dart:async';
+import 'dart:convert'; // For json.decode
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -25,6 +26,8 @@ import 'core/widgets/page_background_wrapper.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'global_refresh_notifier.dart';
 import 'features/app_demo/widgets/animated_text.dart';
+import 'features/gigs/widgets/booking_dialog.dart'; // For Add Gig button
+import 'features/gigs/models/gig_model.dart'; // For existing gigs
 
 // --- 1. GLOBAL STATE AND LAZY INITIALIZER ---
 // This global flag ensures network services are only initialized once.
@@ -106,7 +109,8 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => DemoProvider()),
-        ChangeNotifierProvider(create: (_) => GlobalRefreshNotifier()),
+        // Use the global singleton instead of creating a new instance
+        ChangeNotifierProvider.value(value: globalRefreshNotifier),
       ],
       child: const MyApp(),
     ),
@@ -267,6 +271,69 @@ class _MainPageState extends State<MainPage> {
 
   void _onItemTapped(int index) => setState(() { _selectedIndex = index; });
 
+  /// Opens the booking dialog to add a new gig from scratch
+  Future<void> _openAddGigDialog() async {
+    try {
+      // Get existing gigs for conflict checking
+      final prefs = await SharedPreferences.getInstance();
+      final String? gigsJsonString = prefs.getString('gigs_list');
+      List<Gig> existingGigs = [];
+
+      if (gigsJsonString != null && gigsJsonString.isNotEmpty) {
+        final List<dynamic> gigsList = json.decode(gigsJsonString);
+        existingGigs = gigsList.map((gigJson) => Gig.fromJson(gigJson)).toList();
+      }
+
+      // Get Google API key from environment
+      const String googleApiKey = String.fromEnvironment('GOOGLE_API_KEY', defaultValue: '');
+
+      if (!mounted) return;
+
+      // Open the booking dialog with no pre-filled data
+      final result = await showDialog<GigEditResult>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return BookingDialog(
+            googleApiKey: googleApiKey,
+            existingGigs: existingGigs,
+            // All other parameters are null - user starts from scratch
+          );
+        },
+      );
+
+      // Save the gig if one was added
+      if (result != null && result.action == GigEditResultAction.updated && result.gig != null) {
+        print('💾 Saving new gig: ${result.gig!.id}');
+
+        // Add the new gig to the list
+        existingGigs.add(result.gig!);
+
+        // Save to SharedPreferences
+        await prefs.setString('gigs_list', Gig.encode(existingGigs));
+
+        print('✅ Gig saved successfully!');
+
+        // Refresh the app UI with a small delay to ensure all widgets are ready
+        if (mounted) {
+          // Small delay to ensure the frame is complete
+          await Future.delayed(const Duration(milliseconds: 100));
+          if (mounted) {
+            print('🔄 Notifying GlobalRefreshNotifier');
+            globalRefreshNotifier.notify();
+          }
+        }
+      }
+    } catch (e) {
+      print('Error opening Add Gig dialog: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open gig form: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _launchThirdRockURL() async {
     final Uri url = Uri.parse('https://www.thirdrockmusiccenter.com/');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
@@ -346,6 +413,28 @@ class _MainPageState extends State<MainPage> {
             elevation: 0,
             leading: Padding( padding: const EdgeInsets.all(8.0), child: Image.asset('assets/app_icon.png'), ),
             title: Text(_pageTitles[_selectedIndex]),
+            actions: [
+              // Add Gig button in top right
+              Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: IconButton(
+                  icon: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade700,
+                      shape: BoxShape.circle,
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    child: const Icon(
+                      Icons.add,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  tooltip: 'Add New Gig',
+                  onPressed: _openAddGigDialog,
+                ),
+              ),
+            ],
           ),
           body: Stack(
             children: [

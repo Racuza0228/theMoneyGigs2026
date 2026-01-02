@@ -388,7 +388,7 @@ class _GigCalculatorState extends State<GigCalculator>
     List<Gig> allExistingGigs = await _loadAllGigsFromPreferences();
     if (!mounted) return;
 
-    final dynamic result = await showDialog<dynamic>(
+    final GigEditResult? result = await showDialog<GigEditResult>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
@@ -407,18 +407,9 @@ class _GigCalculatorState extends State<GigCalculator>
 
     if (!mounted) return;
 
-    // <<< START OF CHANGE >>>
-    // Check for the special demo completion signal.
-    if (result == "demo_completed") {
-      // The demo is continuing on another page, so just clear the fields
-      // and do NOT end the demo here.
-      _clearAllInputFields();
-      return;
-    }
-    // <<< END OF CHANGE >>>
-
-    if (result is Gig) {
-      final bookedGig = result;
+    // Handle the result - works for both normal gigs and demo gigs
+    if (result != null && result.action == GigEditResultAction.updated && result.gig != null) {
+      final bookedGig = result.gig!;
       await _saveBookedGigToList(bookedGig);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

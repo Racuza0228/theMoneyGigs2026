@@ -15,6 +15,7 @@ import '../../app_demo/providers/demo_provider.dart';
 import 'widgets/address_display.dart';
 import 'widgets/address_form_fields.dart';
 import 'package:the_money_gigs/features/profile/views/widgets/connect_widget.dart';
+import 'package:the_money_gigs/features/profile/views/widgets/tags_widget.dart'; // <<< 1. ADD THIS IMPORT
 import 'widgets/notification_settings_dialog.dart';
 import 'widgets/rate_display.dart';
 import 'widgets/rate_form_field.dart';
@@ -396,6 +397,16 @@ class _ProfilePageState extends State<ProfilePage> {
               // <<< NEW: Connect to Network widget
               const ConnectWidget(),
 
+              // <<< START: INSERTED MUSICIAN PROFILE SECTION >>>
+              _buildSectionTitle(
+                'Musician Profile',
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8.0),
+                child: TagsWidget(),
+              ),
+              // <<< END: INSERTED MUSICIAN PROFILE SECTION >>>
+
               // Background Settings section
               _buildSectionTitle(
                 'Background Settings',
@@ -711,6 +722,7 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     );
   }
+
 }
 
 class BackgroundSettingsDialog extends StatelessWidget {

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:the_money_gigs/core/utils/add_venues.dart';
@@ -8,9 +9,14 @@ void main(List<String> args) async {
   // 1. Initialize Flutter and Firebase
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 2. Determine the region from arguments or default
-  // Usage: flutter run lib/core/utils/cli_sync.dart -d macos --args="Langhorne, PA"
-  String region = args.isNotEmpty ? args.join(' ') : "Langhorne, PA";
+  // --- START OF SIMPLIFIED FIX ---
+  // 2. Read arguments directly from the 'args' list.
+  // Correct Usage: flutter run lib/core/utils/import_venues.dart -- "Your City, ST"
+
+  print("Received arguments: $args"); // For debugging
+
+  // If args is not empty, use it. Otherwise, use the default.
+  String region = args.isNotEmpty ? args.join(' ') : "Marshall, CA"; // Changed default for clarity
 
   print("\n==============================");
   print("INITIATING FIREBASE...");
@@ -20,7 +26,7 @@ void main(List<String> args) async {
   );
 
   final venueService = VenueDiscoveryService();
-  await venueService.deleteSystemVenues();
+  // await venueService.deleteSystemVenues();
   print("STARTING SEARCH FOR: $region");
   print("==============================\n");
 

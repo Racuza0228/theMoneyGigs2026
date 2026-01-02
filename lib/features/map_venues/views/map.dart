@@ -23,6 +23,7 @@ import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.d
 import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
+import 'package:visibility_detector/visibility_detector.dart'; // <-- 1. ADD THIS IMPORT
 
 import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
 import 'package:the_money_gigs/main.dart';
@@ -334,7 +335,7 @@ class _MapPageState extends State<MapPage> {
       print("   - $id");
     }
 
-     Map<String, StoredLocation> finalVenuesMap = {
+    Map<String, StoredLocation> finalVenuesMap = {
       for (var venue in localVenues) venue.placeId: venue
     };
 
@@ -386,7 +387,7 @@ class _MapPageState extends State<MapPage> {
           finalVenuesMap[entry.key] = entry.value.copyWith(isPublic: false);
         }
       }
-      }
+    }
 
 
     // 5. Commit all loaded and merged data to the state in a single call.
@@ -825,16 +826,17 @@ class _MapPageState extends State<MapPage> {
     List<Gig> existingGigs = await _loadAllGigs();
     if (!mounted) return null;
 
-    final Gig? bookedGig = await showDialog<Gig>(
+    final GigEditResult? result = await showDialog<GigEditResult>(
       context: context,
       barrierDismissible: false,
       builder: (_) => BookingDialog(preselectedVenue: venue, googleApiKey: _googleApiKey, existingGigs: existingGigs),
     );
 
-    if (bookedGig != null) {
-      await _saveBookedGig(bookedGig);
+    if (result != null && result.action == GigEditResultAction.updated && result.gig != null) {
+      await _saveBookedGig(result.gig!);
+      return result.gig;
     }
-    return bookedGig;
+    return null;
   }
 
   Future<void> _archiveVenue(StoredLocation venueToArchive) async {
@@ -934,7 +936,18 @@ class _MapPageState extends State<MapPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
+    return VisibilityDetector(
+        key: const Key('map_page_visibility_detector'),
+        onVisibilityChanged: (visibilityInfo) {
+          // We only care when the widget becomes fully visible.
+          if (visibilityInfo.visibleFraction == 1.0) {
+            print("🗺️ MapPage is now visible. Triggering data refresh.");
+            // Call the same data loading function used in initState.
+            // This ensures the map always has the freshest data when viewed.
+            _loadAllMapData();
+          }
+        },
+        child: Stack(
       children: [
         // Use the _isMapReady flag to control what gets built.
         _isMapReady
@@ -1107,6 +1120,7 @@ class _MapPageState extends State<MapPage> {
             ),
           ),
       ],
+        ),
     );
   }
 }

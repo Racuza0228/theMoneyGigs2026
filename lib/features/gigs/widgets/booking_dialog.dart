@@ -72,15 +72,7 @@ class BookingDialog extends StatefulWidget {
     required this.googleApiKey,
     required this.existingGigs,
     this.editingGig,
-  }) : assert(
-  editingGig != null ||
-      preselectedVenue != null ||
-      (calculatedHourlyRate != null &&
-          totalPay != null &&
-          gigLengthHours != null &&
-          driveSetupTimeHours != null &&
-          rehearsalTimeHours != null),
-  'If not editing, either a preselectedVenue (map mode) or all financial details (calculator mode) must be provided.');
+  }); // Removed assert - allow opening with no data for "Add Gig" mode
 
   @override
   State<BookingDialog> createState() => _BookingDialogState();
@@ -147,6 +139,8 @@ class _BookingDialogState extends State<BookingDialog> {
   bool get _isEditingMode => widget.editingGig != null;
   bool get _isCalculatorMode => widget.calculatedHourlyRate != null && !_isEditingMode && widget.preselectedVenue == null;
   bool get _isMapModeNewGig => widget.preselectedVenue != null && !_isEditingMode;
+  // Add Gig mode: No editingGig, no calculatedHourlyRate, no preselectedVenue
+  bool get _isAddGigMode => !_isEditingMode && !_isCalculatorMode && !_isMapModeNewGig;
   bool _isInitialized = false;
 
   final TimeOfDay _defaultGigTime = const TimeOfDay(hour: 20, minute: 0);
@@ -204,7 +198,7 @@ class _BookingDialogState extends State<BookingDialog> {
     _gigLengthController.dispose();
     _driveSetupController.dispose();
     _rehearsalController.dispose();
-    if (_isMapModeNewGig || _isEditingMode) {
+    if (_isMapModeNewGig || _isEditingMode || _isAddGigMode) {
       _payController.removeListener(_calculateDynamicRate);
       _gigLengthController.removeListener(_calculateDynamicRate);
       _driveSetupController.removeListener(_calculateDynamicRate);
@@ -391,6 +385,15 @@ class _BookingDialogState extends State<BookingDialog> {
         _calculateDynamicRate();
       } else {
         await _loadSelectableVenuesForDropdown(defaultToAddVenue: true);
+
+        // Add Gig Mode: Also needs dynamic rate calculation
+        if (_isAddGigMode) {
+          _payController.addListener(_calculateDynamicRate);
+          _gigLengthController.addListener(_calculateDynamicRate);
+          _driveSetupController.addListener(_calculateDynamicRate);
+          _rehearsalController.addListener(_calculateDynamicRate);
+          _calculateDynamicRate();
+        }
       }
     }
     if (mounted) {
@@ -565,7 +568,15 @@ class _BookingDialogState extends State<BookingDialog> {
       await _audioPlayer.play(AssetSource('sounds/thetone.wav'));
       await Future.delayed(const Duration(milliseconds: 2500));
       demoProvider.nextStep(); // Advance to step 12
-      if (mounted) Navigator.of(context).pop("demo_completed");
+      if (mounted && Navigator.canPop(context)) {
+        // Return GigEditResult for consistency (even though demo already saved it)
+        Navigator.of(context).pop(
+          GigEditResult(
+            action: GigEditResultAction.updated,
+            gig: demoGig,
+          ),
+        );
+      }
       return;
     }
 
@@ -697,10 +708,22 @@ class _BookingDialogState extends State<BookingDialog> {
 
     if (mounted) setState(() => _isProcessing = false);
 
-    if (_isEditingMode) {
-      Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.updated, gig: newOrUpdatedGigData));
+    print('📤 BookingDialog: Attempting to close dialog...');
+    print('   - mounted: $mounted');
+    print('   - canPop: ${Navigator.canPop(context)}');
+    print('   - _isEditingMode: $_isEditingMode');
+
+    // Always return GigEditResult for type consistency
+    if (mounted && Navigator.canPop(context)) {
+      print('✅ BookingDialog: Popping with GigEditResult');
+      Navigator.of(context).pop(
+        GigEditResult(
+          action: GigEditResultAction.updated,
+          gig: newOrUpdatedGigData,
+        ),
+      );
     } else {
-      Navigator.of(context).pop(newOrUpdatedGigData);
+      print('❌ BookingDialog: Cannot pop! mounted=$mounted, canPop=${Navigator.canPop(context)}');
     }
   }
 
@@ -748,7 +771,8 @@ class _BookingDialogState extends State<BookingDialog> {
   }
 
   Future<void> _loadSelectableVenuesForDropdown({bool defaultToAddVenue = false}) async {
-    if (!_isCalculatorMode) {
+    // Load venues for Calculator Mode OR Add Gig Mode
+    if (!_isCalculatorMode && !_isAddGigMode) {
       if(mounted) setState(() => _isLoadingVenues = false );
       return;
     }
@@ -1052,7 +1076,7 @@ class _BookingDialogState extends State<BookingDialog> {
                           gigLengthController: _gigLengthController,
                           driveSetupController: _driveSetupController,
                           rehearsalController: _rehearsalController,
-                          showDynamicRate: _isMapModeNewGig || _isEditingMode,
+                          showDynamicRate: _isMapModeNewGig || _isEditingMode || _isAddGigMode,
                           dynamicRateString: _dynamicRateString,
                           dynamicRateResultColor: _dynamicRateResultColor,
                         ),
@@ -1135,10 +1159,60 @@ class _BookingDialogState extends State<BookingDialog> {
 
                       Container(
                         key: _dateSectionKey,
-                        child: Column(
+                        child: Row(
                           children: [
-                            Row( children: [ Expanded(child: Text(_selectedDate == null ? 'No date selected*' : 'Date: ${DateFormat.yMMMEd().format(_selectedDate!)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickDate(context), child: const Text('SELECT DATE')), ], ),
-                            Row( children: [ Expanded(child: Text(_selectedTime == null ? 'No time selected*' : 'Time: ${_selectedTime!.format(context)}')), TextButton(onPressed: isDialogProcessing ? null : () => _pickTime(context), child: const Text('SELECT TIME')), ], ),
+                            // Date Button
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: ElevatedButton.icon(
+                                  onPressed: isDialogProcessing ? null : () => _pickDate(context),
+                                  icon: const Icon(Icons.calendar_today, size: 18),
+                                  label: Text(
+                                    _selectedDate == null
+                                        ? 'Select Date'
+                                        : DateFormat('M/d/yy').format(_selectedDate!),
+                                    style: const TextStyle(fontSize: 15),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _selectedDate == null
+                                        ? Colors.orange.shade700
+                                        : Colors.green.shade700,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Time Button
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 8.0),
+                                child: ElevatedButton.icon(
+                                  onPressed: isDialogProcessing ? null : () => _pickTime(context),
+                                  icon: const Icon(Icons.access_time, size: 18),
+                                  label: Text(
+                                    _selectedTime == null
+                                        ? 'Select Time'
+                                        : _selectedTime!.format(context),
+                                    style: const TextStyle(fontSize: 15),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _selectedTime == null
+                                        ? Colors.orange.shade700
+                                        : Colors.green.shade700,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -1162,7 +1236,16 @@ class _BookingDialogState extends State<BookingDialog> {
               )
             else
               TextButton(
-                onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(),
+                onPressed: isDialogProcessing ? null : () {
+                  print('🚫 Cancel button pressed');
+                  print('   - canPop: ${Navigator.canPop(context)}');
+                  if (Navigator.canPop(context)) {
+                    print('✅ Popping dialog (Cancel)');
+                    Navigator.of(context).pop();
+                  } else {
+                    print('❌ Cannot pop dialog!');
+                  }
+                },
                 child: const Text('CANCEL'),
               ),
             Row(
@@ -1171,7 +1254,11 @@ class _BookingDialogState extends State<BookingDialog> {
               children: [
                 if (_isEditingMode)
                   TextButton(
-                    onPressed: isDialogProcessing ? null : () => Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange)),
+                    onPressed: isDialogProcessing ? null : () {
+                      if (Navigator.canPop(context)) {
+                        Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange));
+                      }
+                    },
                     child: const Text('CLOSE'),
                   ),
                 const SizedBox(width: 8),
