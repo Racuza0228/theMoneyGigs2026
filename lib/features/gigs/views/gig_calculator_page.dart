@@ -417,15 +417,22 @@ class _GigCalculatorState extends State<GigCalculator>
             backgroundColor: Colors.green),
       );
       _clearAllInputFields();
+
+      // CRITICAL: Do NOT end demo here!
+      // The demo needs to continue to steps 12 (Venues tab), 13 (My Gigs tab), and 14 (final message)
+      // The demo will end naturally at step 14 when the user clicks FINISH in main.dart
+
     } else {
+      // User cancelled the dialog
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Booking cancelled.')),
       );
-    }
 
-    // If the demo was active and the user cancels or completes a real booking, end the demo.
-    if (demoProvider.isDemoModeActive) {
-      demoProvider.endDemo();
+      // Only end the demo if the user explicitly cancels
+      if (demoProvider.isDemoModeActive) {
+        print('🎬 Calculator: User cancelled during demo, ending demo');
+        demoProvider.endDemo();
+      }
     }
   }
 

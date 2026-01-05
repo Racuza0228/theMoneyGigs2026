@@ -26,17 +26,22 @@ class DemoProvider with ChangeNotifier {
 
   void nextStep() {
     if (_isDemoModeActive) {
+      print('🎬 DemoProvider: Advancing from step $_currentStep to ${_currentStep + 1}');
       _currentStep++;
       notifyListeners();
+      print('🎬 DemoProvider: Now at step $_currentStep, notifying listeners');
     }
   }
 
   Future<void> endDemo() async {
     if (_isDemoModeActive) {
+      print('🎬 DemoProvider: endDemo() called at step $_currentStep');
+      print('🎬 DemoProvider: Cleaning up demo data');
       await _cleanUpDemoData(); // This is correct, we still need this.
 
       _isDemoModeActive = false;
       _currentStep = 0;
+      print('🎬 DemoProvider: Demo ended, notifying listeners');
       notifyListeners();
     }
   }
@@ -49,14 +54,17 @@ class DemoProvider with ChangeNotifier {
   }
 
   Future<void> _cleanUpDemoData() async {
+    print('🎬 DemoProvider: _cleanUpDemoData() starting');
     final prefs = await SharedPreferences.getInstance();
 
     // Clean up the demo gig
     final String? gigsJsonString = prefs.getString('gigs_list');
     if (gigsJsonString != null) {
       List<Gig> allGigs = Gig.decode(gigsJsonString);
+      final beforeCount = allGigs.length;
       allGigs.removeWhere((gig) => gig.id == demoGigId);
       await prefs.setString('gigs_list', Gig.encode(allGigs));
+      print('🎬 DemoProvider: Removed demo gig (was $beforeCount gigs, now ${allGigs.length})');
     }
 
     // Clean up the demo venue
@@ -65,10 +73,13 @@ class DemoProvider with ChangeNotifier {
       List<StoredLocation> allVenues = locationsJson
           .map((json) => StoredLocation.fromJson(jsonDecode(json)))
           .toList();
+      final beforeCount = allVenues.length;
       allVenues.removeWhere((venue) => venue.placeId == demoVenuePlaceId);
       final List<String> updatedLocationsJson =
       allVenues.map((loc) => jsonEncode(loc.toJson())).toList();
       await prefs.setStringList('saved_locations', updatedLocationsJson);
+      print('🎬 DemoProvider: Removed demo venue (was $beforeCount venues, now ${allVenues.length})');
     }
+    print('🎬 DemoProvider: _cleanUpDemoData() complete');
   }
 }

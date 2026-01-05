@@ -7,7 +7,9 @@ import 'package:the_money_gigs/features/map_venues/repositories/venue_repository
 import 'package:url_launcher/url_launcher.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
+import 'package:the_money_gigs/features/map_venues/widgets/venue_tags_widget.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:the_money_gigs/core/services/auth_service.dart';
 
 class VenueDetailsDialog extends StatefulWidget {
   final StoredLocation venue;
@@ -40,6 +42,8 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   late double _currentRating;
   late final TextEditingController _commentController;
   late bool _isPrivateVenue;
+  late List<String> _instrumentTags;
+  late List<String> _genreTags;
 
   // Repository and connection state
   final _venueRepository = VenueRepository();
@@ -54,20 +58,31 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   @override
   void initState() {
     super.initState();
-    print("--- 🔵 DEBUG: VenueDetailsDialog initState ---");
-    print("   - Loading venue: ${widget.venue.name}");
-    print("   - Initial isPublic: ${widget.venue.isPublic}");
-    print("   - Initial isPrivate: ${widget.venue.isPrivate}");
-    print("   - Initial rating: ${widget.venue.rating}");
-    print("   - Initial comment: '${widget.venue.comment}'");
-
+    // Non-async setup remains here
     _currentRating = widget.venue.rating;
     _commentController = TextEditingController(text: widget.venue.comment);
     _isPrivateVenue = widget.venue.isPrivate;
-    _checkConnectionStatus();
-    _loadRecentComments();
-    _loadUserRating();
+    _instrumentTags = List.from(widget.venue.instrumentTags);
+    _genreTags = List.from(widget.venue.genreTags);
+
+    // <<< 1. CALL THE NEW INITIALIZER METHOD >>>
+    _initializeDialog();
   }
+
+  Future<void> _initializeDialog() async {
+    // First, await the connection status. This is the crucial change.
+    await _checkConnectionStatus();
+
+    // Now that _checkConnectionStatus has completed and _isConnected is correctly set,
+    // we can safely call the methods that depend on it.
+    // The internal guards in these methods will now work as expected.
+    if (mounted) {
+      _loadRecentComments();
+      _loadUserRating();
+    }
+  }
+
+
 
   Future<void> _checkConnectionStatus() async {
     final prefs = await SharedPreferences.getInstance();
@@ -79,10 +94,15 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   }
 
   Future<void> _loadUserRating() async {
-    if (!widget.venue.isPublic) return;
+    // In standalone mode, skip Firebase operations
+    if (!widget.venue.isPublic || !_isConnected) {
+      print('ℹ️ Skipping Firebase rating load (standalone mode or not connected).');
+      return;
+    }
 
     try {
-      const String userId = 'current_user_id';
+      final authService = AuthService();
+      final userId = authService.isSignedIn ? authService.currentUserId : 'anonymous';
       final docId = '${widget.venue.placeId}_$userId';
 
       final doc = await FirebaseFirestore.instance
@@ -122,8 +142,9 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   }
 
   Future<void> _loadRecentComments() async {
-    if (!widget.venue.isPublic) {
-      // Can't load comments for non-public venues
+    // In standalone mode, skip Firebase operations
+    if (!widget.venue.isPublic || !_isConnected) {
+      print('ℹ️ Skipping Firebase comments load (standalone mode or not connected).');
       if (mounted) {
         setState(() => _loadingComments = false);
       }
@@ -172,10 +193,15 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   }
 
   StoredLocation _buildUpdatedVenue() {
+    print('🏷️ VenueDetailsDialog: Building updated venue');
+    print('   - Current _instrumentTags: $_instrumentTags');
+    print('   - Current _genreTags: $_genreTags');
     return widget.venue.copyWith(
       rating: _currentRating,
       comment: _commentController.text.trim().isEmpty ? null : _commentController.text.trim(),
       isPrivate: _isPrivateVenue,
+      instrumentTags: _instrumentTags,
+      genreTags: _genreTags,
     );
   }
 
@@ -190,8 +216,10 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
     // 2. If online and the venue is NOT marked as private, save relevant data to the cloud.
     if (_isConnected && !updatedVenue.isPrivate) {
       try {
-        const String userId = 'current_user_id';
+        final authService = AuthService();
+        final userId = authService.isSignedIn ? authService.currentUserId : 'anonymous';
         print("☁️ DEBUG: Preparing to save to Firebase...");
+        print("   - userId: $userId");
         print("   - isConnected: $_isConnected");
         print("   - isPrivate: ${updatedVenue.isPrivate}");
 
@@ -218,6 +246,27 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
         );
         if(saveVerified) {
           print("✅ DEBUG: Firebase save and verification successful!");
+
+          // 🏷️ NEW: Sync tags to Firebase if there are any
+          if (updatedVenue.genreTags.isNotEmpty || updatedVenue.instrumentTags.isNotEmpty) {
+            print("🏷️ DEBUG: Syncing tags to Firebase...");
+            print("   - Genres: ${updatedVenue.genreTags}");
+            print("   - Instruments: ${updatedVenue.instrumentTags}");
+
+            try {
+              await _venueRepository.syncLocalTagsToFirebase(
+                placeId: updatedVenue.placeId,
+                userId: userId,
+                genreTags: updatedVenue.genreTags,
+                instrumentTags: updatedVenue.instrumentTags,
+              );
+              print("✅ DEBUG: Tags synced to Firebase successfully!");
+            } catch (e) {
+              print("❌ DEBUG: Error syncing tags to Firebase: $e");
+            }
+          } else {
+            print("ℹ️ DEBUG: No tags to sync to Firebase");
+          }
 
           // Notify parent to refresh venues
           widget.onDataChanged?.call();
@@ -549,11 +598,25 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Average Rating (only if 5+ reviews)
                   _buildAverageRating(),
-
-                  // Recent Comments
                   _buildRecentComments(),
+
+                  const Divider(),
+                  VenueTagsWidget(
+                    venue: widget.venue,
+                    isConnected: _isConnected,  // ← Pass connection status
+                    onTagsChanged: (instruments, genres) {
+                      print('🏷️ VenueDetailsDialog: Received tag changes from widget');
+                      print('   - Instruments received: $instruments');
+                      print('   - Genres received: $genres');
+                      setState(() {
+                        _instrumentTags = instruments;
+                        _genreTags = genres;
+                      });
+                      print('   - _instrumentTags updated to: $_instrumentTags');
+                      print('   - _genreTags updated to: $_genreTags');
+                    },
+                  ),
 
                   const Divider(height: 24),
 

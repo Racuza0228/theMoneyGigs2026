@@ -34,6 +34,9 @@ class StoredLocation {
   final String? driveDuration;
   final String? driveDistance;
 
+  final List<String> instrumentTags;
+  final List<String> genreTags;
+
   StoredLocation({
     required this.placeId,
     this.isPublic = false,
@@ -53,6 +56,8 @@ class StoredLocation {
     this.venueNotesUrl,
     this.driveDuration,
     this.driveDistance,
+    this.instrumentTags = const [], // <<< Add to constructor
+    this.genreTags = const [],    // <<< Add to constructor
   });
 
   bool get hasJamOpenMic => jamSessions.isNotEmpty;
@@ -76,6 +81,8 @@ class StoredLocation {
     'venueNotesUrl': venueNotesUrl,
     'driveDuration': driveDuration,
     'driveDistance': driveDistance,
+    'instrumentTags': instrumentTags, // <<< Add to toJson
+    'genreTags': genreTags,       // <<< Add to toJson
   };
 
   /// A private helper function to handle backward compatibility for old jam session data.
@@ -139,6 +146,9 @@ class StoredLocation {
       venueNotesUrl: json['venueNotesUrl'] as String?,
       driveDuration: json['driveDuration'] as String?,
       driveDistance: json['driveDistance'] as String?,
+      instrumentTags: List<String>.from(json['instrumentTags'] ?? []),
+      genreTags: List<String>.from(json['genreTags'] ?? []),
+
     );
   }
 
@@ -161,6 +171,8 @@ class StoredLocation {
     ValueGetter<String?>? venueNotesUrl,
     ValueGetter<String?>? driveDuration,
     ValueGetter<String?>? driveDistance,
+    List<String>? instrumentTags, // <<< Add to copyWith
+    List<String>? genreTags,       // <<< Add to copyWith
   }) {
     return StoredLocation(
       placeId: placeId ?? this.placeId,
@@ -181,6 +193,8 @@ class StoredLocation {
       venueNotesUrl: venueNotesUrl != null ? venueNotesUrl() : this.venueNotesUrl,
       driveDuration: driveDuration != null ? driveDuration() : this.driveDuration,
       driveDistance: driveDistance != null ? driveDistance() : this.driveDistance,
+      instrumentTags: instrumentTags ?? this.instrumentTags, // <<< Add assignment
+      genreTags: genreTags ?? this.genreTags,             // <<< Add assignment
     );
   }
 

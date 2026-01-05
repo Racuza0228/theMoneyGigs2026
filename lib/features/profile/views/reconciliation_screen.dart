@@ -124,7 +124,18 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
       );
     }
 
-    // 3. Update the local StoredLocation to ensure isPrivate is false and
+    // 3. Sync local tags to Firebase (NEW!)
+    if (publicVenue.genreTags.isNotEmpty || publicVenue.instrumentTags.isNotEmpty) {
+      print('🏷️ Syncing ${publicVenue.genreTags.length} genre tags and ${publicVenue.instrumentTags.length} instrument tags');
+      await _venueRepository.syncLocalTagsToFirebase(
+        placeId: publicVenue.placeId,
+        userId: userId,
+        genreTags: publicVenue.genreTags,
+        instrumentTags: publicVenue.instrumentTags,
+      );
+    }
+
+    // 4. Update the local StoredLocation to ensure isPrivate is false and
     // any edits to rating/comment are saved on the device.
     await _updateLocalVenue(publicVenue);
     _moveToNextVenue();

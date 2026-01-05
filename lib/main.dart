@@ -148,6 +148,7 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
   bool _isInitializingLocalServices = true;
+  bool _reviewAlreadyRequested = false;  // Prevent duplicate review requests
 
   final List<Widget?> _widgetInstances = List.generate(4, (_) => null);
 
@@ -215,22 +216,38 @@ class _MainPageState extends State<MainPage> {
 
   void _onDemoStateChanged() {
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    print('🎬 Main: _onDemoStateChanged called. isDemoActive=${demoProvider.isDemoModeActive}, currentStep=${demoProvider.currentStep}');
     if (!mounted) return;
     if (demoProvider.isDemoModeActive) {
       int targetIndex = -1;
       if (demoProvider.currentStep == 1) { targetIndex = 0; }
-      else if (demoProvider.currentStep == 12) { targetIndex = 1; }
-      else if (demoProvider.currentStep == 13) { targetIndex = 2; }
-      else if (demoProvider.currentStep == 14) { targetIndex = 2; }
+      else if (demoProvider.currentStep == 12) {
+        print('🎬 Main: Step 12 - switching to Venues tab (index 1)');
+        targetIndex = 1;
+      }
+      else if (demoProvider.currentStep == 13) {
+        print('🎬 Main: Step 13 - switching to My Gigs tab (index 2)');
+        targetIndex = 2;
+      }
+      else if (demoProvider.currentStep == 14) {
+        print('🎬 Main: Step 14 - staying on My Gigs tab (index 2)');
+        targetIndex = 2;
+      }
 
       if (targetIndex != -1 && _selectedIndex != targetIndex) {
+        print('🎬 Main: Scheduling tab switch from $_selectedIndex to $targetIndex');
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) setState(() { _selectedIndex = targetIndex; });
+          if (mounted) {
+            print('🎬 Main: Executing tab switch to $targetIndex');
+            setState(() { _selectedIndex = targetIndex; });
+          }
         });
       } else {
+        print('🎬 Main: No tab switch needed (targetIndex=$targetIndex, current=$_selectedIndex)');
         setState(() {});
       }
     } else {
+      print('🎬 Main: Demo not active, just calling setState');
       setState(() {});
     }
   }
@@ -344,6 +361,8 @@ class _MainPageState extends State<MainPage> {
   Future<void> _startDemo({bool isFirstTime = false}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(DemoProvider.hasSeenIntroKey, true);
+    _reviewAlreadyRequested = false;  // Reset for new demo session
+    print('🎬 Main: Starting demo, review flag reset');
     if (mounted) {
       Provider.of<DemoProvider>(context, listen: false).startDemo();
       if (_selectedIndex != 0) setState(() => _selectedIndex = 0);
@@ -373,8 +392,17 @@ class _MainPageState extends State<MainPage> {
       hideSkipButton: step.hideSkipButton,
       onNext: () async {
         if (demoProvider.currentStep == 14) {
-          final InAppReview inAppReview = InAppReview.instance;
-          if (await inAppReview.isAvailable()) inAppReview.requestReview();
+          // Only request review once per demo session
+          if (!_reviewAlreadyRequested) {
+            print('🎬 Main: Requesting in-app review at step 14');
+            _reviewAlreadyRequested = true;
+            final InAppReview inAppReview = InAppReview.instance;
+            if (await inAppReview.isAvailable()) {
+              inAppReview.requestReview();
+            }
+          } else {
+            print('🎬 Main: Review already requested, skipping duplicate');
+          }
           await Future.delayed(const Duration(seconds: 1));
           demoProvider.endDemo();
         } else {

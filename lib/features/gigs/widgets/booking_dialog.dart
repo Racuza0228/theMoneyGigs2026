@@ -467,6 +467,8 @@ class _BookingDialogState extends State<BookingDialog> {
         address: address,
         coordinates: coords,
         placeId: 'temp_manual_place_id_${DateTime.now().millisecondsSinceEpoch}',
+        instrumentTags: [],
+        genreTags: [],
       );
       final driveTimeService = _createDriveTimeService();
       final resultVenue = await driveTimeService.fetchAndCacheDriveTime(tempVenue);
@@ -517,16 +519,20 @@ class _BookingDialogState extends State<BookingDialog> {
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     // When on the final demo step, clicking this button just finishes the demo.
     if (demoProvider.isDemoModeActive && demoProvider.currentStep == 11) {
+      print('🎬 DEMO: Starting final booking step (step 11)');
       // ... demo logic remains the same
       if (mounted) setState(() => _isProcessing = true);
 
       // 1. Create the demo venue and gig objects using the static IDs from DemoProvider
+      print('🎬 DEMO: Creating demo venue and gig objects');
       const LatLng demoCoords = LatLng(39.1602761, -84.429593);
       final demoVenue = StoredLocation(
         placeId: DemoProvider.demoVenuePlaceId,
         name: 'Kroger Marketplace',
         address: '4613 Marburg Ave, Cincinnati, OH 45209',
         coordinates: demoCoords,
+        instrumentTags: [],
+        genreTags: [],
       );
 
       final demoGig = Gig(
@@ -544,13 +550,32 @@ class _BookingDialogState extends State<BookingDialog> {
       );
 
       // 2. Save them to SharedPreferences
+      print('🎬 DEMO: Saving demo venue and gig to SharedPreferences');
       final prefs = await SharedPreferences.getInstance();
 
-      // Save Venue
-      _allKnownVenuesInternal.removeWhere((v) => v.placeId == DemoProvider.demoVenuePlaceId);
-      _allKnownVenuesInternal.add(demoVenue);
-      final List<String> updatedLocationsJson = _allKnownVenuesInternal.map((loc) => jsonEncode(loc.toJson())).toList();
+      // Save Venue - RELOAD first to avoid overwriting existing venues
+      final List<String>? existingLocationsJson = prefs.getStringList('saved_locations');
+      List<StoredLocation> allVenues = [];
+      if (existingLocationsJson != null) {
+        allVenues = existingLocationsJson.map((jsonString) {
+          try { return StoredLocation.fromJson(jsonDecode(jsonString)); }
+          catch (e) { return null; }
+        }).whereType<StoredLocation>().toList();
+      }
+
+      print('🎬 DEMO: Loaded ${allVenues.length} existing venues before adding demo venue');
+
+      // Remove old demo venue if exists, then add new one
+      allVenues.removeWhere((v) => v.placeId == DemoProvider.demoVenuePlaceId);
+      allVenues.add(demoVenue);
+
+      final List<String> updatedLocationsJson = allVenues.map((loc) => jsonEncode(loc.toJson())).toList();
       await prefs.setStringList('saved_locations', updatedLocationsJson);
+
+      print('🎬 DEMO: Saved ${allVenues.length} total venues (including demo venue)');
+
+      // Update internal list too
+      _allKnownVenuesInternal = List.from(allVenues);
 
       // Save Gig
       final String? gigsJsonString = prefs.getString('gigs_list');
@@ -559,16 +584,24 @@ class _BookingDialogState extends State<BookingDialog> {
       allGigs.add(demoGig);
       await prefs.setString('gigs_list', Gig.encode(allGigs));
 
+      print('🎬 DEMO: Saved demo gig');
+
       // 3. Notify the app that data has changed, so the map updates itself
-      if (mounted) context.read<GlobalRefreshNotifier>().notify();
+      print('🎬 DEMO: Calling globalRefreshNotifier.notify()');
+      if (mounted) globalRefreshNotifier.notify();
 
       if (mounted) setState(() => _isProcessing = false);
 
       // 4. Proceed with the rest of the demo flow
+      print('🎬 DEMO: Playing sound and waiting 2.5 seconds');
       await _audioPlayer.play(AssetSource('sounds/thetone.wav'));
       await Future.delayed(const Duration(milliseconds: 2500));
+      print('🎬 DEMO: Advancing from step 11 to step 12');
+      print('🎬 DEMO: Advancing from step 11 to step 12');
       demoProvider.nextStep(); // Advance to step 12
+      print('🎬 DEMO: Checking if can pop dialog');
       if (mounted && Navigator.canPop(context)) {
+        print('🎬 DEMO: Popping dialog with GigEditResult');
         // Return GigEditResult for consistency (even though demo already saved it)
         Navigator.of(context).pop(
           GigEditResult(
@@ -576,6 +609,8 @@ class _BookingDialogState extends State<BookingDialog> {
             gig: demoGig,
           ),
         );
+      } else {
+        print('🎬 DEMO: ERROR - Cannot pop dialog! mounted=$mounted canPop=${mounted ? Navigator.canPop(context) : "N/A"}');
       }
       return;
     }
@@ -1012,11 +1047,10 @@ class _BookingDialogState extends State<BookingDialog> {
       textAlignment: step.alignment,
       hideNextButton: step.hideNextButton,
       onNext: () {
-        if (demoProvider.currentStep == 11) { // Final step for this dialog
-          demoProvider.endDemo();
-        } else {
-          demoProvider.nextStep();
-        }
+        // For step 11, the CONFIRM & BOOK button handles advancement
+        // The overlay onNext should never be called since hideNextButton=true
+        // But if it somehow gets called, just advance normally
+        demoProvider.nextStep();
       },
     );
   }

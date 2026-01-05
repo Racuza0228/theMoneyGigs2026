@@ -433,8 +433,27 @@ class _MapPageState extends State<MapPage> {
                   (v) => v.placeId == publicVenue.placeId
           );
           if (index != -1) {
-            // Replace with updated venue (has new rating/comment)
-            _allKnownMapVenues[index] = publicVenue;
+            final existingVenue = _allKnownMapVenues[index];
+
+            // 🏷️ CRITICAL: Preserve local tags when refreshing from Firebase!
+            // Firebase doesn't have tags yet (they're only stored locally),
+            // so we need to merge them with the Firebase data
+            final mergedVenue = publicVenue.copyWith(
+              instrumentTags: existingVenue.instrumentTags.isNotEmpty
+                  ? existingVenue.instrumentTags
+                  : publicVenue.instrumentTags,
+              genreTags: existingVenue.genreTags.isNotEmpty
+                  ? existingVenue.genreTags
+                  : publicVenue.genreTags,
+            );
+
+            //print('🏷️ MAP: Merging venue ${publicVenue.name}');
+            if (existingVenue.instrumentTags.isNotEmpty || existingVenue.genreTags.isNotEmpty) {
+              print('   - Preserved local tags: genres=${existingVenue.genreTags}, instruments=${existingVenue.instrumentTags}');
+            }
+
+            // Replace with merged venue (has Firebase rating/comment + local tags)
+            _allKnownMapVenues[index] = mergedVenue;
           }
         }
 
@@ -552,9 +571,9 @@ class _MapPageState extends State<MapPage> {
     print("   - After archive filter: ${currentDisplayableVenues.length}");
     print("   - Venues to show: ${venuesToShow.length}");
     print("   - User saved IDs: $_userSavedPlaceIds");
-    for (var v in venuesToShow) {
-      print("   - Will show: ${v.name} (public=${v.isPublic}, placeId=${v.placeId})");
-    }
+    //for (var v in venuesToShow) {
+    // print("   - Will show: ${v.name} (public=${v.isPublic}, placeId=${v.placeId})");
+    //}
 
     // Create markers for all venues to show
     for (var loc in venuesToShow) {
@@ -596,6 +615,11 @@ class _MapPageState extends State<MapPage> {
 
   Future<void> _updateAndSaveLocationReview(StoredLocation updatedLocation) async {
     try {
+      print('🏷️ MAP: _updateAndSaveLocationReview called');
+      print('   - Venue: ${updatedLocation.name}');
+      print('   - Genre tags: ${updatedLocation.genreTags}');
+      print('   - Instrument tags: ${updatedLocation.instrumentTags}');
+
       final prefs = await SharedPreferences.getInstance();
 
       // Load ONLY user-saved venues from SharedPreferences
@@ -611,9 +635,25 @@ class _MapPageState extends State<MapPage> {
       // Update or add the modified venue
       int index = userSavedVenues.indexWhere((loc) => loc.placeId == updatedLocation.placeId);
       if (index != -1) {
+        print('🏷️ MAP: Updating existing venue in SharedPreferences list');
         userSavedVenues[index] = updatedLocation;
       } else {
+        print('🏷️ MAP: Adding new venue to SharedPreferences list');
         userSavedVenues.add(updatedLocation);
+      }
+
+      // ✅ ALSO update the in-memory venue list so reopening the dialog shows latest tags!
+      final memoryIndex = _allKnownMapVenues.indexWhere((loc) => loc.placeId == updatedLocation.placeId);
+      if (memoryIndex != -1) {
+        print('🏷️ MAP: Updating venue in _allKnownMapVenues');
+        print('   - Before: ${_allKnownMapVenues[memoryIndex].genreTags}');
+        setState(() {
+          _allKnownMapVenues[memoryIndex] = updatedLocation;
+        });
+        print('   - After: ${_allKnownMapVenues[memoryIndex].genreTags}');
+        print('✅ Updated venue in _allKnownMapVenues with latest tags');
+      } else {
+        print('⚠️ MAP: Venue not found in _allKnownMapVenues!');
       }
 
       // ✅ Save ALL user-saved venues (no filter needed)
@@ -625,7 +665,9 @@ class _MapPageState extends State<MapPage> {
           .map((loc) => jsonEncode(loc.toJson()))
           .toList();
       await prefs.setStringList(_keySavedLocations, locationsJson);
+      print('🏷️ MAP: Saved to SharedPreferences');
 
+      print('🏷️ MAP: Calling globalRefreshNotifier.notify()');
       globalRefreshNotifier.notify();
 
       if (mounted) {
@@ -637,6 +679,7 @@ class _MapPageState extends State<MapPage> {
         );
       }
     } catch (e) {
+      print('❌ MAP: Error in _updateAndSaveLocationReview: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -937,190 +980,190 @@ class _MapPageState extends State<MapPage> {
   @override
   Widget build(BuildContext context) {
     return VisibilityDetector(
-        key: const Key('map_page_visibility_detector'),
-        onVisibilityChanged: (visibilityInfo) {
-          // We only care when the widget becomes fully visible.
-          if (visibilityInfo.visibleFraction == 1.0) {
-            print("🗺️ MapPage is now visible. Triggering data refresh.");
-            // Call the same data loading function used in initState.
-            // This ensures the map always has the freshest data when viewed.
-            _loadAllMapData();
-          }
-        },
-        child: Stack(
-      children: [
-        // Use the _isMapReady flag to control what gets built.
-        _isMapReady
-            ? GoogleMap(
-          mapType: MapType.normal,
-          initialCameraPosition: _kInitialPosition,
-          onMapCreated: (GoogleMapController controller) {
-            if (!_controller.isCompleted) {
-              _controller.complete(controller);
-            }
-          },
-          markers: _markers,
-          onTap: (tappedPoint) {
-            if (_isSearchVisible) {
-              setState(() {
-                _isSearchVisible = false;
-                _autocompleteResults = [];
-                _searchController.clear();
-                _placesService.endSession();
-                FocusScope.of(context).unfocus();
-              });
-            } else {
-              _handleMapTap(tappedPoint);
-            }
-          },
-          myLocationButtonEnabled: true,
-          myLocationEnabled: true,
-          padding: EdgeInsets.only(
-            top: _isSearchVisible ? 120 : 70,
-            bottom: Theme.of(context).platform == TargetPlatform.iOS ? 90 : 60,
+      key: const Key('map_page_visibility_detector'),
+      onVisibilityChanged: (visibilityInfo) {
+        // We only care when the widget becomes fully visible.
+        if (visibilityInfo.visibleFraction == 1.0) {
+          print("🗺️ MapPage is now visible. Triggering data refresh.");
+          // Call the same data loading function used in initState.
+          // This ensures the map always has the freshest data when viewed.
+          _loadAllMapData();
+        }
+      },
+      child: Stack(
+        children: [
+          // Use the _isMapReady flag to control what gets built.
+          _isMapReady
+              ? GoogleMap(
+            mapType: MapType.normal,
+            initialCameraPosition: _kInitialPosition,
+            onMapCreated: (GoogleMapController controller) {
+              if (!_controller.isCompleted) {
+                _controller.complete(controller);
+              }
+            },
+            markers: _markers,
+            onTap: (tappedPoint) {
+              if (_isSearchVisible) {
+                setState(() {
+                  _isSearchVisible = false;
+                  _autocompleteResults = [];
+                  _searchController.clear();
+                  _placesService.endSession();
+                  FocusScope.of(context).unfocus();
+                });
+              } else {
+                _handleMapTap(tappedPoint);
+              }
+            },
+            myLocationButtonEnabled: true,
+            myLocationEnabled: true,
+            padding: EdgeInsets.only(
+              top: _isSearchVisible ? 120 : 70,
+              bottom: Theme.of(context).platform == TargetPlatform.iOS ? 90 : 60,
+            ),
+          )
+          // If the map is NOT ready, show a loading circle instead.
+          // This prevents the GoogleMap widget from ever being created in a bad state.
+              : const Center(
+            child: CircularProgressIndicator(),
           ),
-        )
-        // If the map is NOT ready, show a loading circle instead.
-        // This prevents the GoogleMap widget from ever being created in a bad state.
-            : const Center(
-          child: CircularProgressIndicator(),
-        ),
 
-        // The rest of your UI overlay is built on top, which is correct.
-        Positioned(
-          top: 12.0,
-          left: 12.0,
-          right: 12.0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Card(
-                elevation: 4.0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28.0)),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(_isSearchVisible ? Icons.arrow_back : Icons.search),
-                      onPressed: () {
-                        setState(() {
-                          _isSearchVisible = !_isSearchVisible;
-                          if (_isSearchVisible) {
+          // The rest of your UI overlay is built on top, which is correct.
+          Positioned(
+            top: 12.0,
+            left: 12.0,
+            right: 12.0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Card(
+                  elevation: 4.0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28.0)),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(_isSearchVisible ? Icons.arrow_back : Icons.search),
+                        onPressed: () {
+                          setState(() {
+                            _isSearchVisible = !_isSearchVisible;
+                            if (_isSearchVisible) {
+                              _placesService.startSession();
+                            } else {
+                              _searchController.clear();
+                              _autocompleteResults = [];
+                              _placesService.endSession();
+                              FocusScope.of(context).unfocus();
+                            }
+                          });
+                        },
+                      ),
+                      Expanded(
+                        child: _isSearchVisible
+                            ? TextField(
+                          controller: _searchController,
+                          autofocus: true,
+                          decoration: const InputDecoration(
+                            hintText: 'Search address or venue...',
+                            border: InputBorder.none,
+                          ),
+                        )
+                            : GestureDetector(
+                          onTap: () => setState(() {
+                            _isSearchVisible = true;
                             _placesService.startSession();
-                          } else {
-                            _searchController.clear();
-                            _autocompleteResults = [];
-                            _placesService.endSession();
-                            FocusScope.of(context).unfocus();
-                          }
-                        });
-                      },
-                    ),
-                    Expanded(
-                      child: _isSearchVisible
-                          ? TextField(
-                        controller: _searchController,
-                        autofocus: true,
-                        decoration: const InputDecoration(
-                          hintText: 'Search address or venue...',
-                          border: InputBorder.none,
+                          }),
+                          child: const Text('Search Map', style: TextStyle(fontSize: 16, color: Colors.black54)),
                         ),
-                      )
-                          : GestureDetector(
-                        onTap: () => setState(() {
-                          _isSearchVisible = true;
-                          _placesService.startSession();
-                        }),
-                        child: const Text('Search Map', style: TextStyle(fontSize: 16, color: Colors.black54)),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const VerticalDivider(width: 1, indent: 10, endIndent: 10),
+                          Icon(Icons.music_note, color: Colors.orange.shade700, size: 20),
+                          const SizedBox(width: 2),
+                          const Text('Jams'),
+                          Switch(
+                            value: _showJamSessions,
+                            onChanged: (bool value) {
+                              setState(() {
+                                _showJamSessions = value;
+                                _updateMarkers();
+                              });
+                            },
+                            activeThumbColor: Colors.orange.shade600,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (_showJamSessions)
+                  Card(
+                    margin: const EdgeInsets.only(top: 6.0),
+                    elevation: 2.0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: DayOfWeek.values.map((day) {
+                          final bool isSelected = _selectedJamDay == day;
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                if (isSelected) {
+                                  _selectedJamDay = null; // Unselect if tapped again
+                                } else {
+                                  _selectedJamDay = day;
+                                }
+                                _updateMarkers(); // Refresh markers with new filter
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isSelected ? Colors.orange.shade600 : Colors.lightBlue,
+                                borderRadius: BorderRadius.circular(8.0),
+                              ),
+                              child: Text(day.toString().split('.').last.substring(0, 3), style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.black54)),
+                            ),
+                          );
+                        }).toList(),
                       ),
                     ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const VerticalDivider(width: 1, indent: 10, endIndent: 10),
-                        Icon(Icons.music_note, color: Colors.orange.shade700, size: 20),
-                        const SizedBox(width: 2),
-                        const Text('Jams'),
-                        Switch(
-                          value: _showJamSessions,
-                          onChanged: (bool value) {
-                            setState(() {
-                              _showJamSessions = value;
-                              _updateMarkers();
-                            });
-                          },
-                          activeThumbColor: Colors.orange.shade600,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (_showJamSessions)
-                Card(
-                  margin: const EdgeInsets.only(top: 6.0),
-                  elevation: 2.0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: DayOfWeek.values.map((day) {
-                        final bool isSelected = _selectedJamDay == day;
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              if (isSelected) {
-                                _selectedJamDay = null; // Unselect if tapped again
-                              } else {
-                                _selectedJamDay = day;
-                              }
-                              _updateMarkers(); // Refresh markers with new filter
-                            });
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: isSelected ? Colors.orange.shade600 : Colors.lightBlue,
-                              borderRadius: BorderRadius.circular(8.0),
-                            ),
-                            child: Text(day.toString().split('.').last.substring(0, 3), style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.black54)),
-                          ),
+                  ),
+                if (_isSearchVisible && _autocompleteResults.isNotEmpty)
+                  Card(
+                    margin: const EdgeInsets.only(top: 8.0),
+                    elevation: 4.0,
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: _autocompleteResults.length,
+                      itemBuilder: (context, index) {
+                        final result = _autocompleteResults[index];
+                        return ListTile(
+                          leading: const Icon(Icons.location_pin),
+                          title: Text(result.mainText),
+                          subtitle: Text(result.secondaryText),
+                          onTap: () => _selectPlaceAndMoveCamera(result),
                         );
-                      }).toList(),
+                      },
                     ),
                   ),
-                ),
-              if (_isSearchVisible && _autocompleteResults.isNotEmpty)
-                Card(
-                  margin: const EdgeInsets.only(top: 8.0),
-                  elevation: 4.0,
-                  child: ListView.builder(
-                    padding: EdgeInsets.zero,
-                    shrinkWrap: true,
-                    itemCount: _autocompleteResults.length,
-                    itemBuilder: (context, index) {
-                      final result = _autocompleteResults[index];
-                      return ListTile(
-                        leading: const Icon(Icons.location_pin),
-                        title: Text(result.mainText),
-                        subtitle: Text(result.secondaryText),
-                        onTap: () => _selectPlaceAndMoveCamera(result),
-                      );
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ),
-        if (_isLoading)
-          Positioned.fill(
-            child: Container(
-              color: Colors.black.withAlpha(128),
-              child: const Center(child: CircularProgressIndicator()),
+              ],
             ),
           ),
-      ],
-        ),
+          if (_isLoading)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withAlpha(128),
+                child: const Center(child: CircularProgressIndicator()),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

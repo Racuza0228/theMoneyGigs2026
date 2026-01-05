@@ -242,6 +242,199 @@ class VenueRepository {
   double _toRadians(double degrees) => degrees * pi / 180;
 
 
+  // ========================================
+  // TAG VOTING SYSTEM
+  // ========================================
+
+  /// Vote for a tag (genre or instrument)
+  /// Returns true if successful, false otherwise
+  Future<bool> voteForTag({
+    required String placeId,
+    required String userId,
+    required String tagName,
+    required bool isGenre, // true for genre, false for instrument
+  }) async {
+    try {
+      final tagType = isGenre ? 'genres' : 'instruments';
+      final tagRef = _firestoreInstance
+          .collection('venues')
+          .doc(placeId)
+          .collection('tags')
+          .doc(tagType)
+          .collection('items')
+          .doc(tagName);
+
+      await _firestoreInstance.runTransaction((transaction) async {
+        final tagDoc = await transaction.get(tagRef);
+
+        if (tagDoc.exists) {
+          // Tag exists - check if user already voted
+          final voters = List<String>.from(tagDoc.data()?['voters'] ?? []);
+
+          if (voters.contains(userId)) {
+            print('⚠️ User $userId already voted for $tagName');
+            return; // User already voted, no-op
+          }
+
+          // Add user's vote
+          voters.add(userId);
+          transaction.update(tagRef, {
+            'count': FieldValue.increment(1),
+            'voters': voters,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          print('✅ Incremented vote for $tagName (new count: ${voters.length})');
+        } else {
+          // Tag doesn't exist - create it with first vote
+          transaction.set(tagRef, {
+            'count': 1,
+            'voters': [userId],
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          print('✅ Created new tag $tagName with first vote');
+        }
+      });
+
+      return true;
+    } catch (e) {
+      print('❌ Error voting for tag: $e');
+      return false;
+    }
+  }
+
+  /// Remove vote for a tag
+  /// Returns true if successful, false otherwise
+  Future<bool> removeVoteForTag({
+    required String placeId,
+    required String userId,
+    required String tagName,
+    required bool isGenre,
+  }) async {
+    try {
+      final tagType = isGenre ? 'genres' : 'instruments';
+      final tagRef = _firestoreInstance
+          .collection('venues')
+          .doc(placeId)
+          .collection('tags')
+          .doc(tagType)
+          .collection('items')
+          .doc(tagName);
+
+      await _firestoreInstance.runTransaction((transaction) async {
+        final tagDoc = await transaction.get(tagRef);
+
+        if (!tagDoc.exists) {
+          print('⚠️ Tag $tagName does not exist');
+          return;
+        }
+
+        final voters = List<String>.from(tagDoc.data()?['voters'] ?? []);
+
+        if (!voters.contains(userId)) {
+          print('⚠️ User $userId has not voted for $tagName');
+          return; // User hasn't voted, no-op
+        }
+
+        // Remove user's vote
+        voters.remove(userId);
+
+        if (voters.isEmpty) {
+          // No votes left - delete the tag
+          transaction.delete(tagRef);
+          print('✅ Deleted tag $tagName (no votes remaining)');
+        } else {
+          // Update with decremented count
+          transaction.update(tagRef, {
+            'count': FieldValue.increment(-1),
+            'voters': voters,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          print('✅ Decremented vote for $tagName (new count: ${voters.length})');
+        }
+      });
+
+      return true;
+    } catch (e) {
+      print('❌ Error removing vote: $e');
+      return false;
+    }
+  }
+
+  /// Fetch all tags for a venue with their counts and user's votes
+  /// Returns a map with structure: { tagName: { count: int, userVoted: bool } }
+  Future<Map<String, Map<String, dynamic>>> getVenueTags({
+    required String placeId,
+    required String userId,
+    required bool isGenre,
+  }) async {
+    try {
+      final tagType = isGenre ? 'genres' : 'instruments';
+      final snapshot = await _firestoreInstance
+          .collection('venues')
+          .doc(placeId)
+          .collection('tags')
+          .doc(tagType)
+          .collection('items')
+          .get();
+
+      final Map<String, Map<String, dynamic>> tags = {};
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final voters = List<String>.from(data['voters'] ?? []);
+
+        tags[doc.id] = {
+          'count': data['count'] as int,
+          'userVoted': voters.contains(userId),
+        };
+      }
+
+      print('📊 Loaded ${tags.length} ${isGenre ? 'genre' : 'instrument'} tags for venue $placeId');
+      return tags;
+    } catch (e) {
+      print('❌ Error fetching tags: $e');
+      return {};
+    }
+  }
+
+  /// Sync local tags to Firebase (called during reconciliation)
+  Future<void> syncLocalTagsToFirebase({
+    required String placeId,
+    required String userId,
+    required List<String> genreTags,
+    required List<String> instrumentTags,
+  }) async {
+    try {
+      print('🔄 Syncing local tags to Firebase for venue $placeId');
+
+      // Vote for each genre tag
+      for (final genre in genreTags) {
+        await voteForTag(
+          placeId: placeId,
+          userId: userId,
+          tagName: genre,
+          isGenre: true,
+        );
+      }
+
+      // Vote for each instrument tag
+      for (final instrument in instrumentTags) {
+        await voteForTag(
+          placeId: placeId,
+          userId: userId,
+          tagName: instrument,
+          isGenre: false,
+        );
+      }
+
+      print('✅ Successfully synced all tags to Firebase');
+    } catch (e) {
+      print('❌ Error syncing tags: $e');
+    }
+  }
+
+
   /// Fetch recent comments for a venue
   Future<List<Map<String, dynamic>>> getRecentComments({
     required String placeId,
