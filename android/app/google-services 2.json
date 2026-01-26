@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "759371429570",
+    "project_id": "moneygigs-cf2c5",
+    "storage_bucket": "moneygigs-cf2c5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:759371429570:android:bbd3987121d4ed1b906d5b",
+        "android_client_info": {
+          "package_name": "com.themoneygigs.moneygigs"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "759371429570-aqmt0q5dvj5l8vajkoeuosplr6u4spkn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaeUyThBtTn3mDT8mcGOP40Ijpk1Ay_H8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "759371429570-aqmt0q5dvj5l8vajkoeuosplr6u4spkn.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "759371429570-9h1qrfqbcmoolte84q4nht0fddget2q3.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.themoneygigs.moneygigs",
+                "app_store_id": "6752310856"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

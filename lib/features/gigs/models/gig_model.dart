@@ -1,10 +1,12 @@
 // lib/features/gigs/models/gig_model.dart
 import 'dart:convert';
 import 'package:the_money_gigs/core/models/enums.dart';
+import 'package:the_money_gigs/features/gigs/models/gig_rating.dart';
 
 class Gig {
   String id;
-  String venueName;  double latitude;
+  String venueName;
+  double latitude;
   double longitude;
   String address;
   String? placeId;
@@ -24,7 +26,10 @@ class Gig {
   int? recurrenceNthValue;
   DateTime? recurrenceEndDate;
   bool isFromRecurring;
-  List<DateTime>? recurrenceExceptions; // <<< NEW FIELD
+  List<DateTime>? recurrenceExceptions;
+  // --- RETROSPECTIVE FIELDS ---
+  List<GigRating>? gigRatings;
+  bool? retrospectiveCompleted;
 
   Gig({
     required this.id,
@@ -48,7 +53,9 @@ class Gig {
     this.recurrenceNthValue,
     this.recurrenceEndDate,
     this.isFromRecurring = false,
-    this.recurrenceExceptions, // <<< ADDED TO CONSTRUCTOR
+    this.recurrenceExceptions,
+    this.gigRatings,
+    this.retrospectiveCompleted,
   });
 
   Gig copyWith({
@@ -73,7 +80,9 @@ class Gig {
     int? recurrenceNthValue,
     DateTime? recurrenceEndDate,
     bool? isFromRecurring,
-    List<DateTime>? recurrenceExceptions, // <<< ADDED TO COPYWITH
+    List<DateTime>? recurrenceExceptions,
+    List<GigRating>? gigRatings,
+    bool? retrospectiveCompleted,
   }) {
     return Gig(
       id: id ?? this.id,
@@ -97,7 +106,9 @@ class Gig {
       recurrenceNthValue: recurrenceNthValue ?? this.recurrenceNthValue,
       recurrenceEndDate: recurrenceEndDate ?? this.recurrenceEndDate,
       isFromRecurring: isFromRecurring ?? this.isFromRecurring,
-      recurrenceExceptions: recurrenceExceptions ?? this.recurrenceExceptions, // <<< ADDED TO COPYWITH
+      recurrenceExceptions: recurrenceExceptions ?? this.recurrenceExceptions,
+      gigRatings: gigRatings ?? this.gigRatings,
+      retrospectiveCompleted: retrospectiveCompleted ?? this.retrospectiveCompleted,
     );
   }
 
@@ -115,6 +126,35 @@ class Gig {
     return pay / totalHours;
   }
 
+  /// Returns true if this gig has ended (based on dateTime + gigLengthHours)
+  bool get hasEnded {
+    final endTime = dateTime.add(Duration(minutes: (gigLengthHours * 60).toInt()));
+    return endTime.isBefore(DateTime.now());
+  }
+
+  /// Returns true if this gig is eligible for retrospective
+  /// (has ended and retrospective not yet completed)
+  bool get needsRetrospective {
+    return hasEnded && !(retrospectiveCompleted ?? false) && !isJamOpenMic;
+  }
+
+  /// Returns the rating for a specific dimension, or null if not rated
+  double? getRatingFor(String dimension) {
+    if (gigRatings == null) return null;
+    try {
+      return gigRatings!.firstWhere((r) => r.dimension == dimension).rating;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Returns the average rating across all dimensions, or null if no ratings
+  double? get averageRating {
+    if (gigRatings == null || gigRatings!.isEmpty) return null;
+    final total = gigRatings!.fold<double>(0, (sum, r) => sum + r.rating);
+    return total / gigRatings!.length;
+  }
+
   /// Gets the base ID for a gig. For a recurring instance (e.g., 'gig1_20240101'),
   /// it returns the original ID (e.g., 'gig1'). For regular gigs, it returns its own ID.
   String getBaseId() {
@@ -129,7 +169,7 @@ class Gig {
       // For a jam session like 'jam_placeId_sessionId_20251108'
       final parts = id.split('_');
       if (parts.length > 3) {
-        return parts.sublist(0, parts.length -1).join('_');
+        return parts.sublist(0, parts.length - 1).join('_');
       }
     }
     // For a base recurring gig, a non-recurring gig, or if splitting fails
@@ -158,8 +198,9 @@ class Gig {
       'recurrenceDay': recurrenceDay?.toString(),
       'recurrenceNthValue': recurrenceNthValue,
       'recurrenceEndDate': recurrenceEndDate?.toIso8601String(),
-      // <<< ADDED TO TOJSON
       'recurrenceExceptions': recurrenceExceptions?.map((date) => date.toIso8601String()).toList(),
+      'gigRatings': gigRatings?.map((r) => r.toJson()).toList(),
+      'retrospectiveCompleted': retrospectiveCompleted,
     };
   }
 
@@ -173,12 +214,20 @@ class Gig {
       }
     }
 
-    // <<< ADDED TO FROMJSON
     List<DateTime>? parseRecurrenceExceptions(dynamic jsonField) {
       if (jsonField is List) {
         return jsonField
             .map((dateString) => DateTime.tryParse(dateString as String))
             .whereType<DateTime>()
+            .toList();
+      }
+      return null;
+    }
+
+    List<GigRating>? parseGigRatings(dynamic jsonField) {
+      if (jsonField is List) {
+        return jsonField
+            .map((item) => GigRating.fromJson(item as Map<String, dynamic>))
             .toList();
       }
       return null;
@@ -199,13 +248,15 @@ class Gig {
       isJamOpenMic: json['isJamOpenMic'] as bool? ?? false,
       notes: json['notes'] as String?,
       notesUrl: json['notesUrl'] as String?,
-      setlistId: json['setlistId'] as String?, // <<< ADD TO FROMJSON
+      setlistId: json['setlistId'] as String?,
       isRecurring: json['isRecurring'] as bool? ?? false,
       recurrenceFrequency: safeParseEnum(JamFrequencyType.values, json['recurrenceFrequency'] as String?),
       recurrenceDay: safeParseEnum(DayOfWeek.values, json['recurrenceDay'] as String?),
       recurrenceNthValue: json['recurrenceNthValue'] as int?,
       recurrenceEndDate: json['recurrenceEndDate'] != null ? DateTime.tryParse(json['recurrenceEndDate'] as String) : null,
-      recurrenceExceptions: parseRecurrenceExceptions(json['recurrenceExceptions']), // <<< ADDED TO FROMJSON
+      recurrenceExceptions: parseRecurrenceExceptions(json['recurrenceExceptions']),
+      gigRatings: parseGigRatings(json['gigRatings']),
+      retrospectiveCompleted: json['retrospectiveCompleted'] as bool?,
     );
   }
 
@@ -237,9 +288,7 @@ class Gig {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is Gig &&
-              runtimeType == other.runtimeType &&
-              id == other.id;
+          other is Gig && runtimeType == other.runtimeType && id == other.id;
 
   @override
   int get hashCode => id.hashCode;

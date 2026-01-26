@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
+import 'package:the_money_gigs/features/gigs/models/gig_rating.dart';
+import 'package:the_money_gigs/features/gigs/widgets/gig_retrospective_widget.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
-import 'package:the_money_gigs/features/map_venues/models/venue_model.dart'; // Import Venue model
+import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 
@@ -49,7 +51,17 @@ class _NotesPageState extends State<NotesPage> {
   bool _isSaving = false;
   bool _hasChanges = false;
 
+  // --- RETROSPECTIVE STATE ---
+  List<GigRating> _currentRatings = [];
+  List<GigRating>? _initialRatings;
+
   bool get _isEditingGig => widget.editingGigId != null;
+
+  /// Returns true if this gig has ended and can be reviewed
+  bool get _canShowRetrospective {
+    if (!_isEditingGig || _currentGig == null) return false;
+    return _currentGig!.hasEnded;
+  }
 
   @override
   void initState() {
@@ -90,7 +102,6 @@ class _NotesPageState extends State<NotesPage> {
 
   Future<void> _loadGigDetails() async {
     final prefs = await SharedPreferences.getInstance();
-    // --- FIX: Revert to the original key ---
     final gigsJsonString = prefs.getString('gigs_list') ?? '[]';
     final List<Gig> allGigs = Gig.decode(gigsJsonString);
     final gigIndex = allGigs.indexWhere((g) => g.id == widget.editingGigId);
@@ -102,6 +113,10 @@ class _NotesPageState extends State<NotesPage> {
       _displaySubtext = DateFormat.yMMMEd().add_jm().format(gig.dateTime);
       _initialNotes = gig.notes;
       _initialUrl = gig.notesUrl;
+
+      // Load existing ratings
+      _initialRatings = gig.gigRatings != null ? List.from(gig.gigRatings!) : null;
+      _currentRatings = gig.gigRatings != null ? List.from(gig.gigRatings!) : [];
     } else {
       throw Exception("Gig not found.");
     }
@@ -120,7 +135,6 @@ class _NotesPageState extends State<NotesPage> {
       _initialNotes = venue.venueNotes;
       _initialUrl = venue.venueNotesUrl;
 
-      // --- ALSO FIX THE KEY HERE for consistency and correctness ---
       final gigsJsonString = prefs.getString('gigs_list') ?? '[]';
       final List<Gig> allGigs = Gig.decode(gigsJsonString);
 
@@ -130,7 +144,6 @@ class _NotesPageState extends State<NotesPage> {
           .toList();
 
       _historicalGigsForVenue.sort((a, b) => b.dateTime.compareTo(a.dateTime));
-
     } else {
       throw Exception("Venue not found.");
     }
@@ -146,14 +159,46 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   void _onTextChanged() {
+    _checkForChanges();
+  }
+
+  void _onRatingsChanged(List<GigRating> ratings) {
+    _currentRatings = ratings;
+    _checkForChanges();
+  }
+
+  void _checkForChanges() {
     final bool notesChanged = _notesController.text.trim() != (_initialNotes ?? '');
     final bool urlChanged = _urlController.text.trim() != (_initialUrl ?? '');
+    final bool ratingsChanged = _hasRatingsChanged();
 
-    if (mounted && (notesChanged || urlChanged) != _hasChanges) {
+    final hasChanges = notesChanged || urlChanged || ratingsChanged;
+
+    if (mounted && hasChanges != _hasChanges) {
       setState(() {
-        _hasChanges = notesChanged || urlChanged;
+        _hasChanges = hasChanges;
       });
     }
+  }
+
+  bool _hasRatingsChanged() {
+    // Compare current ratings to initial ratings
+    if (_initialRatings == null && _currentRatings.isEmpty) return false;
+    if (_initialRatings == null && _currentRatings.isNotEmpty) return true;
+    if (_initialRatings!.length != _currentRatings.length) return true;
+
+    for (final rating in _currentRatings) {
+      final initial = _initialRatings!.where((r) => r.dimension == rating.dimension).firstOrNull;
+      if (initial == null || initial.rating != rating.rating) return true;
+    }
+
+    // Check if any initial ratings were removed
+    for (final initial in _initialRatings!) {
+      final current = _currentRatings.where((r) => r.dimension == initial.dimension).firstOrNull;
+      if (current == null) return true;
+    }
+
+    return false;
   }
 
   Future<void> _saveNotesAndClose() async {
@@ -161,7 +206,6 @@ class _NotesPageState extends State<NotesPage> {
     setState(() => _isSaving = true);
 
     try {
-      // Create a variable to hold the potentially updated gig
       Gig? gigToReturn;
 
       if (_isEditingGig) {
@@ -174,7 +218,6 @@ class _NotesPageState extends State<NotesPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Notes saved successfully!'), backgroundColor: Colors.green),
         );
-        // Pop with the updated gig object if it exists
         Navigator.of(context).pop(gigToReturn ?? _currentGig);
       }
     } catch (e) {
@@ -190,7 +233,6 @@ class _NotesPageState extends State<NotesPage> {
 
   Future<Gig?> _saveGigNotes() async {
     final prefs = await SharedPreferences.getInstance();
-    // --- FIX: Revert to the original key for reading AND writing ---
     final String gigsJsonString = prefs.getString('gigs_list') ?? '[]';
     List<Gig> currentGigs = Gig.decode(gigsJsonString);
     final gigIndex = currentGigs.indexWhere((g) => g.id == widget.editingGigId);
@@ -198,20 +240,25 @@ class _NotesPageState extends State<NotesPage> {
     if (gigIndex != -1) {
       final newNotes = _notesController.text.trim();
       final newUrl = _urlController.text.trim();
+
+      // Determine if retrospective is now complete
+      final bool retrospectiveCompleted = _currentRatings.isNotEmpty;
+
       final updatedGig = currentGigs[gigIndex].copyWith(
         notes: newNotes.isEmpty ? null : newNotes,
         notesUrl: newUrl.isEmpty ? null : newUrl,
+        gigRatings: _currentRatings.isEmpty ? null : _currentRatings,
+        retrospectiveCompleted: retrospectiveCompleted,
       );
       currentGigs[gigIndex] = updatedGig;
 
-      await prefs.setString('gigs_list', Gig.encode(currentGigs)); // Save to the correct key
+      await prefs.setString('gigs_list', Gig.encode(currentGigs));
       globalRefreshNotifier.notify();
       return updatedGig;
     } else {
       throw Exception("Could not find gig to update.");
     }
   }
-
 
   Future<void> _saveVenueNotes() async {
     final prefs = await SharedPreferences.getInstance();
@@ -222,10 +269,12 @@ class _NotesPageState extends State<NotesPage> {
     if (venueIndex != -1) {
       final newNotes = _notesController.text.trim();
       final newUrl = _urlController.text.trim();
+      // Note: StoredLocation.copyWith uses closure pattern for nullable fields
       currentVenues[venueIndex] = currentVenues[venueIndex].copyWith(
         venueNotes: () => newNotes.isEmpty ? null : newNotes,
         venueNotesUrl: () => newUrl.isEmpty ? null : newUrl,
       );
+
       final List<String> updatedVenuesJson = currentVenues.map((v) => jsonEncode(v.toJson())).toList();
       await prefs.setStringList('saved_locations', updatedVenuesJson);
       globalRefreshNotifier.notify();
@@ -247,11 +296,9 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
-  // --- REVISED NAVIGATION METHOD ---
-  Future<void> _navigateToSetlist(BuildContext context) async {
-    if (!_isEditingGig || _currentGig == null) return;
+  void _navigateToSetlist(BuildContext context) async {
+    if (_currentGig == null) return;
 
-    // Await the result from SetlistPage
     final resultFromSetlist = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -259,10 +306,7 @@ class _NotesPageState extends State<NotesPage> {
       ),
     );
 
-    // Check if an updated Gig object was returned
     if (resultFromSetlist != null && resultFromSetlist is Gig) {
-      // An updated gig was returned from the setlist page.
-      // Immediately pop the NotesPage and pass the result along to GigsPage.
       if (mounted) {
         Navigator.of(context).pop(resultFromSetlist);
       }
@@ -289,10 +333,8 @@ class _NotesPageState extends State<NotesPage> {
       appBar: AppBar(
         title: Text(appBarTitle),
         centerTitle: true,
-        // --- REVISED BACK BUTTON to pop with the current gig data ---
         leading: BackButton(
           onPressed: () {
-            // Pop with the current state of the gig, whether it was saved or not
             Navigator.of(context).pop(_currentGig);
           },
         ),
@@ -300,17 +342,23 @@ class _NotesPageState extends State<NotesPage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage.isNotEmpty
-          ? Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text(_errorMessage, style: const TextStyle(color: Colors.red))))
+          ? Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(_errorMessage, style: const TextStyle(color: Colors.red)),
+        ),
+      )
           : SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 120.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header: Venue name and date
             Text(
               _displayName,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
-            if(_displaySubtext != null && _displaySubtext!.isNotEmpty)
+            if (_displaySubtext != null && _displaySubtext!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 2.0),
                 child: RichText(
@@ -327,7 +375,7 @@ class _NotesPageState extends State<NotesPage> {
                 ),
               ),
 
-            // "Manage Setlist" Button
+            // "Manage Setlist" Button (for gigs only)
             if (_isEditingGig)
               Padding(
                 padding: const EdgeInsets.only(top: 24.0, bottom: 8.0),
@@ -345,10 +393,21 @@ class _NotesPageState extends State<NotesPage> {
                 ),
               ),
 
+            // --- RETROSPECTIVE SECTION (for past gigs only) ---
+            if (_canShowRetrospective) ...[
+              const SizedBox(height: 20),
+              GigRetrospectiveWidget(
+                existingRatings: _currentGig?.gigRatings,
+                venueName: _displayName,
+                onRatingsChanged: _onRatingsChanged,
+              ),
+            ],
+
+            // Notes text field
             const SizedBox(height: 20),
             TextField(
               controller: _notesController,
-              autofocus: true,
+              autofocus: !_canShowRetrospective, // Only autofocus if no retrospective
               maxLines: 8,
               minLines: 5,
               decoration: InputDecoration(
@@ -357,6 +416,8 @@ class _NotesPageState extends State<NotesPage> {
                 border: const OutlineInputBorder(),
               ),
             ),
+
+            // Related Link section
             const SizedBox(height: 24),
             const Text('Related Link', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const Divider(),
@@ -379,8 +440,12 @@ class _NotesPageState extends State<NotesPage> {
                       child: Text(
                         _urlController.text.isEmpty ? '(No link)' : _urlController.text,
                         style: TextStyle(
-                          color: _urlController.text.isEmpty ? Colors.grey : Theme.of(context).colorScheme.primary,
-                          decoration: _urlController.text.isEmpty ? TextDecoration.none : TextDecoration.underline,
+                          color: _urlController.text.isEmpty
+                              ? Colors.grey
+                              : Theme.of(context).colorScheme.primary,
+                          decoration: _urlController.text.isEmpty
+                              ? TextDecoration.none
+                              : TextDecoration.underline,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -399,10 +464,11 @@ class _NotesPageState extends State<NotesPage> {
                 ],
               ),
 
-            // Historical Gig Notes Section
+            // Historical Gig Notes Section (for venue notes only)
             if (!_isEditingGig && _historicalGigsForVenue.isNotEmpty) ...[
               const SizedBox(height: 32),
-              const Text('Past Gig Notes at this Venue', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Text('Past Gig Notes at this Venue',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const Divider(),
               ListView.builder(
                 shrinkWrap: true,
@@ -415,9 +481,24 @@ class _NotesPageState extends State<NotesPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          DateFormat.yMMMEd().format(gig.dateTime),
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        Row(
+                          children: [
+                            Text(
+                              DateFormat.yMMMEd().format(gig.dateTime),
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            if (gig.averageRating != null) ...[
+                              const SizedBox(width: 8),
+                              Icon(Icons.star, size: 14, color: Colors.amber),
+                              Text(
+                                ' ${gig.averageRating!.toStringAsFixed(1)}',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 4),
                         Text(gig.notes ?? 'No notes for this gig.'),
@@ -460,7 +541,11 @@ class _NotesPageState extends State<NotesPage> {
                   ),
                 ),
                 child: _isSaving
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
                     : Text(_hasChanges ? 'SAVE CHANGES' : 'Notes Saved'),
               ),
             ],

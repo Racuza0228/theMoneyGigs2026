@@ -496,11 +496,11 @@ class _MainPageState extends State<MainPage> {
                       }),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: _launchThirdRockURL,
-                    child: Container( height: 70, padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0), decoration: BoxDecoration( color: Colors.grey[850], border: Border(top: BorderSide(color: Colors.grey.shade700, width: 1.0)), ), child: Row( children: <Widget>[ Image.asset('assets/third_rock_logo.png', height: 50.0, width: 50.0, fit: BoxFit.contain), const SizedBox(width: 12.0), Expanded( child: Column( mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[ Text('Third Rock Music Center', style: TextStyle( fontWeight: FontWeight.bold, fontSize: 15, color: Colors.orangeAccent.shade100)), Text('Your one-stop shop for musical gear!', style: TextStyle(fontSize: 12, color: Colors.grey[300])), ], ), ), Icon(Icons.open_in_new, color: Colors.orangeAccent.shade100, size: 20.0), ], ),
-                    ),
-                  ),
+                  // GestureDetector(
+                  //   onTap: _launchThirdRockURL,
+                  //   child: Container( height: 70, padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0), decoration: BoxDecoration( color: Colors.grey[850], border: Border(top: BorderSide(color: Colors.grey.shade700, width: 1.0)), ), child: Row( children: <Widget>[ Image.asset('assets/third_rock_logo.png', height: 50.0, width: 50.0, fit: BoxFit.contain), const SizedBox(width: 12.0), Expanded( child: Column( mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[ Text('Third Rock Music Center', style: TextStyle( fontWeight: FontWeight.bold, fontSize: 15, color: Colors.orangeAccent.shade100)), Text('Your one-stop shop for musical gear!', style: TextStyle(fontSize: 12, color: Colors.grey[300])), ], ), ), Icon(Icons.open_in_new, color: Colors.orangeAccent.shade100, size: 20.0), ], ),
+                  //   ),
+                  // ),
                 ],
               ),
               if (demoProvider.isDemoModeActive) _buildGlobalDemoOverlay(demoProvider),

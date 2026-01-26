@@ -348,193 +348,15 @@
     ]
   },
   {
-    "name": "Bearded Saddle",
-    "address": "1435 Oxford Trenton rd, Oxford, OH",
-    "latitude": 39.5106402,
-    "longitude": -84.61036980000002,
-    "placeId": "ChIJ_3Lji7Q_QIgR5tR3EIbCjks",
+    "name": "Louie's Trophy House",
+    "address": "629 Walbridge St, Kalamazoo, MI 49007",
+    "latitude": 42.2961,
+    "longitude": -85.5761,
+    "placeId": "ChIJc7N1D3YDMIgRuon6-S91qW0",
+    "comment": "Longest-running weekly music open mic; full backline provided.",
     "jamSessions": [
       {
-        "id": "bearded_1",
-        "day": "DayOfWeek.thursday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Billie's Burgers",
-    "address": "745 Columbus Ave, Lebanon, OH 45036",
-    "latitude": 39.443588,
-    "longitude": -84.1930393,
-    "placeId": "ChIJIZTU5Qz0QIgRFjfqXKD-Eew",
-    "jamSessions": [
-      {
-        "id": "billies_1",
-        "day": "DayOfWeek.wednesday",
-        "time": { "hour": 18, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Corner Pub",
-    "address": "7833 Cooper Rd, Montgomery, OH",
-    "latitude": 39.2263822,
-    "longitude": -84.3552811,
-    "placeId": "ChIJv8slF4BTQIgRzDlk9qHc_Uk",
-    "comment": "Full backline",
-    "jamSessions": [
-      {
-        "id": "cornerpub_1",
-        "day": "DayOfWeek.monday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Coterie Lounge ",
-    "address": "8870 Cincinnati-Dayton Rd. , West Chester, OH, United States, Ohio 45069",
-    "latitude": 39.3309855,
-    "longitude": -84.406998,
-    "placeId": "ChIJKYywaIpRQIgRY0T5NR8TDdo",
-    "jamSessions": [
-      {
-        "id": "coterie_1",
-        "day": "DayOfWeek.saturday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Crow's Nest Irish Pub",
-    "address": "4544 Eighth St W, Cincinnati, OH 45238",
-    "latitude": 39.10943779999999,
-    "longitude": -84.60112769999999,
-    "placeId": "ChIJfaB0MwG2QYgR_17ZUXRYUxs",
-    "jamSessions": [
-      {
-        "id": "crowsnest_1",
-        "day": "DayOfWeek.tuesday",
-        "time": { "hour": 20, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Darkness Brewery",
-    "address": "224 Fairfield Ave, Bellevue, KY 41073",
-    "latitude": 39.1052,
-    "longitude": -84.4843298,
-    "placeId": "ChIJp5hGZ36xQYgRkypKChS_wSQ",
-    "jamSessions": [
-      {
-        "id": "darkness_1",
-        "day": "DayOfWeek.thursday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Doc's",
-    "address": "12 W Mulberry St, Lebanon, OH",
-    "latitude": 39.434594,
-    "longitude": -84.208677,
-    "placeId": "ChIJqcRnwyL0QIgR7gktE5xJrIc",
-    "jamSessions": [
-      {
-        "id": "docs_1",
-        "day": "DayOfWeek.wednesday",
-        "time": { "hour": 18, "minute": 30 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Drew's on the River",
-    "address": "4333 River Road, Cincinnati, OH 45204",
-    "latitude": 39.0755149,
-    "longitude": -84.6224568,
-    "placeId": "ChIJOTk0dMzJQYgRSG8QbkDGJ4g",
-    "jamSessions": [
-      {
-        "id": "drews_1",
-        "day": "DayOfWeek.tuesday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Ernie's Yard",
-    "address": "333 Elm St, Ludlow, KY 41016",
-    "latitude": 39.0931059,
-    "longitude": -84.54977819999999,
-    "placeId": "ChIJixgrvAe3QYgRxxY_xinTawo",
-    "comment": "Varies (Weather/season dependent - check with venue)",
-    "jamSessions": [
-      {
-        "id": "ernies_1",
-        "day": "DayOfWeek.thursday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Fairfield Pub",
-    "address": "465 Nilles Rd, Fairfield, OH 45014",
-    "latitude": 39.3371776,
-    "longitude": -84.5642,
-    "placeId": "ChIJv_kNb_VIQIgRJJ38TUTDdG0",
-    "jamSessions": [
-      {
-        "id": "fairfield_1",
-        "day": "DayOfWeek.sunday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Foley's Irish Pub",
-    "address": "200 Benson, Reading, OH",
-    "latitude": 39.2235386,
-    "longitude": -84.4437669,
-    "placeId": "ChIJFUqOCnxNQIgRRHGLoSz0bgQ",
-    "comment": "Varies/Check with venue (Snippet mentioned an April 13th return)",
-    "jamSessions": [
-      {
-        "id": "foleys_1",
-        "day": "DayOfWeek.sunday",
-        "time": { "hour": 18, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Galaxie",
-    "address": "815 Madison Avenue, Covington, KY 41011",
-    "latitude": 39.0815716,
-    "longitude": -84.509894,
-    "placeId": "ChIJu5LKFgmxQYgR__gbWpVOdUc",
-    "jamSessions": [
-      {
-        "id": "galaxie_1",
+        "id": "louies_1",
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
@@ -543,50 +365,17 @@
     ]
   },
   {
-    "name": "Immortal Vibes",
-    "address": "230 Main Street, Hamilton, OH",
-    "latitude": 39.4037514,
-    "longitude": -84.5686368,
-    "placeId": "ChIJM98fBfJHQIgRjrEd4r0ub-A",
+    "name": "Shakespeare's Pub",
+    "address": "241 E Michigan Ave, Kalamazoo, MI 49007",
+    "latitude": 42.2936,
+    "longitude": -85.5786,
+    "placeId": "ChIJfX_I5HUDMIgRE9X0-kF9mIk",
+    "comment": "KVBA Blues Jam; high-energy session.",
     "jamSessions": [
       {
-        "id": "immortal_1",
-        "day": "DayOfWeek.monday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Jungle Jim's Paradise Pavilion Eastgate",
-    "address": "Behind Jungle Jim's in Eastgate",
-    "latitude": 39.0932973,
-    "longitude": -84.273634,
-    "placeId": "ChIJGxo87_6pQYgR3tygVAkl-6g",
-    "comment": "Closed for the Season (Check back in spring)",
-    "jamSessions": [
-      {
-        "id": "jungle_1",
-        "day": "DayOfWeek.wednesday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Kettering VFW",
-    "address": "3316 Wilmington Pike, Kettering, OH 45429",
-    "latitude": 39.6974637,
-    "longitude": -84.1403814,
-    "placeId": "ChIJc1OnxQiFQIgRZ9i5-cd3leQ",
-    "comment": "VFW Post 9927 Hall",
-    "jamSessions": [
-      {
-        "id": "kettering_1",
+        "id": "shakespeares_1",
         "style": "Blues",
-        "day": "DayOfWeek.tuesday",
+        "day": "DayOfWeek.thursday",
         "time": { "hour": 20, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
         "showInGigsList": false
@@ -594,397 +383,81 @@
     ]
   },
   {
-    "name": "Leo Coffeehouse",
-    "address": "Zion United Church of Christ, 2301 Indian Mound Ave, Norwood, OH 45212",
-    "latitude": 39.1687724,
-    "longitude": -84.45010359999999,
-    "placeId": "ChIJtddlg72yQYgRlRPzCuRbL-c",
-    "comment": "Hosted by Queen City Balladeers (QCB)",
+    "name": "Old Dog Tavern",
+    "address": "402 E Kalamazoo Ave, Kalamazoo, MI 49007",
+    "latitude": 42.2946,
+    "longitude": -85.5771,
+    "placeId": "ChIJG7E2HXYDMIgRKD3Uu5Y6XpU",
     "jamSessions": [
       {
-        "id": "leo_1",
-        "style": "Folk, Americana",
-        "day": "DayOfWeek.sunday",
-        "time": { "hour": 17, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Leo's at the Slice",
-    "address": "1300 Central Ave, Middletown, OH 45044-4132",
-    "latitude": 39.5153123,
-    "longitude": -84.4009834,
-    "placeId": "ChIJ21-awvJdQIgRfdzhPPRlAow",
-    "jamSessions": [
-      {
-        "id": "leos_slice_1",
-        "day": "DayOfWeek.wednesday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Lounge 24",
-    "address": "24 S. Second St, Hamilton, OH 45011",
-    "latitude": 39.3991812,
-    "longitude": -84.5620487,
-    "placeId": "ChIJ8wjkELtHQIgRX_UfrtgaEjg",
-    "jamSessions": [
-      {
-        "id": "lounge24_1",
-        "day": "DayOfWeek.sunday",
-        "time": { "hour": 18, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Lucky Star Brewery",
-    "address": "219 S 2nd Street, Miamisburg, OH 45342",
-    "latitude": 39.63920660000001,
-    "longitude": -84.2879274,
-    "placeId": "ChIJcwWHoYtiQIgRxqPJ8yKbAb0",
-    "jamSessions": [
-      {
-        "id": "luckystar_1",
-        "day": "DayOfWeek.wednesday",
-        "time": { "hour": 18, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Mansion Hill Tavern",
-    "address": "502 Washington Ave A, Newport, KY 41071",
-    "latitude": 39.0936925,
-    "longitude": -84.4916276,
-    "placeId": "ChIJ4blvPG6xQYgRj9_JSnkKETY",
-    "comment": "Run by Sonny Hill & the Delites",
-    "jamSessions": [
-      {
-        "id": "mansionhill_1",
+        "id": "olddog_1",
         "style": "Blues",
         "day": "DayOfWeek.sunday",
-        "time": { "hour": 19, "minute": 0 },
+        "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Miller's Fill-Inn",
-    "address": "52 Donnermeyer Dr, Bellevue, KY",
-    "latitude": 39.098633,
-    "longitude": -84.48050359999999,
-    "placeId": "ChIJk0vTcHixQYgRIF7JbKe8IHg",
-    "jamSessions": [
+        "showInGigsList": false,
+        "comment": "Professional Blues Jam"
+      },
       {
-        "id": "millers_1",
-        "style": "Blues",
-        "day": "DayOfWeek.tuesday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Misery & Jen",
-    "address": "1956 Fairgrove Ave, Hamilton, OH",
-    "latitude": 39.40353899999999,
-    "longitude": -84.5334051,
-    "placeId": "ChIJY_UfmIhGQIgRz4h5RnW5LNk",
-    "jamSessions": [
-      {
-        "id": "misery_1",
-        "day": "DayOfWeek.monday",
-        "time": { "hour": 20, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Molly Malone's",
-    "address": "112 E 4th Street, Covington, KY 41011",
-    "latitude": 39.0875289,
-    "longitude": -84.5088234,
-    "placeId": "ChIJdYf0gzixQYgRXCrsw4OOpqA",
-    "jamSessions": [
-      {
-        "id": "mollys_1",
-        "style": "Bluegrass",
-        "day": "DayOfWeek.monday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "MOTR Pub",
-    "address": "1345 Main St, Cincinnati, OH 45202-7613",
-    "latitude": 39.111096,
-    "longitude": -84.5124183,
-    "placeId": "ChIJJ1fEKf2zQYgRu7yELRJFS6s",
-    "jamSessions": [
-      {
-        "id": "motr_1",
-        "style": "Original",
-        "day": "DayOfWeek.tuesday",
-        "time": { "hour": 19, "minute": 30 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "MVP Sports Bar & Grille",
-    "address": "6923 Plainfield Road, Cincinnati, OH 45236",
-    "latitude": 39.1945077,
-    "longitude": -84.4005881,
-    "placeId": "ChIJ0Qb4JddSQIgRxtxMjm9ITEs",
-    "jamSessions": [
-      {
-        "id": "mvp_1",
-        "day": "DayOfWeek.wednesday",
-        "time": { "hour": 21, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "O'Bryonville Bean & Barley",
-    "address": "2005 Madison Rd, Cincinnati, OH",
-    "latitude": 39.1319349,
-    "longitude": -84.46270109999999,
-    "placeId": "ChIJlbHGj2uzQYgRA8whTIZk_Zc",
-    "comment": "Traditional instrumental music (fiddle, clawhammer banjo, guitar).",
-    "jamSessions": [
-      {
-        "id": "obryonville_1",
-        "style": "Bluegrass",
-        "day": "DayOfWeek.tuesday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Old Time Music Co. BG Jam",
-    "address": "1196 Ross Millville Rd., Hamilton, OH",
-    "latitude": 39.3874141,
-    "longitude": -84.6551209,
-    "placeId": "ChIJmbMp1KdLQIgRzd0N0YPoFmE",
-    "comment": "Home of Vernon McIntyre and Appalachian Grass Band",
-    "jamSessions": [
-      {
-        "id": "oldtime_1",
-        "style": "Bluegrass",
-        "day": "DayOfWeek.tuesday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Patriot House",
-    "address": "115 West Main St, Hillsboro, OH 45133",
-    "latitude": 39.2021791,
-    "longitude": -83.6122812,
-    "placeId": "ChIJpdMuxqfVQIgRGTwuIbeYaQs",
-    "jamSessions": [
-      {
-        "id": "patriot_1",
+        "id": "olddog_2",
         "day": "DayOfWeek.tuesday",
         "time": { "hour": 18, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
+        "showInGigsList": false,
+        "comment": "Open Mic with DOC; beginner-friendly."
       }
     ]
   },
   {
-    "name": "Plain Folk Cafe",
-    "address": "10177 State Route 132, Pleasant Plain, OH",
-    "latitude": 39.2772973,
-    "longitude": -84.1140599,
-    "placeId": "ChIJFTehXjj7QIgRbrdVGnBdy-M",
-    "comment": "Varies (Sign-up 5:00 PM, Closes 9:00 PM)",
+    "name": "Rootead",
+    "address": "505 E Kalamazoo Ave, Kalamazoo, MI 49007",
+    "latitude": 42.2949,
+    "longitude": -85.5758,
+    "placeId": "ChIJB8kRwnYDMIgR4_fU-QhWdQU",
+    "comment": "Young Adult focused; spoken word and healing arts.",
     "jamSessions": [
       {
-        "id": "plainfolk_1",
-        "day": "DayOfWeek.thursday",
-        "time": { "hour": 17, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Possum Saloon",
-    "address": "23903 State Line Rd, Lawrenceburg, IN 47025",
-    "latitude": 39.2164067,
-    "longitude": -84.8533197,
-    "placeId": "ChIJS3rLkqgsQIgRwzBdhR2mwA4",
-    "jamSessions": [
-      {
-        "id": "possum_1",
-        "day": "DayOfWeek.thursday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Pour House",
-    "address": "138 Riverfront Plaza, Hamilton, OH",
-    "latitude": 39.4016804,
-    "longitude": -84.56243289999999,
-    "placeId": "ChIJv1DZr_9HQIgRRXfZc3XBnfk",
-    "jamSessions": [
-      {
-        "id": "pourhouse_1",
-        "day": "DayOfWeek.tuesday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Southgate House Revival",
-    "address": "111 E 6 St, Newport, KY",
-    "latitude": 39.0919705,
-    "longitude": -84.4930188,
-    "placeId": "ChIJdRLzNWmxQYgRJo2Dg8_ODKo",
-    "jamSessions": [
-      {
-        "id": "southgate_1",
-        "day": "DayOfWeek.wednesday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "Stanley's Pub",
-    "address": "323 Stanley Ave, Cincinnati, OH 45226",
-    "latitude": 39.1149363,
-    "longitude": -84.4372454,
-    "placeId": "ChIJi6G8GfitQYgRp4W2oLSftk4",
-    "jamSessions": [
-      {
-        "id": "stanleys_1",
-        "day": "DayOfWeek.sunday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "The Barrel",
-    "address": "857 W Central Ave, Springboro, OH",
-    "latitude": 39.5612851,
-    "longitude": -84.2622621,
-    "placeId": "ChIJYQzXhXCKQIgRZJeMoM4xEM4",
-    "jamSessions": [
-      {
-        "id": "barrel_1",
-        "day": "DayOfWeek.monday",
-        "time": { "hour": 19, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "The Common Beer Company",
-    "address": "126 East Main Street, Mason, OH 45040",
-    "latitude": 39.3614515,
-    "longitude": -84.30682130000001,
-    "placeId": "ChIJYwHWYTFYQIgRQ91xbB6YaQc",
-    "jamSessions": [
-      {
-        "id": "common_1",
-        "day": "DayOfWeek.thursday",
-        "time": { "hour": 18, "minute": 30 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "The Hitching Post",
-    "address": "4319 Hamilton Richmond Rd, Oxford, OH 45056",
-    "latitude": 39.4962702,
-    "longitude": -84.6620245,
-    "placeId": "ChIJ7YxCCVs-QIgRwP-ENLjdn3w",
-    "jamSessions": [
-      {
-        "id": "hitching_1",
-        "day": "DayOfWeek.wednesday",
-        "time": { "hour": 18, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
-      }
-    ]
-  },
-  {
-    "name": "The Jazz Spoon",
-    "address": "610 Northland Blvd, Cincinnati, OH 45240",
-    "latitude": 39.2820268,
-    "longitude": -84.49554859999999,
-    "placeId": "ChIJKXhWLppOQIgR6cBR5cWBwZU",
-    "jamSessions": [
-      {
-        "id": "jazzspoon_1",
-        "style": "Blues, Jazz, Neo Soul",
+        "id": "rootead_1",
+        "style": "Spoken Word",
         "day": "DayOfWeek.thursday",
         "time": { "hour": 19, "minute": 30 },
-        "frequency": "JamFrequencyType.weekly",
+        "frequency": "JamFrequencyType.monthlySameDay",
+        "nthValue": 2,
         "showInGigsList": false
       }
     ]
   },
   {
-    "name": "The Loveland Canteen",
-    "address": "6653 Epworth Rd, Loveland, OH 45140",
-    "latitude": 39.2473335,
-    "longitude": -84.2804946,
-    "placeId": "ChIJf9wLBvJVQIgRPJom84xyuV0",
-    "comment": "VFW",
+    "name": "Fire Collaborative",
+    "address": "1249 Portage St, Kalamazoo, MI 49001",
+    "latitude": 42.2811,
+    "longitude": -85.5732,
+    "placeId": "ChIJSfT838IDMIgRP4Gv-u_9R74",
+    "comment": "Poetry and spoken word; focus on youth voices.",
     "jamSessions": [
       {
-        "id": "loveland_1",
+        "id": "fire_1",
+        "style": "Poetry",
         "day": "DayOfWeek.friday",
-        "time": { "hour": 21, "minute": 0 },
-        "frequency": "JamFrequencyType.weekly",
+        "time": { "hour": 17, "minute": 30 },
+        "frequency": "JamFrequencyType.monthlySameDay",
+        "nthValue": 1,
         "showInGigsList": false
       }
     ]
   },
   {
-    "name": "The Vault",
-    "address": "3195 Linwood Ave, Cincinnati, OH",
-    "latitude": 39.1288332,
-    "longitude": -84.43059699999999,
-    "placeId": "ChIJTQKjo6StQYgR9QX-6fGTCSI",
+    "name": "Rum Boogie Cafe",
+    "address": "182 Beale St, Memphis, TN 38103",
+    "latitude": 35.1386,
+    "longitude": -90.0534,
+    "placeId": "ChIJW0Ate3211YgR8Y34W3k8_sU",
+    "comment": "Memphis Blues Society Sunday Jam; hosted by Brad Webb.",
     "jamSessions": [
       {
-        "id": "vault_1",
-        "day": "DayOfWeek.wednesday",
+        "id": "rumboogie_1",
+        "style": "Blues",
+        "day": "DayOfWeek.sunday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
         "showInGigsList": false
@@ -992,34 +465,94 @@
     ]
   },
   {
-    "name": "The Woodshed",
-    "address": "107 E. Mulberry Street, Lebanon, OH",
-    "latitude": 39.434161,
-    "longitude": -84.20639419999999,
-    "placeId": "ChIJMTMTqpX1QIgRvL-Ca0V_7Ss",
+    "name": "RockHouse Live",
+    "address": "5709 Raleigh-Lagrange Rd, Memphis, TN 38134",
+    "latitude": 35.1633,
+    "longitude": -89.8735,
+    "placeId": "ChIJPfG2f4S11YgRj234W3k8_sU",
     "jamSessions": [
       {
-        "id": "woodshed_1",
+        "id": "rockhouse_1",
+        "style": "Blues/Rock",
+        "day": "DayOfWeek.thursday",
+        "time": { "hour": 19, "minute": 30 },
+        "frequency": "JamFrequencyType.weekly",
+        "showInGigsList": false,
+        "comment": "MBS Sponsored Jam hosted by Jackie Flora & Friends."
+      },
+      {
+        "id": "rockhouse_2",
         "day": "DayOfWeek.tuesday",
-        "time": { "hour": 17, "minute": 0 },
+        "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
+        "showInGigsList": false,
+        "comment": "Open Mic hosted by Donna Bowers."
+      }
+    ]
+  },
+  {
+    "name": "Crosstown Arts (The Green Room)",
+    "address": "1350 Concourse Ave, Suite 280, Memphis, TN 38104",
+    "latitude": 35.1528,
+    "longitude": -90.0076,
+    "placeId": "ChIJf_N6f4S11YgRj234W3k8_sU",
+    "comment": "Jazz Jam hosted by Aidan Mills/Logan Clark Quartet.",
+    "jamSessions": [
+      {
+        "id": "crosstown_1",
+        "style": "Jazz",
+        "day": "DayOfWeek.tuesday",
+        "time": { "hour": 19, "minute": 30 },
+        "frequency": "JamFrequencyType.monthlySameDay",
+        "nthValue": 2,
         "showInGigsList": false
       }
     ]
   },
   {
-    "name": "TinCap",
-    "address": "59 W Sugartree St, Wilmington, OH 45177",
-    "latitude": 39.4444753,
-    "longitude": -83.82969349999999,
-    "placeId": "ChIJNSQijmrHQIgR1wyIVM8WYAc",
+    "name": "Center for Southern Folklore",
+    "address": "119 S Main St, Memphis, TN 38103",
+    "latitude": 35.1436,
+    "longitude": -90.0526,
+    "placeId": "ChIJf_N6f4S11YgRj234W3k8_sU",
+    "comment": "First Sunday Jazz Jam Popup hosted by Monique.",
     "jamSessions": [
       {
-        "id": "tincap_1",
+        "id": "southernfolklore_1",
+        "style": "Jazz",
+        "day": "DayOfWeek.sunday",
+        "time": { "hour": 14, "minute": 0 },
+        "frequency": "JamFrequencyType.monthlySameDay",
+        "nthValue": 1,
+        "showInGigsList": false
+      }
+    ]
+  },
+  {
+    "name": "Carolina Watershed",
+    "address": "141 E Carolina Ave, Memphis, TN 38126",
+    "latitude": 35.1325,
+    "longitude": -90.0566,
+    "placeId": "ChIJf_N6f4S11YgRj234W3k8_sU",
+    "jamSessions": [
+      {
+        "id": "carolina_1",
+        "style": "Mixed",
         "day": "DayOfWeek.wednesday",
         "time": { "hour": 19, "minute": 0 },
         "frequency": "JamFrequencyType.weekly",
-        "showInGigsList": false
+        "showInGigsList": false,
+        "comment": "Thee Open Mic with Mak of Memphis."
+      },
+      {
+        "id": "carolina_2",
+        "style": "Youth Jam",
+        "day": "DayOfWeek.friday",
+        "time": { "hour": 18, "minute": 0 },
+        "frequency": "JamFrequencyType.monthlySameDay",
+        "nthValue": 1,
+        "showInGigsList": false,
+        "comment": "The Shed: Monthly Youth Open Mic (6th-12th grade)."
       }
     ]
   }

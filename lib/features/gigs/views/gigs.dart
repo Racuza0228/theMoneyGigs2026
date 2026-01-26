@@ -1526,17 +1526,40 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
               ),
               trailing: isJam
                   ? null
-                  : IconButton(
-                icon: Icon(
-                  hasNotes
-                      ? Icons.speaker_notes
-                      : Icons.speaker_notes_off_outlined,
-                  color: hasNotes
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.grey,
-                ),
-                onPressed: () => _launchNotesPageForGig(gig),
-                tooltip: 'View/Edit Notes',
+                  : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Show "Review" badge for past unreviewed gigs
+                  if (isPast && !(gig.retrospectiveCompleted ?? false))
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      margin: const EdgeInsets.only(right: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Review',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange.shade800,
+                        ),
+                      ),
+                    ),
+                  IconButton(
+                    icon: Icon(
+                      hasNotes
+                          ? Icons.speaker_notes
+                          : Icons.speaker_notes_off_outlined,
+                      color: hasNotes
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey,
+                    ),
+                    onPressed: () => _launchNotesPageForGig(gig),
+                    tooltip: 'View/Edit Notes',
+                  ),
+                ],
               ),
               onTap: () => _launchBookingDialogForGig(gig),
             ),
@@ -1654,16 +1677,29 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             DateTime gigEndTime = gig.dateTime.add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
             isPast = gigEndTime.isBefore(DateTime.now());
             bool isJam = gig.isJamOpenMic;
+
+            // --- ADDED: Check for notes and retrospective status ---
+            final bool hasSetlist = gig.setlistId?.isNotEmpty ?? false;
+            final bool hasNotes = (gig.notes?.isNotEmpty ?? false) ||
+                (gig.notesUrl?.isNotEmpty ?? false) ||
+                hasSetlist;
+            final bool needsReview = isPast &&
+                !isJam &&
+                !(gig.retrospectiveCompleted ?? false);
+            // --- END ADDED ---
+
             return Card(
               elevation: isPast ? 0.5 : (isJam ? 1.0 : 1.5),
               color: isPast
-                  ? Colors.grey.shade200.withOpacity(0.7)
+                  ? Colors.grey.shade300
                   : (isJam
                   ? Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.6)
                   : Colors.white),
               margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
               child: ListTile(
-                leading: isJam ? Icon(Icons.music_note, color: isPast ? Colors.grey.shade500 : Theme.of(context).colorScheme.tertiary) : Icon(Icons.event, color: isPast ? Colors.grey.shade500 : Theme.of(context).colorScheme.primary),
+                leading: isJam
+                    ? Icon(Icons.music_note, color: isPast ? Colors.grey.shade500 : Theme.of(context).colorScheme.tertiary)
+                    : Icon(Icons.event, color: isPast ? Colors.grey.shade500 : Theme.of(context).colorScheme.primary),
                 title: Text(
                   gig.venueName,
                   style: TextStyle(fontWeight: FontWeight.bold, color: isPast ? Colors.grey.shade600 : Colors.black87),
@@ -1672,6 +1708,41 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                   isJam ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic' : '${DateFormat.jm().format(gig.dateTime)} - \$${gig.pay.toStringAsFixed(0)}',
                   style: TextStyle(color: isPast ? Colors.grey.shade500 : Colors.black54),
                 ),
+                // --- ADDED: Trailing with notes icon and review badge ---
+                trailing: isJam ? null : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Show "Review" badge for past unreviewed gigs
+                    if (needsReview)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        margin: const EdgeInsets.only(right: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Review',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange.shade800,
+                          ),
+                        ),
+                      ),
+                    IconButton(
+                      icon: Icon(
+                        hasNotes ? Icons.speaker_notes : Icons.speaker_notes_off_outlined,
+                        color: hasNotes
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.grey,
+                      ),
+                      onPressed: () => _launchNotesPageForGig(gig),
+                      tooltip: 'View/Edit Notes',
+                    ),
+                  ],
+                ),
+                // --- END ADDED ---
                 onTap: () => _launchBookingDialogForGig(gig),
               ),
             );
