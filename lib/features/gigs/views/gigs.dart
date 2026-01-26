@@ -14,7 +14,10 @@ import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHA
 // Import your models
 import 'package:in_app_review/in_app_review.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
-// <<<--- IMPORT THE NEW MODEL
+import 'package:the_money_gigs/features/gigs/models/monthly_separator.dart';
+import 'package:the_money_gigs/features/gigs/widgets/monthly_separator_tile.dart';
+import 'package:the_money_gigs/features/gigs/widgets/gig_list_tile.dart';
+
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
@@ -29,20 +32,6 @@ import 'package:the_money_gigs/features/venues/views/venues_list_tab.dart';
 
 
 import '../../app_demo/providers/demo_provider.dart';
-
-class MonthlySeparator {
-  final DateTime month;
-  final int gigCount;
-  final double totalPay;
-  final double averagePayPerHour;
-
-  MonthlySeparator({
-    required this.month,
-    required this.gigCount,
-    required this.totalPay,
-    required this.averagePayPerHour,
-  });
-}
 
 enum GigsViewType { list, calendar }
 
@@ -1382,189 +1371,19 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
         // --- RENDER SEPARATOR ---
         if (item is MonthlySeparator) {
-          if (item.gigCount == 0) return const SizedBox.shrink();
-
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-            margin: const EdgeInsets.only(top: 16, left: 8, right: 8),
-            decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: Theme.of(context).primaryColor.withOpacity(0.2))),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  DateFormat.yMMMM().format(item.month),
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Theme.of(context).primaryColorLight,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('${item.gigCount} Gigs'),
-                    Text(
-                      '\$${item.totalPay.toStringAsFixed(0)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Text('Avg. \$${item.averagePayPerHour.toStringAsFixed(2)}/hr'),
-                  ],
-                ),
-              ],
-            ),
-          );
+          return MonthlySeparatorTile(separator: item);
         }
 
-        // --- RENDER GIG TILE (existing logic) ---
+        // --- RENDER GIG TILE ---
         if (item is Gig) {
-          final gig = item;
-          bool isPast;
-          DateTime gigEndTime = gig.dateTime
-              .add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
-          isPast = gigEndTime.isBefore(DateTime.now());
-
-          bool isJam = gig.isJamOpenMic;
-          final bool hasSetlist = gig.setlistId?.isNotEmpty ?? false;
-
-          final bool hasNotes = (gig.notes?.isNotEmpty ?? false) ||
-              (gig.notesUrl?.isNotEmpty ?? false) ||
-              hasSetlist;
-          final bool isRecurringGig = gig.isRecurring || gig.isFromRecurring;
-
-          return Card(
-            elevation: isPast ? 0.5 : (isJam ? 1.5 : 2),
-            color: isPast
-                ? Colors.grey.shade300
-                : (isJam
-                ? Theme.of(context)
-                .colorScheme
-                .secondaryContainer
-                .withOpacity(0.7)
-                : Theme.of(context).cardColor),
-            margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: isJam
-                    ? Theme.of(context).colorScheme.tertiary
-                    : (isPast
-                    ? Colors.grey.shade400
-                    : Theme.of(context).colorScheme.primary),
-                foregroundColor: isJam
-                    ? Theme.of(context).colorScheme.onTertiary
-                    : Colors.white,
-                child: isJam
-                    ? const Icon(Icons.music_note, size: 20)
-                    : Text(DateFormat('d').format(gig.dateTime)),
-              ),
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      gig.venueName,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isPast
-                            ? Colors.grey.shade700
-                            : (isJam
-                            ? Theme.of(context).colorScheme.onSecondaryContainer
-                            : Theme.of(context).textTheme.titleLarge?.color),
-                      ),
-                    ),
-                  ),
-                  if (isRecurringGig && !isJam)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8.0),
-                      child: Icon(
-                        Icons.event_repeat,
-                        size: 16,
-                        color: isPast
-                            ? Colors.grey.shade600
-                            : Theme.of(context).colorScheme.secondary,
-                        semanticLabel: "Recurring Gig",
-                      ),
-                    ),
-                ],
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${DateFormat.yMMMEd().format(gig.dateTime)} at ${DateFormat.jm().format(gig.dateTime)}',
-                    style: TextStyle(
-                        color: isPast
-                            ? Colors.grey.shade600
-                            : (isJam
-                            ? Theme.of(context)
-                            .colorScheme
-                            .onSecondaryContainer
-                            .withOpacity(0.8)
-                            : Theme.of(context).textTheme.bodyMedium?.color)),
-                  ),
-                  if (!isJam)
-                    Text(
-                      'Pay: \$${gig.pay.toStringAsFixed(0)} - ${gig.gigLengthHours.toStringAsFixed(1)} hrs',
-                      style: TextStyle(
-                          color: isPast
-                              ? Colors.grey.shade600
-                              : Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.color
-                              ?.withOpacity(0.9)),
-                    )
-                  else
-                    const Text(
-                      "Open Mic / Jam Session",
-                      style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
-                    ),
-                ],
-              ),
-              trailing: isJam
-                  ? null
-                  : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Show "Review" badge for past unreviewed gigs
-                  if (isPast && !(gig.retrospectiveCompleted ?? false))
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      margin: const EdgeInsets.only(right: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Review',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange.shade800,
-                        ),
-                      ),
-                    ),
-                  IconButton(
-                    icon: Icon(
-                      hasNotes
-                          ? Icons.speaker_notes
-                          : Icons.speaker_notes_off_outlined,
-                      color: hasNotes
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.grey,
-                    ),
-                    onPressed: () => _launchNotesPageForGig(gig),
-                    tooltip: 'View/Edit Notes',
-                  ),
-                ],
-              ),
-              onTap: () => _launchBookingDialogForGig(gig),
-            ),
+          return GigListTile(
+            gig: item,
+            style: GigTileStyle.listView,
+            onTap: () => _launchBookingDialogForGig(item),
+            onNotesTap: () => _launchNotesPageForGig(item),
           );
         }
+
         // Fallback for any unexpected item type
         return const SizedBox.shrink();
       },
@@ -1673,85 +1492,23 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           itemCount: _selectedDayGigs.length,
           itemBuilder: (context, index) {
             final gig = _selectedDayGigs[index];
-            bool isPast;
-            DateTime gigEndTime = gig.dateTime.add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
-            isPast = gigEndTime.isBefore(DateTime.now());
-            bool isJam = gig.isJamOpenMic;
-
-            // --- ADDED: Check for notes and retrospective status ---
-            final bool hasSetlist = gig.setlistId?.isNotEmpty ?? false;
-            final bool hasNotes = (gig.notes?.isNotEmpty ?? false) ||
-                (gig.notesUrl?.isNotEmpty ?? false) ||
-                hasSetlist;
-            final bool needsReview = isPast &&
-                !isJam &&
-                !(gig.retrospectiveCompleted ?? false);
-            // --- END ADDED ---
-
-            return Card(
-              elevation: isPast ? 0.5 : (isJam ? 1.0 : 1.5),
-              color: isPast
-                  ? Colors.grey.shade300
-                  : (isJam
-                  ? Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.6)
-                  : Colors.white),
-              margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
-              child: ListTile(
-                leading: isJam
-                    ? Icon(Icons.music_note, color: isPast ? Colors.grey.shade500 : Theme.of(context).colorScheme.tertiary)
-                    : Icon(Icons.event, color: isPast ? Colors.grey.shade500 : Theme.of(context).colorScheme.primary),
-                title: Text(
-                  gig.venueName,
-                  style: TextStyle(fontWeight: FontWeight.bold, color: isPast ? Colors.grey.shade600 : Colors.black87),
-                ),
-                subtitle: Text(
-                  isJam ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic' : '${DateFormat.jm().format(gig.dateTime)} - \$${gig.pay.toStringAsFixed(0)}',
-                  style: TextStyle(color: isPast ? Colors.grey.shade500 : Colors.black54),
-                ),
-                // --- ADDED: Trailing with notes icon and review badge ---
-                trailing: isJam ? null : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Show "Review" badge for past unreviewed gigs
-                    if (needsReview)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        margin: const EdgeInsets.only(right: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'Review',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange.shade800,
-                          ),
-                        ),
-                      ),
-                    IconButton(
-                      icon: Icon(
-                        hasNotes ? Icons.speaker_notes : Icons.speaker_notes_off_outlined,
-                        color: hasNotes
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.grey,
-                      ),
-                      onPressed: () => _launchNotesPageForGig(gig),
-                      tooltip: 'View/Edit Notes',
-                    ),
-                  ],
-                ),
-                // --- END ADDED ---
-                onTap: () => _launchBookingDialogForGig(gig),
-              ),
+            return GigListTile(
+              gig: gig,
+              style: GigTileStyle.calendarView,
+              onTap: () => _launchBookingDialogForGig(gig),
+              onNotesTap: () => _launchNotesPageForGig(gig),
             );
           },
         )
             : Center(
           child: Text(
-            _selectedDay != null ? 'No events for ${DateFormat.yMMMEd().format(_selectedDay!)}.' : 'Select a day to see events.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87),
+            _selectedDay != null
+                ? 'No events for ${DateFormat.yMMMEd().format(_selectedDay!)}.'
+                : 'Select a day to see events.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white70
+                    : Colors.black87),
           ),
         ),
       ),
