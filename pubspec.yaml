@@ -31,6 +31,7 @@ dependencies:
   flutter:
     sdk: flutter
   in_app_update: ^4.2.5
+  share_plus: ^7.0.0  # For exporting reviews
   url_launcher: ^6.3.2
   google_maps_flutter: ^2.12.3
   shared_preferences: ^2.2.2

@@ -399,6 +399,7 @@ class _NotesPageState extends State<NotesPage> {
               GigRetrospectiveWidget(
                 existingRatings: _currentGig?.gigRatings,
                 venueName: _displayName,
+                gig: _currentGig,  // Add this line
                 onRatingsChanged: _onRatingsChanged,
               ),
             ],

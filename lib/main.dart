@@ -28,6 +28,8 @@ import 'global_refresh_notifier.dart';
 import 'features/app_demo/widgets/animated_text.dart';
 import 'features/gigs/widgets/booking_dialog.dart'; // For Add Gig button
 import 'features/gigs/models/gig_model.dart'; // For existing gigs
+import 'features/gigs/services/gig_retrospective_service.dart';
+import 'features/gigs/widgets/retrospective_notification_banner.dart';
 
 // --- 1. GLOBAL STATE AND LAZY INITIALIZER ---
 // This global flag ensures network services are only initialized once.
@@ -160,6 +162,11 @@ class _MainPageState extends State<MainPage> {
   final GlobalKey _myGigsTabKey = GlobalKey();
   late final List<_GlobalDemoStep> _globalDemoScript;
 
+  // Retrospective notification state
+  Gig? _gigNeedingReview;
+  int _totalGigsNeedingReview = 0;
+  bool _showRetrospectiveBanner = false;
+
   static const List<String> _pageTitles = [ 'Gig Pay', 'Venues', 'My Gigs', 'Profile', ];
   static const List<String?> _defaultBackgroundImages = [ 'assets/background1.png', null, 'assets/background2.png', 'assets/background3.png', ];
   static const double _defaultOpacity = 0.7;
@@ -199,6 +206,9 @@ class _MainPageState extends State<MainPage> {
     // This needs SharedPreferences, so it runs after _initializeSettings.
     await _checkAndRunFirstTimeDemo();
 
+    // Check for gigs needing retrospectives (after demo check)
+    await _checkForGigRetrospectives();
+
     // Once local services are ready, show the UI.
     if (mounted) {
       setState(() {
@@ -212,6 +222,50 @@ class _MainPageState extends State<MainPage> {
     Provider.of<GlobalRefreshNotifier>(context, listen: false).removeListener(_onSettingsChanged);
     Provider.of<DemoProvider>(context, listen: false).removeListener(_onDemoStateChanged);
     super.dispose();
+  }
+
+  Future<void> _checkForGigRetrospectives() async {
+    try {
+      final gigNeedingReview = await GigRetrospectiveService.checkForRetrospectiveOnStartup();
+      final allGigsNeedingReview = await GigRetrospectiveService.getGigsNeedingRetrospective();
+
+      if (mounted && gigNeedingReview != null) {
+        setState(() {
+          _gigNeedingReview = gigNeedingReview;
+          _totalGigsNeedingReview = allGigsNeedingReview.length;
+          _showRetrospectiveBanner = true;
+        });
+      }
+    } catch (e) {
+      print('Error checking for retrospectives: $e');
+    }
+  }
+
+  void _dismissRetrospectiveBanner() async {
+    setState(() {
+      _showRetrospectiveBanner = false;
+    });
+
+    // Check if there are more gigs to review
+    final gigsNeedingReview = await GigRetrospectiveService.getGigsNeedingRetrospective();
+
+    if (gigsNeedingReview.isNotEmpty && mounted) {
+      // Show next gig after a delay
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) {
+        setState(() {
+          _gigNeedingReview = gigsNeedingReview.first;
+          _totalGigsNeedingReview = gigsNeedingReview.length;
+          _showRetrospectiveBanner = true;
+        });
+      }
+    }
+  }
+
+  void _onRetrospectiveComplete() {
+    // Refresh the UI to reflect the completed retrospective
+    globalRefreshNotifier.notify();
+    _dismissRetrospectiveBanner();
   }
 
   void _onDemoStateChanged() {
@@ -468,6 +522,14 @@ class _MainPageState extends State<MainPage> {
             children: [
               Column(
                 children: <Widget>[
+                  // Retrospective notification banner
+                  if (_showRetrospectiveBanner && _gigNeedingReview != null)
+                    RetrospectiveNotificationBanner(
+                      gig: _gigNeedingReview!,
+                      totalPendingCount: _totalGigsNeedingReview,
+                      onDismiss: _dismissRetrospectiveBanner,
+                      onComplete: _onRetrospectiveComplete,
+                    ),
                   Expanded(
                     child: IndexedStack(
                       index: _selectedIndex,

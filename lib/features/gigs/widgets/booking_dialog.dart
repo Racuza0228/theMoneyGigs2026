@@ -51,6 +51,7 @@ class GigEditResult {
 class BookingDialog extends StatefulWidget {
   final String? calculatedHourlyRate;
   final double? totalPay;
+  final double? otherExpenses;
   final double? gigLengthHours;
   final double? driveSetupTimeHours;
   final double? rehearsalTimeHours;
@@ -64,6 +65,7 @@ class BookingDialog extends StatefulWidget {
     super.key,
     this.calculatedHourlyRate,
     this.totalPay,
+    this.otherExpenses, // <<< ADD TO CONSTRUCTOR
     this.gigLengthHours,
     this.driveSetupTimeHours,
     this.rehearsalTimeHours,
@@ -91,6 +93,7 @@ class _BookingDialogState extends State<BookingDialog> {
   final _formKey = GlobalKey<FormState>();
 
   late TextEditingController _payController;
+  late TextEditingController _otherExpensesController;
   late TextEditingController _gigLengthController;
   late TextEditingController _driveSetupController;
   late TextEditingController _rehearsalController;
@@ -195,11 +198,13 @@ class _BookingDialogState extends State<BookingDialog> {
     _newVenueAddressFocusNode.removeListener(_onAddressFocusChange);
     _newVenueAddressFocusNode.dispose();
     _payController.dispose();
+    _otherExpensesController.dispose(); // <<< ADD THIS LINE
     _gigLengthController.dispose();
     _driveSetupController.dispose();
     _rehearsalController.dispose();
     if (_isMapModeNewGig || _isEditingMode || _isAddGigMode) {
       _payController.removeListener(_calculateDynamicRate);
+      _otherExpensesController.removeListener(_calculateDynamicRate); // <<< ADD THIS LINE
       _gigLengthController.removeListener(_calculateDynamicRate);
       _driveSetupController.removeListener(_calculateDynamicRate);
       _rehearsalController.removeListener(_calculateDynamicRate);
@@ -327,6 +332,7 @@ class _BookingDialogState extends State<BookingDialog> {
       );
 
       _payController = TextEditingController(text: _editableGig!.pay.toStringAsFixed(0));
+      _otherExpensesController = TextEditingController(text: (_editableGig!.otherExpenses ?? 0.0).toStringAsFixed(2)); // <<< ADD THIS LINE
       _gigLengthController = TextEditingController(text: _editableGig!.gigLengthHours.toStringAsFixed(1));
       _driveSetupController = TextEditingController(text: _editableGig!.driveSetupTimeHours.toStringAsFixed(1));
       _rehearsalController = TextEditingController(text: _editableGig!.rehearsalLengthHours.toStringAsFixed(1));
@@ -344,6 +350,7 @@ class _BookingDialogState extends State<BookingDialog> {
       await _handleVenueSelection(_selectedVenue);
 
       _payController.addListener(_calculateDynamicRate);
+      _otherExpensesController.addListener(_calculateDynamicRate); // <<< ADD THIS LINE
       _gigLengthController.addListener(_calculateDynamicRate);
       _driveSetupController.addListener(_calculateDynamicRate);
       _rehearsalController.addListener(_calculateDynamicRate);
@@ -352,6 +359,7 @@ class _BookingDialogState extends State<BookingDialog> {
     } else {
 
       _payController = TextEditingController(text: widget.totalPay?.toStringAsFixed(0) ?? '');
+      _otherExpensesController = TextEditingController(text: widget.otherExpenses?.toStringAsFixed(2) ?? ''); // <<< ADD THIS LINE
       _gigLengthController = TextEditingController(text: widget.gigLengthHours?.toStringAsFixed(1) ?? '');
       _driveSetupController = TextEditingController(text: widget.driveSetupTimeHours?.toStringAsFixed(1) ?? '');
       _rehearsalController = TextEditingController(text: widget.rehearsalTimeHours?.toStringAsFixed(1) ?? '');
@@ -364,6 +372,7 @@ class _BookingDialogState extends State<BookingDialog> {
         longitude: widget.preselectedVenue?.coordinates.longitude ?? 0,
         dateTime: DateTime.now(), // Default, will be updated by picker
         pay: widget.totalPay ?? 0,
+        otherExpenses: widget.otherExpenses ?? 0.0, // <<< ADD THIS LINE
         gigLengthHours: widget.gigLengthHours ?? 0,
         driveSetupTimeHours: widget.driveSetupTimeHours ?? 0,
         rehearsalLengthHours: widget.rehearsalTimeHours ?? 0,
@@ -379,6 +388,7 @@ class _BookingDialogState extends State<BookingDialog> {
         await _handleVenueSelection(_selectedVenue);
 
         _payController.addListener(_calculateDynamicRate);
+        _otherExpensesController.addListener(_calculateDynamicRate); // <<< ADD THIS LINE
         _gigLengthController.addListener(_calculateDynamicRate);
         _driveSetupController.addListener(_calculateDynamicRate);
         _rehearsalController.addListener(_calculateDynamicRate);
@@ -628,6 +638,7 @@ class _BookingDialogState extends State<BookingDialog> {
     final DateTime selectedFullDateTime = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _selectedTime!.hour, _selectedTime!.minute);
 
     final double finalPay = double.tryParse(_payController.text) ?? 0;
+    final double finalOtherExpenses = double.tryParse(_otherExpensesController.text) ?? 0; // <<< ADD THIS LINE
     final double finalGigLengthHours = double.tryParse(_gigLengthController.text) ?? 0;
     final double finalDriveSetupHours = double.tryParse(_driveSetupController.text) ?? 0;
     final double finalRehearsalHours = double.tryParse(_rehearsalController.text) ?? 0;
@@ -678,6 +689,7 @@ class _BookingDialogState extends State<BookingDialog> {
       placeId: finalVenueDetails.placeId,
       dateTime: selectedFullDateTime,
       pay: finalPay,
+      otherExpenses: finalOtherExpenses, // <<< ADD THIS LINE
       gigLengthHours: finalGigLengthHours,
       driveSetupTimeHours: finalDriveSetupHours,
       rehearsalLengthHours: finalRehearsalHours,
@@ -784,23 +796,32 @@ class _BookingDialogState extends State<BookingDialog> {
   void _calculateDynamicRate() {
     if (!mounted || _isCalculatorMode) return;
     final double pay = double.tryParse(_payController.text) ?? 0;
+    final double otherExpenses = double.tryParse(_otherExpensesController.text) ?? 0; // <<< ADD THIS LINE
     final double gigTime = double.tryParse(_gigLengthController.text) ?? 0;
     final double driveSetupTime = double.tryParse(_driveSetupController.text) ?? 0;
     final double rehearsalTime = double.tryParse(_rehearsalController.text) ?? 0;
+    final double effectivePay = pay - otherExpenses; // Calculate the pay after expenses
     final double totalHoursForRateCalc = gigTime + driveSetupTime + rehearsalTime;
+
     String newRateString = "";
     Color newColor = Colors.grey;
 
     if (totalHoursForRateCalc > 0 && pay > 0) {
-      final double calculatedRate = pay / totalHoursForRateCalc;
+      // Use the effectivePay for the live calculation
+      final double calculatedRate = effectivePay / totalHoursForRateCalc;
       newRateString = '\$${calculatedRate.toStringAsFixed(2)} / hr';
-      newColor = Colors.green;
+
+      // Make the rate red if it's negative (expenses > pay)
+      newColor = calculatedRate >= 0 ? Colors.green : Colors.red;
     } else if (pay > 0 && totalHoursForRateCalc <= 0) {
-      newRateString = "Enter hours"; newColor = Colors.orangeAccent;
+      newRateString = "Enter hours";
+      newColor = Colors.orangeAccent;
     } else if (pay <= 0 && totalHoursForRateCalc > 0) {
-      newRateString = "Enter pay"; newColor = Colors.orangeAccent;
+      newRateString = "Enter pay";
+      newColor = Colors.orangeAccent;
     } else {
-      newRateString = "Rate: N/A"; newColor = Colors.grey;
+      newRateString = "Rate: N/A";
+      newColor = Colors.grey;
     }
     if (mounted) setState(() { _dynamicRateString = newRateString; _dynamicRateResultColor = newColor; });
   }
@@ -1107,6 +1128,7 @@ class _BookingDialogState extends State<BookingDialog> {
                       else ...[
                         FinancialInputsView(
                           payController: _payController,
+                          otherExpensesController: _otherExpensesController, // Pass the new controller
                           gigLengthController: _gigLengthController,
                           driveSetupController: _driveSetupController,
                           rehearsalController: _rehearsalController,

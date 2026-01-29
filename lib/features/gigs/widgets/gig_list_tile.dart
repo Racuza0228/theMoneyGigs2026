@@ -71,9 +71,6 @@ class GigListTile extends StatelessWidget {
   }
 
   Color _getCardColor(BuildContext context) {
-    if (_isPast) {
-      return Colors.grey.shade300;
-    }
     if (_isJam) {
       return Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.7);
     }
@@ -115,7 +112,7 @@ class GigListTile extends StatelessWidget {
         gig.venueName,
         style: TextStyle(
           fontWeight: FontWeight.bold,
-          color: _isPast ? Colors.grey.shade600 : Colors.black87,
+          color: _isPast ? Colors.grey.shade600 : Colors.white,
         ),
       );
     }
@@ -160,7 +157,7 @@ class GigListTile extends StatelessWidget {
             ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic'
             : '${DateFormat.jm().format(gig.dateTime)} - \$${gig.pay.toStringAsFixed(0)}',
         style: TextStyle(
-          color: _isPast ? Colors.grey.shade500 : Colors.black54,
+          color: _isPast ? Colors.grey.shade500 : Colors.white,
         ),
       );
     }

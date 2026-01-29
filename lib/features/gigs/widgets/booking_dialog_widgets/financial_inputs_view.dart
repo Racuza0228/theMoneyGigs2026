@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 class FinancialInputsView extends StatelessWidget {
   final TextEditingController payController;
+  final TextEditingController otherExpensesController; // New controller
   final TextEditingController gigLengthController;
   final TextEditingController driveSetupController;
   final TextEditingController rehearsalController;
@@ -13,6 +14,7 @@ class FinancialInputsView extends StatelessWidget {
   const FinancialInputsView({
     super.key,
     required this.payController,
+    required this.otherExpensesController, // Updated constructor
     required this.gigLengthController,
     required this.driveSetupController,
     required this.rehearsalController,
@@ -75,6 +77,21 @@ class FinancialInputsView extends StatelessWidget {
               final rehearsalTime = double.tryParse(value);
               if (rehearsalTime == null) return 'Invalid number for rehearsal';
               if (rehearsalTime < 0) return 'Rehearsal cannot be negative';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 12),
+        // New TextFormField for Other Expenses
+        TextFormField(
+          controller: otherExpensesController,
+          decoration: const InputDecoration(labelText: 'Other Expenses (\$)', border: OutlineInputBorder(), prefixText: '\$'),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          validator: (value) {
+            if (value != null && value.isNotEmpty) {
+              final expenses = double.tryParse(value);
+              if (expenses == null) return 'Invalid number for expenses';
+              if (expenses < 0) return 'Expenses cannot be negative';
             }
             return null;
           },

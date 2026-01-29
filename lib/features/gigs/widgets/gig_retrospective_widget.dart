@@ -1,9 +1,13 @@
 // lib/features/gigs/widgets/gig_retrospective_widget.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_rating.dart';
+import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// A widget that allows users to rate various dimensions of a completed gig.
 ///
@@ -29,11 +33,15 @@ class GigRetrospectiveWidget extends StatefulWidget {
   /// Optional: venue name for context in the header
   final String? venueName;
 
+  /// Optional: the gig being reviewed (needed for export)
+  final Gig? gig;
+
   const GigRetrospectiveWidget({
     super.key,
     this.existingRatings,
     required this.onRatingsChanged,
     this.venueName,
+    this.gig,
   });
 
   @override
@@ -41,17 +49,14 @@ class GigRetrospectiveWidget extends StatefulWidget {
 }
 
 class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
-  // SharedPreferences key for user's custom dimensions
-  static const String _keyCustomDimensions = 'retrospective_custom_dimensions';
+  // SharedPreferences key for user's active dimensions
+  static const String _keyActiveDimensions = 'retrospective_active_dimensions';
 
   // Map of dimension name to current rating (null = not yet rated)
   final Map<String, double?> _ratings = {};
 
-  // List of all dimensions to display (defaults + custom)
+  // List of all dimensions to display (user's active list)
   List<String> _allDimensions = [];
-
-  // User's custom dimensions (persisted across gigs)
-  List<String> _customDimensions = [];
 
   bool _isLoading = true;
   bool _isExpanded = true;
@@ -64,13 +69,16 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
 
   Future<void> _loadDimensions() async {
     final prefs = await SharedPreferences.getInstance();
-    _customDimensions = prefs.getStringList(_keyCustomDimensions) ?? [];
+    final savedDimensions = prefs.getStringList(_keyActiveDimensions);
 
-    // Build the full list of dimensions
-    _allDimensions = [
-      ...DefaultGigDimensions.all,
-      ..._customDimensions,
-    ];
+    // If user has saved dimensions, use those; otherwise use defaults
+    if (savedDimensions != null && savedDimensions.isNotEmpty) {
+      _allDimensions = savedDimensions;
+    } else {
+      // First time - use all default dimensions
+      _allDimensions = List.from(DefaultGigDimensions.all);
+      await _saveDimensions();
+    }
 
     // Pre-populate ratings from existing data
     if (widget.existingRatings != null) {
@@ -90,9 +98,9 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
     }
   }
 
-  Future<void> _saveCustomDimensions() async {
+  Future<void> _saveDimensions() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_keyCustomDimensions, _customDimensions);
+    await prefs.setStringList(_keyActiveDimensions, _allDimensions);
   }
 
   void _updateRating(String dimension, double rating) {
@@ -196,17 +204,13 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
 
     if (result != null && result.isNotEmpty && !_allDimensions.contains(result)) {
       setState(() {
-        _customDimensions.add(result);
         _allDimensions.add(result);
       });
-      await _saveCustomDimensions();
+      await _saveDimensions();
     }
   }
 
-  Future<void> _confirmRemoveCustomDimension(String dimension) async {
-    // Only allow removing custom dimensions
-    if (!_customDimensions.contains(dimension)) return;
-
+  Future<void> _confirmRemoveDimension(String dimension) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -231,18 +235,87 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
 
     if (confirmed == true) {
       setState(() {
-        _customDimensions.remove(dimension);
         _allDimensions.remove(dimension);
         _ratings.remove(dimension);
       });
-      await _saveCustomDimensions();
+      await _saveDimensions();
       _notifyRatingsChanged();
+    }
+  }
+
+  Future<void> _exportReview() async {
+    if (widget.gig == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot export: gig information not available'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final dateFormat = DateFormat('MMMM d, yyyy \'at\' h:mm a');
+    final avgRating = _ratings.values.where((r) => r != null).isEmpty
+        ? 0.0
+        : _ratings.values.whereType<double>().reduce((a, b) => a + b) /
+        _ratings.values.whereType<double>().length;
+
+    final buffer = StringBuffer();
+    buffer.writeln('🎸 GIG REVIEW: ${widget.gig!.venueName}');
+    buffer.writeln('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    buffer.writeln('');
+    buffer.writeln('📅 Date: ${dateFormat.format(widget.gig!.dateTime)}');
+    buffer.writeln('📍 Venue: ${widget.gig!.venueName}');
+    buffer.writeln('💰 Pay: \$${widget.gig!.pay.toStringAsFixed(2)}');
+    buffer.writeln('⏱️  Duration: ${widget.gig!.gigLengthHours.toStringAsFixed(1)} hours');
+    buffer.writeln('');
+
+    if (_ratings.values.whereType<double>().isNotEmpty) {
+      buffer.writeln('⭐ OVERALL RATING: ${avgRating.toStringAsFixed(1)}/5.0');
+      buffer.writeln('');
+      buffer.writeln('📊 DIMENSION RATINGS:');
+      buffer.writeln('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+      for (final entry in _ratings.entries) {
+        if (entry.value != null) {
+          final stars = '★' * entry.value!.round() + '☆' * (5 - entry.value!.round());
+          buffer.writeln('• ${entry.key}: ${entry.value!.toStringAsFixed(1)}/5.0 $stars');
+        }
+      }
+    }
+
+    if (widget.gig!.notes != null && widget.gig!.notes!.isNotEmpty) {
+      buffer.writeln('');
+      buffer.writeln('📝 NOTES:');
+      buffer.writeln('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      buffer.writeln(widget.gig!.notes!);
+    }
+
+    buffer.writeln('');
+    buffer.writeln('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    buffer.writeln('Generated by The Money Gigs app');
+
+    try {
+      await Share.share(
+        buffer.toString(),
+        subject: 'Gig Review: ${widget.gig!.venueName}',
+      );
+    } catch (e) {
+      // Fallback: copy to clipboard
+      await Clipboard.setData(ClipboardData(text: buffer.toString()));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Review copied to clipboard!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     }
   }
 
   Widget _buildDimensionRow(String dimension) {
     final rating = _ratings[dimension];
-    final isCustom = _customDimensions.contains(dimension);
     final category = DefaultGigDimensions.getCategoryFor(dimension);
 
     return Padding(
@@ -253,7 +326,7 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
           Expanded(
             flex: 2,
             child: GestureDetector(
-              onLongPress: isCustom ? () => _confirmRemoveCustomDimension(dimension) : null,
+              onLongPress: () => _confirmRemoveDimension(dimension),
               child: Row(
                 children: [
                   if (category != null)
@@ -276,15 +349,6 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (isCustom)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4.0),
-                      child: Icon(
-                        Icons.person_outline,
-                        size: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -440,11 +504,27 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
                     ),
                   ),
 
+                  // Export button (if there are ratings)
+                  if (_ratings.values.whereType<double>().isNotEmpty)
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: _exportReview,
+                        icon: const Icon(
+                          Icons.share,
+                          size: 18,
+                        ),
+                        label: const Text('Export Review'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.grey.shade400,
+                        ),
+                      ),
+                    ),
+
                   // Hint text
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Text(
-                      'Tip: Long-press a custom dimension to remove it.',
+                      'Tip: Long-press any dimension to remove it.',
                       style: TextStyle(
                         color: Colors.grey.shade600,
                         fontSize: 11,

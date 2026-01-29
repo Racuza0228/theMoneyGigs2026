@@ -12,6 +12,7 @@ class Gig {
   String? placeId;
   DateTime dateTime; // For recurring gigs, this will be the START date
   double pay;
+  double? otherExpenses;
   double gigLengthHours;
   double driveSetupTimeHours;
   double rehearsalLengthHours;
@@ -40,6 +41,7 @@ class Gig {
     this.placeId,
     required this.dateTime,
     required this.pay,
+    this.otherExpenses, // Updated constructor
     required this.gigLengthHours,
     required this.driveSetupTimeHours,
     required this.rehearsalLengthHours,
@@ -67,6 +69,7 @@ class Gig {
     String? placeId,
     DateTime? dateTime,
     double? pay,
+    double? otherExpenses, // New field
     double? gigLengthHours,
     double? driveSetupTimeHours,
     double? rehearsalLengthHours,
@@ -93,6 +96,7 @@ class Gig {
       placeId: placeId ?? this.placeId,
       dateTime: dateTime ?? this.dateTime,
       pay: pay ?? this.pay,
+      otherExpenses: otherExpenses ?? this.otherExpenses, // Updated copyWith
       gigLengthHours: gigLengthHours ?? this.gigLengthHours,
       driveSetupTimeHours: driveSetupTimeHours ?? this.driveSetupTimeHours,
       rehearsalLengthHours: rehearsalLengthHours ?? this.rehearsalLengthHours,
@@ -117,13 +121,16 @@ class Gig {
     final double totalHours =
         gigLengthHours + driveSetupTimeHours + rehearsalLengthHours;
 
-    // To prevent division by zero if all hours are 0, return 0.
-    if (pay <= 0 || totalHours <= 0) {
+    // Calculate the effective pay by subtracting expenses.
+    final double effectivePay = pay - (otherExpenses ?? 0.0);
+
+    // To prevent division by zero or if the effective pay is not positive, return 0.
+    if (effectivePay <= 0 || totalHours <= 0) {
       return 0.0;
     }
 
-    // Calculate the true rate.
-    return pay / totalHours;
+    // Calculate the true rate using the effective pay.
+    return effectivePay / totalHours;
   }
 
   /// Returns true if this gig has ended (based on dateTime + gigLengthHours)
@@ -186,6 +193,7 @@ class Gig {
       'placeId': placeId,
       'dateTime': dateTime.toIso8601String(),
       'pay': pay,
+      'otherExpenses': otherExpenses, // New field
       'gigLengthHours': gigLengthHours,
       'driveSetupTimeHours': driveSetupTimeHours,
       'rehearsalLengthHours': rehearsalLengthHours,
@@ -242,6 +250,7 @@ class Gig {
       placeId: json['placeId'] as String?,
       dateTime: DateTime.parse(json['dateTime'] as String),
       pay: (json['pay'] as num).toDouble(),
+      otherExpenses: (json['otherExpenses'] as num?)?.toDouble() ?? 0.0, // Backward compatible
       gigLengthHours: (json['gigLengthHours'] as num).toDouble(),
       driveSetupTimeHours: (json['driveSetupTimeHours'] as num?)?.toDouble() ?? 0.0,
       rehearsalLengthHours: (json['rehearsalLengthHours'] as num?)?.toDouble() ?? 0.0,
