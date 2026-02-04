@@ -12,7 +12,6 @@ import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the noti
 import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHARED ENUMS
 
 // Import your models
-import 'package:in_app_review/in_app_review.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/gigs/models/monthly_separator.dart';
 import 'package:the_money_gigs/features/gigs/widgets/monthly_separator_tile.dart';
@@ -32,6 +31,7 @@ import 'package:the_money_gigs/features/venues/views/venues_list_tab.dart';
 
 
 import '../../app_demo/providers/demo_provider.dart';
+import 'package:the_money_gigs/features/app_demo/widgets/simple_demo_overlay.dart';
 
 enum GigsViewType { list, calendar }
 
@@ -65,22 +65,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   DateTime? _selectedDay;
   List<Gig> _selectedDayGigs = [];
   static const String _keyGigsList = 'gigs_list';
-
   static const String _keySavedLocations = 'saved_locations';
 
-  final Gig _demoGig = Gig(
-    id: DemoProvider.demoGigId,
-    venueName: 'Kroger Marketplace',
-    address: '4613 Marburg Ave, Cincinnati, OH 45209',
-    placeId: DemoProvider.demoVenuePlaceId,
-    latitude: 39.1602761,
-    longitude: -84.429593,
-    dateTime: DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, 20, 0),
-    pay: 250,
-    gigLengthHours: 3,
-    driveSetupTimeHours: 2.5,
-    rehearsalLengthHours: 2,
-  );
+  final GlobalKey _demoGigTileKey = GlobalKey();
+  OverlayEntry? _overlayEntry; // 🎯 ADD THIS VARIABLE
 
   @override
   void initState() {
@@ -92,20 +80,121 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     _loadAllDataForGigsPage();
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
 
-    Provider.of<DemoProvider>(context, listen: false)
-        .addListener(_onDemoStateChanged);
+    // 🎬 Listen to DemoProvider so we react when the step changes to gigListView.
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    demoProvider.addListener(_handleDemoStepChange);
+    print('🎬 [GigsPage] initState: DemoProvider listener registered. Current step = ${demoProvider.currentStep}');
   }
 
   @override
   void dispose() {
+    _removeOverlay();
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    demoProvider.removeListener(_handleDemoStepChange);
     globalRefreshNotifier.removeListener(_handleGlobalRefresh);
     _tabController.removeListener(_handleTabSelection);
     _tabController.dispose();
     _scrollController.dispose(); // Dispose scroll controller
 
-    Provider.of<DemoProvider>(context, listen: false)
-        .removeListener(_onDemoStateChanged);
     super.dispose();
+  }
+
+  void _showGigListOverlay(DemoProvider demoProvider) {
+    print('🎬 [GigsPage] _showGigListOverlay: ENTERED');
+    _removeOverlay();
+
+    final OverlayState? rootOverlay = Navigator.of(context).overlay;
+    if (rootOverlay == null) {
+      print('🎬 [GigsPage] _showGigListOverlay: ❌ rootOverlay is null — cannot insert.');
+      return;
+    }
+
+    _overlayEntry = OverlayEntry(
+      builder: (context) {
+        print('🎬 [GigsPage] OverlayEntry builder called — SimpleDemoOverlay is being built');
+        return SimpleDemoOverlay(
+          title: "Your Upcoming Gigs",
+          message: "Each card is a gig where you can edit details, schedule recurring dates, or view notes with that icon on the right. Click Next.",
+          highlightKeys: [_demoGigTileKey],
+          showNextButton: true,
+          // 🎯 2. SIMPLIFY the onNext callback.
+          // It only needs to remove the overlay and advance the demo step.
+          onNext: () {
+            _removeOverlay();
+            demoProvider.nextStep();
+          },
+        );
+      },
+    );
+    rootOverlay.insert(_overlayEntry!);
+    print('🎬 [GigsPage] _showGigListOverlay: ✅ Overlay inserted into rootOverlay');
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  // 🎬 Called every time DemoProvider calls notifyListeners (every nextStep / skipToStep).
+  void _handleDemoStepChange() {
+    if (!mounted) {
+      print('🎬 [GigsPage] _handleDemoStepChange: not mounted, ignoring.');
+      return;
+    }
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    print('🎬 [GigsPage] _handleDemoStepChange: FIRED. currentStep = ${demoProvider.currentStep}, isDemoActive = ${demoProvider.isDemoModeActive}');
+
+    if (demoProvider.currentStep == DemoStep.gigListView) {
+      print('🎬 [GigsPage] _handleDemoStepChange: ✅ Step IS gigListView — calling _tryShowGigListDemoOverlay');
+      _tryShowGigListDemoOverlay(demoProvider);
+    } else {
+      print('🎬 [GigsPage] _handleDemoStepChange: Step is NOT gigListView, skipping.');
+    }
+  }
+
+  Future<void> _tryShowGigListDemoOverlay(DemoProvider demoProvider) async {
+    print('🎬 [GigsPage] _tryShowGigListDemoOverlay: scheduling post-frame callback');
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        print('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): not mounted, aborting.');
+        return;
+      }
+
+      // Check whether there are any real gigs to highlight at all.
+      final hasRealGigs = _displayedGigs.any((g) => !g.isJamOpenMic);
+      print('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): _displayedGigs.length = ${_displayedGigs.length}, hasRealGigs = $hasRealGigs');
+
+      if (!hasRealGigs) {
+        print('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ❌ No real gigs in the list — nothing to highlight.');
+        return;
+      }
+
+      final tileContext = _demoGigTileKey.currentContext;
+      print('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): _demoGigTileKey.currentContext = $tileContext');
+
+      if (tileContext == null) {
+        print('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ❌ Key context is null — first gig tile not yet built by ListView. Aborting.');
+        return;
+      }
+
+      print('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ✅ tileContext is live, scrolling into view...');
+
+      await Scrollable.ensureVisible(
+        tileContext,
+        duration: const Duration(milliseconds: 400),
+        alignment: 0.5,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 150));
+
+      if (mounted) {
+        print('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): calling _showGigListOverlay');
+        _showGigListOverlay(demoProvider);
+      } else {
+        print('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ❌ no longer mounted after scroll, aborting.');
+      }
+    });
   }
 
   void _scrollListener() {
@@ -114,53 +203,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         !_isMoreGigsLoading) {
       _loadMoreGigs();
     }
-  }
-
-  void _onDemoStateChanged() async { // Make async
-    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-    if (!mounted) return;
-
-    // --- START OF FIX ---
-    // Check if the demo is ending. This is the crucial condition.
-    if (!demoProvider.isDemoModeActive) {
-      // The demo has just ended. Request the review *before* doing the UI cleanup.
-      // We also add a small delay to ensure the review dialog can launch safely
-      // before we start removing elements from the UI.
-      try {
-        final InAppReview inAppReview = InAppReview.instance;
-        if (await inAppReview.isAvailable()) {
-          // Awaiting this is not necessary as we don't need the result,
-          // but it helps ensure the call is initiated.
-          inAppReview.requestReview();
-        }
-      } catch (e) {
-        // Silently fail. The review is not critical.
-        print("In-app review failed: $e");
-      }
-
-      // Add a small buffer to let the native UI call process.
-      await Future.delayed(const Duration(milliseconds: 250));
-    }
-    // --- END OF FIX ---
-
-    // Now, proceed with the UI update state logic.
-    if (!mounted) return; // Re-check if the widget is still mounted after the delay.
-    setState(() {
-      if (demoProvider.isDemoModeActive && demoProvider.currentStep == 13) {
-        final bool alreadyExists = _displayedGigs.any((g) => g.id == _demoGig.id);
-        if (!alreadyExists) {
-          _displayedGigs.insert(0, _demoGig);
-          _displayedGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
-        }
-      } else if (!demoProvider.isDemoModeActive) {
-        // The logic to remove the gig remains the same.
-        _allGigs.removeWhere((g) => g.id == _demoGig.id);
-        _displayedGigs.removeWhere((g) => g.id == _demoGig.id);
-      }
-
-      _prepareCalendarEvents();
-      _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
-    });
   }
 
   Future<void> _handleRecurringGigDeletion(Gig gigInstance, RecurringCancelChoice choice) async {
@@ -282,23 +324,14 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     DateTime now = DateTime.now();
     DateTime todayStart = DateTime(now.year, now.month, now.day);
 
-    // --- START OF REVISED LOGIC ---
-
-    // 1. Add ALL original gigs from storage (both recurring and non-recurring).
-    //    This ensures the original "template" for a recurring gig is always in the list
-    //    if it hasn't passed yet.
     allOccurrences.addAll(_allGigs);
 
-    // 2. Generate all future occurrences for recurring gigs based on their templates.
-    //    This generates the list of "Weekly on Tuesday", etc.
     for (var baseGig in _allGigs.where((g) => g.isRecurring)) {
       allOccurrences.addAll(_generateOccurrencesForGig(baseGig, _gigListEndDate));
     }
 
-    // 3. Generate all Jam/Open Mic session occurrences.
     allOccurrences.addAll(_generateJamOpenMicGigs(_gigListEndDate));
 
-    // 4. Process the gigs (add prefixes, etc.)
     List<Gig> processedGigs = allOccurrences.map((gig) {
       final sourceVenue = _allKnownVenues.firstWhere(
             (v) => v.placeId == gig.placeId,
@@ -319,10 +352,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       return gig.copyWith(venueName: processedVenueName);
     }).toList();
 
-    // 5. De-duplicate the list. This is the most critical step.
-    //    The Map ensures that if a generated occurrence has the same ID as an
-    //    original gig (e.g., the very first date), the generated one is kept,
-    //    preventing duplicates.
     final Map<String, Gig> uniqueGigs = {};
     for (var gig in processedGigs) {
       uniqueGigs[gig.id] = gig;
@@ -336,15 +365,11 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
     sortedGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
 
-    // --- END OF REVISED LOGIC ---
-
     if (mounted) {
-      // 7. Update the state with the final, correct list.
       setState(() {
         _displayedGigs = sortedGigs;
       });
 
-      // These can now run with the correct data.
       _prepareCalendarEvents();
       _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
     }
@@ -1171,6 +1196,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
+    // 🎯 The build method is now clean again. No Consumer, no Stack.
     return Column(
       children: <Widget>[
         Material(
@@ -1192,7 +1218,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             controller: _tabController,
             children: [
               _buildGigsTabContent(),
-              // <<< --- REFACTORING: REPLACE THE OLD METHOD CALL WITH THE NEW WIDGET --- >>>
               VenuesListTab(
                 isLoading: _isLoadingVenues,
                 displayableVenues: _displayableVenues,
@@ -1205,6 +1230,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       ],
     );
   }
+
 
   /// Merges public venue data with local user preferences for jam sessions
   /// Preserves showInGigsList setting from local version
@@ -1363,20 +1389,31 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
     // 3. Build the ListView.
     // The rest of this method remains the same as it correctly renders the items.
+    bool _firstGigKeyAssigned = false; // 🎬 Track whether we've assigned the key yet
+
     return ListView.builder(
       controller: _scrollController,
       itemCount: listItems.length,
       itemBuilder: (context, index) {
         final item = listItems[index];
 
-        // --- RENDER SEPARATOR ---
         if (item is MonthlySeparator) {
           return MonthlySeparatorTile(separator: item);
         }
 
-        // --- RENDER GIG TILE ---
         if (item is Gig) {
+          // 🎬 Assign the demo key to the first real (non-jam) gig card in the list.
+          // This works whether or not a demo gig exists — it highlights whatever
+          // the user will actually see first.
+          bool assignKey = false;
+          if (!_firstGigKeyAssigned && !item.isJamOpenMic) {
+            assignKey = true;
+            _firstGigKeyAssigned = true;
+            print('🎬 [GigsPage] ListView itemBuilder: ✅ Assigning _demoGigTileKey to FIRST gig: id="${item.id}" venue="${item.venueName}"');
+          }
+
           return GigListTile(
+            key: assignKey ? _demoGigTileKey : null,
             gig: item,
             style: GigTileStyle.listView,
             onTap: () => _launchBookingDialogForGig(item),

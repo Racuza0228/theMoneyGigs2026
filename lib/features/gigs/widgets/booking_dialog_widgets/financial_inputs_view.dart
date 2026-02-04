@@ -1,9 +1,16 @@
-// lib/features/gigs/widgets/booking_dialog_widgets/financial_inputs_view.dart
 import 'package:flutter/material.dart';
 
 class FinancialInputsView extends StatelessWidget {
+  // 1. Add the keys as optional parameters
+  final Key? payKey;
+  final Key? gigLengthKey;
+  final Key? driveSetupKey;
+  final Key? rehearsalKey;
+  final Key? otherExpensesKey; // 🎯 ADD THIS KEY
+  final Key? rateDisplayKey;
+
   final TextEditingController payController;
-  final TextEditingController otherExpensesController; // New controller
+  final TextEditingController otherExpensesController;
   final TextEditingController gigLengthController;
   final TextEditingController driveSetupController;
   final TextEditingController rehearsalController;
@@ -13,8 +20,15 @@ class FinancialInputsView extends StatelessWidget {
 
   const FinancialInputsView({
     super.key,
+    // 2. Add them to the constructor
+    this.payKey,
+    this.gigLengthKey,
+    this.driveSetupKey,
+    this.rehearsalKey,
+    this.otherExpensesKey,
+    this.rateDisplayKey,
     required this.payController,
-    required this.otherExpensesController, // Updated constructor
+    required this.otherExpensesController,
     required this.gigLengthController,
     required this.driveSetupController,
     required this.rehearsalController,
@@ -25,87 +39,61 @@ class FinancialInputsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // This Column structure places each input on its own line.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextFormField(
+          key: payKey, // Assign the key
           controller: payController,
-          decoration: const InputDecoration(labelText: 'Total Pay (\$)*', border: OutlineInputBorder(), prefixText: '\$'),
-          keyboardType: const TextInputType.numberWithOptions(decimal: false),
-          validator: (value) {
-            if (value == null || value.isEmpty) return 'Pay is required';
-            final pay = double.tryParse(value);
-            if (pay == null) return 'Invalid number for pay';
-            if (pay <= 0) return 'Pay must be positive';
-            return null;
-          },
+          decoration: const InputDecoration(labelText: 'Total Pay (\$)*', border: OutlineInputBorder()),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          validator: (value) => (value == null || value.trim().isEmpty || double.tryParse(value) == null) ? 'Required' : null,
         ),
         const SizedBox(height: 12),
         TextFormField(
+          key: gigLengthKey, // Assign the key
           controller: gigLengthController,
-          decoration: const InputDecoration(labelText: 'Gig Length (hours)*', border: OutlineInputBorder(), suffixText: 'hrs'),
+          decoration: const InputDecoration(labelText: 'Gig Length (hours)*', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) {
-            if (value == null || value.isEmpty) return 'Gig length is required';
-            final length = double.tryParse(value);
-            if (length == null) return 'Invalid number for length';
-            if (length <= 0) return 'Length must be positive';
-            return null;
-          },
+          validator: (value) => (value == null || value.trim().isEmpty || double.tryParse(value) == null) ? 'Required' : null,
         ),
         const SizedBox(height: 12),
         TextFormField(
+          key: driveSetupKey, // Assign the key
           controller: driveSetupController,
-          decoration: const InputDecoration(labelText: 'Drive/Setup (hours)', border: OutlineInputBorder(), suffixText: 'hrs'),
+          decoration: const InputDecoration(labelText: 'Drive/Setup (hours)', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) {
-            if (value != null && value.isNotEmpty) {
-              final driveTime = double.tryParse(value);
-              if (driveTime == null) return 'Invalid number for drive/setup';
-              if (driveTime < 0) return 'Drive/Setup cannot be negative';
-            }
-            return null;
-          },
         ),
         const SizedBox(height: 12),
         TextFormField(
+          key: rehearsalKey, // Assign the key
           controller: rehearsalController,
-          decoration: const InputDecoration(labelText: 'Rehearsal (hours)', border: OutlineInputBorder(), suffixText: 'hrs'),
+          decoration: const InputDecoration(labelText: 'Rehearsal (hours)', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) {
-            if (value != null && value.isNotEmpty) {
-              final rehearsalTime = double.tryParse(value);
-              if (rehearsalTime == null) return 'Invalid number for rehearsal';
-              if (rehearsalTime < 0) return 'Rehearsal cannot be negative';
-            }
-            return null;
-          },
         ),
         const SizedBox(height: 12),
-        // New TextFormField for Other Expenses
         TextFormField(
+          key: otherExpensesKey, // 🎯 ASSIGN THE KEY HERE
           controller: otherExpensesController,
-          decoration: const InputDecoration(labelText: 'Other Expenses (\$)', border: OutlineInputBorder(), prefixText: '\$'),
+          decoration: const InputDecoration(labelText: 'Other Expenses (\$)', hintText: 'e.g., Gas, parking, strings', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          validator: (value) {
-            if (value != null && value.isNotEmpty) {
-              final expenses = double.tryParse(value);
-              if (expenses == null) return 'Invalid number for expenses';
-              if (expenses < 0) return 'Expenses cannot be negative';
-            }
-            return null;
-          },
         ),
-        if (showDynamicRate && dynamicRateString.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              dynamicRateString,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: dynamicRateResultColor),
+        if (showDynamicRate)
+          Padding(
+            key: rateDisplayKey,
+            padding: const EdgeInsets.only(top: 12.0),
+            child: Center(
+              child: Text(
+                dynamicRateString,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: dynamicRateResultColor,
+                ),
+              ),
             ),
           ),
-        ],
       ],
     );
   }

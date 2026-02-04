@@ -16,7 +16,7 @@ void main(List<String> args) async {
   print("Received arguments: $args"); // For debugging
 
   // If args is not empty, use it. Otherwise, use the default.
-  String region = args.isNotEmpty ? args.join(' ') : "Thompsonville, MI"; // Changed default for clarity
+  String region = args.isNotEmpty ? args.join(' ') : "Atlanta, GA"; // Changed default for clarity
 
   print("\n==============================");
   print("INITIATING FIREBASE...");

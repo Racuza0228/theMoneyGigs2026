@@ -453,7 +453,7 @@ class _GigCalculatorState extends State<GigCalculator>
   }
 
   Widget _buildDemoOverlay(DemoProvider demoProvider) {
-    int currentStepIndex = demoProvider.currentStep - 1;
+    int currentStepIndex = demoProvider.currentStepNumber - 1;
 
     // This page only handles steps 1-7.
     if (currentStepIndex < 0 || currentStepIndex >= 7) {

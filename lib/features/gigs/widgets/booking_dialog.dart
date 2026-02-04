@@ -14,36 +14,21 @@ import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
-import 'package:the_money_gigs/features/app_demo/widgets/tutorial_overlay.dart';
+import 'package:the_money_gigs/features/app_demo/widgets/booking_demo_overlay.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/calculator_summary_view.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/financial_inputs_view.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/venue_selection_view.dart';
-import 'package:the_money_gigs/core/services/notification_service.dart'; // <-- ADD THIS
+import 'package:the_money_gigs/core/services/notification_service.dart';
 import 'package:the_money_gigs/features/gigs/widgets/recurring_gig_dialog.dart';
 
-class _DialogDemoStep {
-  final GlobalKey key;
-  final String text;
-  final Alignment alignment;
-  final VoidCallback? onBefore;
-  final bool hideNextButton;
-
-  _DialogDemoStep({
-    required this.key,
-    required this.text,
-    required this.alignment,
-    this.onBefore,
-    this.hideNextButton = false,
-  });
-}
-
+// These enums and classes remain the same
 enum GigEditResultAction { updated, deleted, noChange }
 enum RecurringCancelChoice { thisInstanceOnly, allFutureInstances, doNothing }
 
 class GigEditResult {
   final GigEditResultAction action;
   final Gig? gig;
-  final RecurringCancelChoice? cancelChoice; // Pass the choice
+  final RecurringCancelChoice? cancelChoice;
 
   GigEditResult({required this.action, this.gig, this.cancelChoice});
 }
@@ -60,12 +45,13 @@ class BookingDialog extends StatefulWidget {
   final String googleApiKey;
   final List<Gig> existingGigs;
   final Gig? editingGig;
+  final DemoStep? currentDemoStep;
 
   const BookingDialog({
     super.key,
     this.calculatedHourlyRate,
     this.totalPay,
-    this.otherExpenses, // <<< ADD TO CONSTRUCTOR
+    this.otherExpenses,
     this.gigLengthHours,
     this.driveSetupTimeHours,
     this.rehearsalTimeHours,
@@ -74,58 +60,47 @@ class BookingDialog extends StatefulWidget {
     required this.googleApiKey,
     required this.existingGigs,
     this.editingGig,
-  }); // Removed assert - allow opening with no data for "Add Gig" mode
+    this.currentDemoStep,
+  });
 
   @override
   State<BookingDialog> createState() => _BookingDialogState();
 }
 
 class _BookingDialogState extends State<BookingDialog> {
+  // All state variables and controllers remain the same
   static final StoredLocation _addNewVenuePlaceholder = StoredLocation(
     placeId: 'add_new_venue_placeholder',
     name: '--- Add New Venue ---',
     address: '',
     coordinates: const LatLng(0, 0),
   );
-
   final AudioPlayer _audioPlayer = AudioPlayer();
-
   final _formKey = GlobalKey<FormState>();
-
   late TextEditingController _payController;
   late TextEditingController _otherExpensesController;
   late TextEditingController _gigLengthController;
   late TextEditingController _driveSetupController;
   late TextEditingController _rehearsalController;
-
   String _dynamicRateString = "";
   Color _dynamicRateResultColor = Colors.grey;
-
   List<StoredLocation> _allKnownVenuesInternal = [];
   List<StoredLocation> _selectableVenuesForDropdown = [];
-
   StoredLocation? _selectedVenue;
   bool _isAddNewVenue = false;
-
   final TextEditingController _newVenueNameController = TextEditingController();
   final TextEditingController _newVenueAddressController = TextEditingController();
   final FocusNode _newVenueAddressFocusNode = FocusNode();
-
   String? _manualDriveDurationString;
   String? _manualDriveDistance;
-
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
-
   bool _isLoadingVenues = false;
   bool _isGeocoding = false;
   bool _isProcessing = false;
-
   Gig? _editableGig;
-
   bool _isFetchingDriveTime = false;
   bool _isPrivateVenue = false;
-
   String? _profileAddress1;
   String? _profileCity;
   String? _profileState;
@@ -133,63 +108,48 @@ class _BookingDialogState extends State<BookingDialog> {
   String? _userProfileAddressForDisplay;
 
   // --- DEMO KEYS & SCRIPT ---
-  final GlobalKey _summaryKey = GlobalKey();
-  final GlobalKey _venueSectionKey = GlobalKey();
-  final GlobalKey _dateSectionKey = GlobalKey();
+  final GlobalKey _payKey = GlobalKey();
+  final GlobalKey _gigLengthKey = GlobalKey();
+  final GlobalKey _driveSetupKey = GlobalKey();
+  final GlobalKey _rehearsalKey = GlobalKey();
+  final GlobalKey _otherExpensesKey = GlobalKey();
+  final GlobalKey _rateDisplayKey = GlobalKey(); // 🎯 1. DEFINE THE KEY
+  final GlobalKey _dateButtonKey = GlobalKey();
   final GlobalKey _confirmBtnKey = GlobalKey();
-  late final List<_DialogDemoStep> _demoScript;
+  bool _showDemoOverlay = false;
 
   bool get _isEditingMode => widget.editingGig != null;
   bool get _isCalculatorMode => widget.calculatedHourlyRate != null && !_isEditingMode && widget.preselectedVenue == null;
   bool get _isMapModeNewGig => widget.preselectedVenue != null && !_isEditingMode;
-  // Add Gig mode: No editingGig, no calculatedHourlyRate, no preselectedVenue
   bool get _isAddGigMode => !_isEditingMode && !_isCalculatorMode && !_isMapModeNewGig;
   bool _isInitialized = false;
-
   final TimeOfDay _defaultGigTime = const TimeOfDay(hour: 20, minute: 0);
 
+  // initState and other helper methods remain the same
   @override
   void initState() {
     super.initState();
     _initializeDialogState();
     _newVenueAddressFocusNode.addListener(_onAddressFocusChange);
 
-    _demoScript = [
-      _DialogDemoStep(
-        key: _summaryKey,
-        text: 'Notice the pay and time details have been transferred.',
-        alignment: Alignment.center,
-      ),
-      _DialogDemoStep(
-        key: _venueSectionKey,
-        text: 'Next, provide the venue info. We\'ll use a favorite place of mine to play, Oakley Kroger. Stop in, catch a performance, and say Hello to Jay sometime!',
-        alignment: Alignment.bottomCenter,
-        onBefore: () {
-          _newVenueNameController.text = "Kroger Marketplace";
-          _newVenueAddressController.text = "4613 Marburg Ave, Cincinnati, OH 45209";
-        },
-      ),
-      _DialogDemoStep(
-        key: _dateSectionKey,
-        text: 'Now we pick the date and time for the gig. We can use today at 8.',
-        alignment: Alignment.topCenter,
-        onBefore: () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final isBookingDemo = widget.currentDemoStep == DemoStep.bookingFormValue ||
+          widget.currentDemoStep == DemoStep.bookingFormAction;
+
+      if (isBookingDemo && mounted) {
+        Future.delayed(const Duration(milliseconds: 150), () {
           if (mounted) {
             setState(() {
-              _selectedDate = DateTime.now();
+              _showDemoOverlay = true;
             });
           }
-        },
-      ),
-      _DialogDemoStep(
-        key: _confirmBtnKey,
-        text: 'Finally, Confirm & Book! Click that button!',
-        alignment: Alignment.center,
-        hideNextButton: true,
-      ),
-    ];
+        });
+      }
+    });
   }
 
+  // All other methods like dispose, _initializeDialogState, _confirmAction, etc. remain the same.
+  // ... (paste all your other methods here, no changes needed in them)
   @override
   void dispose() {
     _audioPlayer.dispose();
@@ -198,20 +158,19 @@ class _BookingDialogState extends State<BookingDialog> {
     _newVenueAddressFocusNode.removeListener(_onAddressFocusChange);
     _newVenueAddressFocusNode.dispose();
     _payController.dispose();
-    _otherExpensesController.dispose(); // <<< ADD THIS LINE
+    _otherExpensesController.dispose();
     _gigLengthController.dispose();
     _driveSetupController.dispose();
     _rehearsalController.dispose();
     if (_isMapModeNewGig || _isEditingMode || _isAddGigMode) {
       _payController.removeListener(_calculateDynamicRate);
-      _otherExpensesController.removeListener(_calculateDynamicRate); // <<< ADD THIS LINE
+      _otherExpensesController.removeListener(_calculateDynamicRate);
       _gigLengthController.removeListener(_calculateDynamicRate);
       _driveSetupController.removeListener(_calculateDynamicRate);
       _rehearsalController.removeListener(_calculateDynamicRate);
     }
     super.dispose();
   }
-
   void _onAddressFocusChange() {
     if (!_newVenueAddressFocusNode.hasFocus &&
         _isAddNewVenue &&
@@ -219,27 +178,18 @@ class _BookingDialogState extends State<BookingDialog> {
       _fetchDriveTimeForManualAddress();
     }
   }
-
-  // Inside _BookingDialogState class in booking_dialog.dart
-
   Future<void> _scheduleGigNotifications(Gig gig) async {
     final prefs = await SharedPreferences.getInstance();
     final notificationService = NotificationService();
     final int baseNotificationId = gig.id.hashCode;
-
-    // --- Schedule notification for the day of the gig ---
     final bool notifyOnDayOfGig = prefs.getBool('notify_on_day_of_gig') ?? false;
     final int dayOfGigNotificationId = baseNotificationId;
-
     if (notifyOnDayOfGig) {
-      // --- FIX: Use the actual gig date, not a test date ---
-      // This schedules the notification for 9:00 AM on the day of the gig.
       final DateTime scheduledDate = DateTime(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day, 9, 0);
-
       if (scheduledDate.isAfter(DateTime.now())) {
         await notificationService.scheduleNotification(
           id: dayOfGigNotificationId,
-          title: 'Gig Reminder: Today!', // Production-ready title
+          title: 'Gig Reminder: Today!',
           body: 'Your gig "${gig.venueName}" is today at ${DateFormat.jm().format(gig.dateTime)}.',
           scheduledDate: scheduledDate,
         );
@@ -247,15 +197,11 @@ class _BookingDialogState extends State<BookingDialog> {
     } else {
       await notificationService.cancelNotification(dayOfGigNotificationId);
     }
-
-    // --- Schedule notification for 'days before' the gig ---
     final int? daysBefore = prefs.getInt('notify_days_before');
     final int daysBeforeNotificationId = baseNotificationId + 1;
-
     if (daysBefore != null && daysBefore > 0) {
       final DateTime notificationDate = gig.dateTime.subtract(Duration(days: daysBefore));
       final DateTime scheduledDate = DateTime(notificationDate.year, notificationDate.month, notificationDate.day, 9, 0);
-
       if (scheduledDate.isAfter(DateTime.now())) {
         await notificationService.scheduleNotification(
           id: daysBeforeNotificationId,
@@ -268,135 +214,69 @@ class _BookingDialogState extends State<BookingDialog> {
       await notificationService.cancelNotification(daysBeforeNotificationId);
     }
   }
-
   Future<void> _cancelGigNotifications(Gig gig) async {
     final notificationService = NotificationService();
     final int baseNotificationId = gig.id.hashCode;
-
-    // Cancel both potential notifications
-    await notificationService.cancelNotification(baseNotificationId);      // Day-of notification
-    await notificationService.cancelNotification(baseNotificationId + 1);  // Days-before notification
+    await notificationService.cancelNotification(baseNotificationId);
+    await notificationService.cancelNotification(baseNotificationId + 1);
   }
-
   Future<void> _loadProfileAddress() async {
     final prefs = await SharedPreferences.getInstance();
     _profileAddress1 = prefs.getString('profile_address1');
     _profileCity = prefs.getString('profile_city');
     _profileState = prefs.getString('profile_state');
     _profileZipCode = prefs.getString('profile_zip_code');
-
     if ((_profileCity != null && _profileCity!.isNotEmpty) || (_profileZipCode != null && _profileZipCode!.isNotEmpty)) {
       _userProfileAddressForDisplay = '${_profileCity ?? ''}, ${_profileState ?? ''} ${_profileZipCode ?? ''}'.trim();
     } else {
       _userProfileAddressForDisplay = null;
     }
   }
-
   Future<void> _initializeDialogState() async {
     await _loadProfileAddress();
     await _loadAllKnownVenuesInternal();
     if (!mounted) return;
-
     if (_isEditingMode) {
-      // --- (a) DEBUG PRINT: Print the incoming gig data ---
-      print("--- LOADING GIG INTO DIALOG ---");
-      print("Gig ID: ${widget.editingGig!.id}");
-      print("isRecurring: ${widget.editingGig!.isRecurring}");
-      print("Frequency: ${widget.editingGig!.recurrenceFrequency}");
-      print("Day: ${widget.editingGig!.recurrenceDay}");
-      print("Nth Value: ${widget.editingGig!.recurrenceNthValue}");
-      print("End Date: ${widget.editingGig!.recurrenceEndDate}");
-      print("---------------------------------");
-
-      _editableGig = widget.editingGig!.copyWith(
-        // Explicitly copy all fields to ensure a complete state object
-        id: widget.editingGig!.id,
-        venueName: widget.editingGig!.venueName,
-        latitude: widget.editingGig!.latitude,
-        longitude: widget.editingGig!.longitude,
-        address: widget.editingGig!.address,
-        placeId: widget.editingGig!.placeId,
-        dateTime: widget.editingGig!.dateTime,
-        pay: widget.editingGig!.pay,
-        gigLengthHours: widget.editingGig!.gigLengthHours,
-        driveSetupTimeHours: widget.editingGig!.driveSetupTimeHours,
-        rehearsalLengthHours: widget.editingGig!.rehearsalLengthHours,
-        isJamOpenMic: widget.editingGig!.isJamOpenMic,
-        notes: widget.editingGig!.notes,
-        notesUrl: widget.editingGig!.notesUrl,
-        isRecurring: widget.editingGig!.isRecurring,
-        recurrenceFrequency: widget.editingGig!.recurrenceFrequency,
-        recurrenceDay: widget.editingGig!.recurrenceDay,
-        recurrenceNthValue: widget.editingGig!.recurrenceNthValue,
-        recurrenceEndDate: widget.editingGig!.recurrenceEndDate,
-      );
-
+      _editableGig = widget.editingGig!.copyWith(id: widget.editingGig!.id, venueName: widget.editingGig!.venueName, latitude: widget.editingGig!.latitude, longitude: widget.editingGig!.longitude, address: widget.editingGig!.address, placeId: widget.editingGig!.placeId, dateTime: widget.editingGig!.dateTime, pay: widget.editingGig!.pay, gigLengthHours: widget.editingGig!.gigLengthHours, driveSetupTimeHours: widget.editingGig!.driveSetupTimeHours, rehearsalLengthHours: widget.editingGig!.rehearsalLengthHours, isJamOpenMic: widget.editingGig!.isJamOpenMic, notes: widget.editingGig!.notes, notesUrl: widget.editingGig!.notesUrl, isRecurring: widget.editingGig!.isRecurring, recurrenceFrequency: widget.editingGig!.recurrenceFrequency, recurrenceDay: widget.editingGig!.recurrenceDay, recurrenceNthValue: widget.editingGig!.recurrenceNthValue, recurrenceEndDate: widget.editingGig!.recurrenceEndDate);
       _payController = TextEditingController(text: _editableGig!.pay.toStringAsFixed(0));
-      _otherExpensesController = TextEditingController(text: (_editableGig!.otherExpenses ?? 0.0).toStringAsFixed(2)); // <<< ADD THIS LINE
+      _otherExpensesController = TextEditingController(text: (_editableGig!.otherExpenses ?? 0.0).toStringAsFixed(2));
       _gigLengthController = TextEditingController(text: _editableGig!.gigLengthHours.toStringAsFixed(1));
       _driveSetupController = TextEditingController(text: _editableGig!.driveSetupTimeHours.toStringAsFixed(1));
       _rehearsalController = TextEditingController(text: _editableGig!.rehearsalLengthHours.toStringAsFixed(1));
-
       _selectedDate = _editableGig!.dateTime;
       _selectedTime = TimeOfDay.fromDateTime(_editableGig!.dateTime);
-
-      _selectedVenue = _allKnownVenuesInternal.firstWhere(
-            (v) => (_editableGig!.placeId != null && v.placeId == _editableGig!.placeId) || (v.name == _editableGig!.venueName && v.address == _editableGig!.address),
-        orElse: () => StoredLocation( placeId: _editableGig!.placeId ?? 'edited_${_editableGig!.id}', name: _editableGig!.venueName, address: _editableGig!.address, coordinates: LatLng(_editableGig!.latitude, _editableGig!.longitude), isArchived: true),
-      );
+      _selectedVenue = _allKnownVenuesInternal.firstWhere((v) => (_editableGig!.placeId != null && v.placeId == _editableGig!.placeId) || (v.name == _editableGig!.venueName && v.address == _editableGig!.address), orElse: () => StoredLocation( placeId: _editableGig!.placeId ?? 'edited_${_editableGig!.id}', name: _editableGig!.venueName, address: _editableGig!.address, coordinates: LatLng(_editableGig!.latitude, _editableGig!.longitude), isArchived: true));
       _isAddNewVenue = false;
       _isLoadingVenues = false;
-
       await _handleVenueSelection(_selectedVenue);
-
       _payController.addListener(_calculateDynamicRate);
-      _otherExpensesController.addListener(_calculateDynamicRate); // <<< ADD THIS LINE
+      _otherExpensesController.addListener(_calculateDynamicRate);
       _gigLengthController.addListener(_calculateDynamicRate);
       _driveSetupController.addListener(_calculateDynamicRate);
       _rehearsalController.addListener(_calculateDynamicRate);
       _calculateDynamicRate();
-
     } else {
-
       _payController = TextEditingController(text: widget.totalPay?.toStringAsFixed(0) ?? '');
-      _otherExpensesController = TextEditingController(text: widget.otherExpenses?.toStringAsFixed(2) ?? ''); // <<< ADD THIS LINE
+      _otherExpensesController = TextEditingController(text: widget.otherExpenses?.toStringAsFixed(2) ?? '');
       _gigLengthController = TextEditingController(text: widget.gigLengthHours?.toStringAsFixed(1) ?? '');
       _driveSetupController = TextEditingController(text: widget.driveSetupTimeHours?.toStringAsFixed(1) ?? '');
       _rehearsalController = TextEditingController(text: widget.rehearsalTimeHours?.toStringAsFixed(1) ?? '');
-
-      _editableGig = Gig(
-        id: 'new_${DateTime.now().millisecondsSinceEpoch}',
-        venueName: widget.preselectedVenue?.name ?? '',
-        address: widget.preselectedVenue?.address ?? '',
-        latitude: widget.preselectedVenue?.coordinates.latitude ?? 0,
-        longitude: widget.preselectedVenue?.coordinates.longitude ?? 0,
-        dateTime: DateTime.now(), // Default, will be updated by picker
-        pay: widget.totalPay ?? 0,
-        otherExpenses: widget.otherExpenses ?? 0.0, // <<< ADD THIS LINE
-        gigLengthHours: widget.gigLengthHours ?? 0,
-        driveSetupTimeHours: widget.driveSetupTimeHours ?? 0,
-        rehearsalLengthHours: widget.rehearsalTimeHours ?? 0,
-      );
-
+      _editableGig = Gig(id: 'new_${DateTime.now().millisecondsSinceEpoch}', venueName: widget.preselectedVenue?.name ?? '', address: widget.preselectedVenue?.address ?? '', latitude: widget.preselectedVenue?.coordinates.latitude ?? 0, longitude: widget.preselectedVenue?.coordinates.longitude ?? 0, dateTime: DateTime.now(), pay: widget.totalPay ?? 0, otherExpenses: widget.otherExpenses ?? 0.0, gigLengthHours: widget.gigLengthHours ?? 0, driveSetupTimeHours: widget.driveSetupTimeHours ?? 0, rehearsalLengthHours: widget.rehearsalTimeHours ?? 0);
       _selectedTime = _defaultGigTime;
-
       if (_isMapModeNewGig) {
         _selectedVenue = widget.preselectedVenue;
         _isPrivateVenue = _selectedVenue?.isPrivate ?? false;
         _isAddNewVenue = false;
         _isLoadingVenues = false;
         await _handleVenueSelection(_selectedVenue);
-
         _payController.addListener(_calculateDynamicRate);
-        _otherExpensesController.addListener(_calculateDynamicRate); // <<< ADD THIS LINE
+        _otherExpensesController.addListener(_calculateDynamicRate);
         _gigLengthController.addListener(_calculateDynamicRate);
         _driveSetupController.addListener(_calculateDynamicRate);
         _rehearsalController.addListener(_calculateDynamicRate);
         _calculateDynamicRate();
       } else {
         await _loadSelectableVenuesForDropdown(defaultToAddVenue: true);
-
-        // Add Gig Mode: Also needs dynamic rate calculation
         if (_isAddGigMode) {
           _payController.addListener(_calculateDynamicRate);
           _gigLengthController.addListener(_calculateDynamicRate);
@@ -412,24 +292,14 @@ class _BookingDialogState extends State<BookingDialog> {
       });
     }
   }
-
   DriveTimeService _createDriveTimeService() {
-    return DriveTimeService(
-      googleApiKey: widget.googleApiKey,
-      allKnownVenues: _allKnownVenuesInternal,
-      address1: _profileAddress1,
-      city: _profileCity,
-      state: _profileState,
-      zipCode: _profileZipCode,
-    );
+    return DriveTimeService(googleApiKey: widget.googleApiKey, allKnownVenues: _allKnownVenuesInternal, address1: _profileAddress1, city: _profileCity, state: _profileState, zipCode: _profileZipCode);
   }
-
   Future<void> _handleVenueSelection(StoredLocation? venue) async {
     setState(() {
       _manualDriveDistance = null;
       _manualDriveDurationString = null;
     });
-
     if (venue == null || venue.placeId == _addNewVenuePlaceholder.placeId) {
       setState(() {
         _selectedVenue = venue;
@@ -442,17 +312,14 @@ class _BookingDialogState extends State<BookingDialog> {
       });
       return;
     }
-
     setState(() {
       _selectedVenue = venue;
       _isAddNewVenue = false;
     });
-
     if (venue.driveDuration == null) {
       setState(() => _isFetchingDriveTime = true);
       final driveTimeService = _createDriveTimeService();
       final updatedVenue = await driveTimeService.fetchAndCacheDriveTime(venue);
-
       if (mounted) {
         setState(() {
           if (updatedVenue != null) {
@@ -465,21 +332,13 @@ class _BookingDialogState extends State<BookingDialog> {
       }
     }
   }
-
   Future<void> _fetchDriveTimeForManualAddress() async {
     final address = _newVenueAddressController.text.trim();
     if (address.isEmpty) return;
     setState(() => _isFetchingDriveTime = true);
     LatLng? coords = await _geocodeAddress(address);
     if (coords != null && mounted) {
-      final tempVenue = StoredLocation(
-        name: 'temp',
-        address: address,
-        coordinates: coords,
-        placeId: 'temp_manual_place_id_${DateTime.now().millisecondsSinceEpoch}',
-        instrumentTags: [],
-        genreTags: [],
-      );
+      final tempVenue = StoredLocation(name: 'temp', address: address, coordinates: coords, placeId: 'temp_manual_place_id_${DateTime.now().millisecondsSinceEpoch}', instrumentTags: [], genreTags: []);
       final driveTimeService = _createDriveTimeService();
       final resultVenue = await driveTimeService.fetchAndCacheDriveTime(tempVenue);
       if (mounted) {
@@ -493,139 +352,27 @@ class _BookingDialogState extends State<BookingDialog> {
       setState(() => _isFetchingDriveTime = false);
     }
   }
-
   Future<void> _openRecurringGigSettings() async {
     if (_editableGig == null) return;
-
     Gig gigForDialog = _editableGig!;
     if (!_editableGig!.isRecurring) {
-      gigForDialog = _editableGig!.copyWith(
-        isRecurring: true, // Check the box by default
-        recurrenceFrequency: JamFrequencyType.weekly, // Default to weekly
-        recurrenceDay: DayOfWeek.values[_editableGig!.dateTime.weekday - 1],
-      );
+      gigForDialog = _editableGig!.copyWith(isRecurring: true, recurrenceFrequency: JamFrequencyType.weekly, recurrenceDay: DayOfWeek.values[_editableGig!.dateTime.weekday - 1]);
     }
-
-    final updatedGig = await showDialog<Gig>(
-      context: context,
-      builder: (context) => RecurringGigDialog(gig: gigForDialog),
-    );
-
+    final updatedGig = await showDialog<Gig>(context: context, builder: (context) => RecurringGigDialog(gig: gigForDialog));
     if (updatedGig != null && mounted) {
       setState(() {
-        _editableGig = updatedGig; // Update the state with changes from the dialog
+        _editableGig = updatedGig;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_editableGig!.isRecurring ? 'Recurrence settings applied.' : 'Recurrence settings removed.'),
-          duration: const Duration(seconds: 2),
-          backgroundColor: Theme.of(context).colorScheme.primary,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_editableGig!.isRecurring ? 'Recurrence settings applied.' : 'Recurrence settings removed.'), duration: const Duration(seconds: 2), backgroundColor: Theme.of(context).colorScheme.primary));
     }
   }
-
   void _confirmAction() async {
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-    // When on the final demo step, clicking this button just finishes the demo.
-    if (demoProvider.isDemoModeActive && demoProvider.currentStep == 11) {
-      print('🎬 DEMO: Starting final booking step (step 11)');
-      // ... demo logic remains the same
-      if (mounted) setState(() => _isProcessing = true);
-
-      // 1. Create the demo venue and gig objects using the static IDs from DemoProvider
-      print('🎬 DEMO: Creating demo venue and gig objects');
-      const LatLng demoCoords = LatLng(39.1602761, -84.429593);
-      final demoVenue = StoredLocation(
-        placeId: DemoProvider.demoVenuePlaceId,
-        name: 'Kroger Marketplace',
-        address: '4613 Marburg Ave, Cincinnati, OH 45209',
-        coordinates: demoCoords,
-        instrumentTags: [],
-        genreTags: [],
-      );
-
-      final demoGig = Gig(
-        id: DemoProvider.demoGigId,
-        venueName: demoVenue.name,
-        address: demoVenue.address,
-        placeId: demoVenue.placeId,
-        latitude: demoCoords.latitude,
-        longitude: demoCoords.longitude,
-        dateTime: DateTime.now().add(const Duration(days: 7)),
-        pay: 250,
-        gigLengthHours: 3,
-        driveSetupTimeHours: 2.5,
-        rehearsalLengthHours: 2,
-      );
-
-      // 2. Save them to SharedPreferences
-      print('🎬 DEMO: Saving demo venue and gig to SharedPreferences');
-      final prefs = await SharedPreferences.getInstance();
-
-      // Save Venue - RELOAD first to avoid overwriting existing venues
-      final List<String>? existingLocationsJson = prefs.getStringList('saved_locations');
-      List<StoredLocation> allVenues = [];
-      if (existingLocationsJson != null) {
-        allVenues = existingLocationsJson.map((jsonString) {
-          try { return StoredLocation.fromJson(jsonDecode(jsonString)); }
-          catch (e) { return null; }
-        }).whereType<StoredLocation>().toList();
-      }
-
-      print('🎬 DEMO: Loaded ${allVenues.length} existing venues before adding demo venue');
-
-      // Remove old demo venue if exists, then add new one
-      allVenues.removeWhere((v) => v.placeId == DemoProvider.demoVenuePlaceId);
-      allVenues.add(demoVenue);
-
-      final List<String> updatedLocationsJson = allVenues.map((loc) => jsonEncode(loc.toJson())).toList();
-      await prefs.setStringList('saved_locations', updatedLocationsJson);
-
-      print('🎬 DEMO: Saved ${allVenues.length} total venues (including demo venue)');
-
-      // Update internal list too
-      _allKnownVenuesInternal = List.from(allVenues);
-
-      // Save Gig
-      final String? gigsJsonString = prefs.getString('gigs_list');
-      List<Gig> allGigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
-      allGigs.removeWhere((g) => g.id == DemoProvider.demoGigId);
-      allGigs.add(demoGig);
-      await prefs.setString('gigs_list', Gig.encode(allGigs));
-
-      print('🎬 DEMO: Saved demo gig');
-
-      // 3. Notify the app that data has changed, so the map updates itself
-      print('🎬 DEMO: Calling globalRefreshNotifier.notify()');
-      if (mounted) globalRefreshNotifier.notify();
-
-      if (mounted) setState(() => _isProcessing = false);
-
-      // 4. Proceed with the rest of the demo flow
-      print('🎬 DEMO: Playing sound and waiting 2.5 seconds');
-      await _audioPlayer.play(AssetSource('sounds/thetone.wav'));
-      await Future.delayed(const Duration(milliseconds: 2500));
-      print('🎬 DEMO: Advancing from step 11 to step 12');
-      print('🎬 DEMO: Advancing from step 11 to step 12');
-      demoProvider.nextStep(); // Advance to step 12
-      print('🎬 DEMO: Checking if can pop dialog');
-      if (mounted && Navigator.canPop(context)) {
-        print('🎬 DEMO: Popping dialog with GigEditResult');
-        // Return GigEditResult for consistency (even though demo already saved it)
-        Navigator.of(context).pop(
-          GigEditResult(
-            action: GigEditResultAction.updated,
-            gig: demoGig,
-          ),
-        );
-      } else {
-        print('🎬 DEMO: ERROR - Cannot pop dialog! mounted=$mounted canPop=${mounted ? Navigator.canPop(context) : "N/A"}');
-      }
+    if (demoProvider.isDemoModeActive && widget.currentDemoStep == DemoStep.bookingFormAction) {
+      demoProvider.nextStep();
+      Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange));
       return;
     }
-
-
     if (!_formKey.currentState!.validate()) return;
     if (_selectedDate == null || _selectedTime == null) {
       if (mounted) {
@@ -634,15 +381,12 @@ class _BookingDialogState extends State<BookingDialog> {
       return;
     }
     if (mounted) setState(() => _isProcessing = true);
-
     final DateTime selectedFullDateTime = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _selectedTime!.hour, _selectedTime!.minute);
-
     final double finalPay = double.tryParse(_payController.text) ?? 0;
-    final double finalOtherExpenses = double.tryParse(_otherExpensesController.text) ?? 0; // <<< ADD THIS LINE
+    final double finalOtherExpenses = double.tryParse(_otherExpensesController.text) ?? 0;
     final double finalGigLengthHours = double.tryParse(_gigLengthController.text) ?? 0;
     final double finalDriveSetupHours = double.tryParse(_driveSetupController.text) ?? 0;
     final double finalRehearsalHours = double.tryParse(_rehearsalController.text) ?? 0;
-
     StoredLocation finalVenueDetails;
     if (_isAddNewVenue) {
       String newVenueName = _newVenueNameController.text.trim();
@@ -659,14 +403,7 @@ class _BookingDialogState extends State<BookingDialog> {
         if (mounted) setState(() => _isProcessing = false);
         return;
       }
-      finalVenueDetails = StoredLocation(
-        placeId: 'manual_${DateTime.now().millisecondsSinceEpoch}',
-        name: newVenueName,
-        address: newVenueAddress,
-        coordinates: coords,
-        isArchived: false,
-        isPrivate: _isPrivateVenue,
-      );
+      finalVenueDetails = StoredLocation(placeId: 'manual_${DateTime.now().millisecondsSinceEpoch}', name: newVenueName, address: newVenueAddress, coordinates: coords, isArchived: false, isPrivate: _isPrivateVenue);
       await _saveNewVenueToPrefs(finalVenueDetails);
     } else {
       if (_selectedVenue!.isPrivate != _isPrivateVenue) {
@@ -680,108 +417,41 @@ class _BookingDialogState extends State<BookingDialog> {
       setState(() => _isProcessing = false);
       return;
     }
-
-    final Gig newOrUpdatedGigData = _editableGig!.copyWith(
-      venueName: finalVenueDetails.name,
-      latitude: finalVenueDetails.coordinates.latitude,
-      longitude: finalVenueDetails.coordinates.longitude,
-      address: finalVenueDetails.address,
-      placeId: finalVenueDetails.placeId,
-      dateTime: selectedFullDateTime,
-      pay: finalPay,
-      otherExpenses: finalOtherExpenses, // <<< ADD THIS LINE
-      gigLengthHours: finalGigLengthHours,
-      driveSetupTimeHours: finalDriveSetupHours,
-      rehearsalLengthHours: finalRehearsalHours,
-      notes: _editableGig!.notes,
-      notesUrl: _editableGig!.notesUrl,
-      // EXPLICITLY CARRY OVER THE RECURRENCE SETTINGS
-      isRecurring: _editableGig!.isRecurring,
-      recurrenceFrequency: _editableGig!.recurrenceFrequency,
-      recurrenceDay: _editableGig!.recurrenceDay,
-      recurrenceNthValue: _editableGig!.recurrenceNthValue,
-      recurrenceEndDate: _editableGig!.recurrenceEndDate,
-    );
-    // --- (a) DEBUG PRINT: Print the outgoing gig data before saving ---
-    print("--- SAVING GIG FROM DIALOG ---");
-    print("Gig ID: ${newOrUpdatedGigData.id}");
-    print("isRecurring: ${newOrUpdatedGigData.isRecurring}");
-    print("Frequency: ${newOrUpdatedGigData.recurrenceFrequency}");
-    print("Day: ${newOrUpdatedGigData.recurrenceDay}");
-    print("Nth Value: ${newOrUpdatedGigData.recurrenceNthValue}");
-    print("End Date: ${newOrUpdatedGigData.recurrenceEndDate}");
-    print("--------------------------------");
-
+    final Gig newOrUpdatedGigData = _editableGig!.copyWith(venueName: finalVenueDetails.name, latitude: finalVenueDetails.coordinates.latitude, longitude: finalVenueDetails.coordinates.longitude, address: finalVenueDetails.address, placeId: finalVenueDetails.placeId, dateTime: selectedFullDateTime, pay: finalPay, otherExpenses: finalOtherExpenses, gigLengthHours: finalGigLengthHours, driveSetupTimeHours: finalDriveSetupHours, rehearsalLengthHours: finalRehearsalHours, notes: _editableGig!.notes, notesUrl: _editableGig!.notesUrl, isRecurring: _editableGig!.isRecurring, recurrenceFrequency: _editableGig!.recurrenceFrequency, recurrenceDay: _editableGig!.recurrenceDay, recurrenceNthValue: _editableGig!.recurrenceNthValue, recurrenceEndDate: _editableGig!.recurrenceEndDate);
     List<Gig> otherGigsToCheck = List.from(widget.existingGigs.where((g) => !g.isJamOpenMic));
     if (_isEditingMode) {
       otherGigsToCheck.removeWhere((g) => g.id == widget.editingGig!.id);
     }
     final conflictingGig = _checkForConflict(newOrUpdatedGigData.dateTime, newOrUpdatedGigData.gigLengthHours, otherGigsToCheck);
     if (conflictingGig != null) {
-      final bool? bookAnyway = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext dialogContext) => AlertDialog(
-          title: const Text('Scheduling Conflict'),
-          content: Text('This gig conflicts with "${conflictingGig.venueName}" on ${DateFormat.yMMMEd().format(conflictingGig.dateTime)}. ${_isEditingMode ? "Update" : "Book"} anyway?'),
-          actions: <Widget>[
-            TextButton(child: const Text('CANCEL'), onPressed: () => Navigator.of(dialogContext).pop(false)),
-            TextButton(child: Text('${_isEditingMode ? "UPDATE" : "BOOK"} ANYWAY'), onPressed: () => Navigator.of(dialogContext).pop(true)),
-          ],
-        ),
-      );
+      final bool? bookAnyway = await showDialog<bool>(context: context, builder: (BuildContext dialogContext) => AlertDialog(title: const Text('Scheduling Conflict'), content: Text('This gig conflicts with "${conflictingGig.venueName}" on ${DateFormat.yMMMEd().format(conflictingGig.dateTime)}. ${_isEditingMode ? "Update" : "Book"} anyway?'), actions: <Widget>[TextButton(child: const Text('CANCEL'), onPressed: () => Navigator.of(dialogContext).pop(false)), TextButton(child: Text('${_isEditingMode ? "UPDATE" : "BOOK"} ANYWAY'), onPressed: () => Navigator.of(dialogContext).pop(true))]));
       if (bookAnyway != true) {
         if (mounted) setState(() => _isProcessing = false);
         return;
       }
     }
-
     await _audioPlayer.play(AssetSource('sounds/thetone.wav'));
     await Future.delayed(const Duration(milliseconds: 2500));
-
-
     if (await _areNotificationsEnabled()) {
-      // 2. Wrap the call in a try-catch block for absolute safety.
       try {
-        // This now only runs if the user wants notifications.
         await _scheduleGigNotifications(newOrUpdatedGigData);
-        print("✅ Successfully scheduled notifications for gig ${newOrUpdatedGigData.id}");
       } catch (e) {
-        // If notifications fail for any reason, log the error but DO NOT stop the booking process.
         print("⚠️ Error scheduling notifications, but continuing with booking. Error: $e");
       }
     } else {
       print("🔕 Notifications are disabled by the user. Skipping scheduling.");
     }
-
     if (mounted) setState(() => _isProcessing = false);
-
-    print('📤 BookingDialog: Attempting to close dialog...');
-    print('   - mounted: $mounted');
-    print('   - canPop: ${Navigator.canPop(context)}');
-    print('   - _isEditingMode: $_isEditingMode');
-
-    // Always return GigEditResult for type consistency
     if (mounted && Navigator.canPop(context)) {
-      print('✅ BookingDialog: Popping with GigEditResult');
-      Navigator.of(context).pop(
-        GigEditResult(
-          action: GigEditResultAction.updated,
-          gig: newOrUpdatedGigData,
-        ),
-      );
-    } else {
-      print('❌ BookingDialog: Cannot pop! mounted=$mounted, canPop=${Navigator.canPop(context)}');
+      Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.updated, gig: newOrUpdatedGigData));
     }
   }
-
   Future<bool> _areNotificationsEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     final bool notifyOnDayOfGig = prefs.getBool('notify_on_day_of_gig') ?? false;
     final int? daysBefore = prefs.getInt('notify_days_before');
     return notifyOnDayOfGig || (daysBefore != null && daysBefore > 0);
   }
-
-  // ... (All other helper methods like _loadAllKnownVenuesInternal, _calculateDynamicRate, etc., remain the same)
   Future<void> _loadAllKnownVenuesInternal() async {
     final prefs = await SharedPreferences.getInstance();
     final List<String>? locationsJson = prefs.getStringList('saved_locations');
@@ -792,26 +462,20 @@ class _BookingDialogState extends State<BookingDialog> {
       }).whereType<StoredLocation>().toList();
     }
   }
-
   void _calculateDynamicRate() {
     if (!mounted || _isCalculatorMode) return;
     final double pay = double.tryParse(_payController.text) ?? 0;
-    final double otherExpenses = double.tryParse(_otherExpensesController.text) ?? 0; // <<< ADD THIS LINE
+    final double otherExpenses = double.tryParse(_otherExpensesController.text) ?? 0;
     final double gigTime = double.tryParse(_gigLengthController.text) ?? 0;
     final double driveSetupTime = double.tryParse(_driveSetupController.text) ?? 0;
     final double rehearsalTime = double.tryParse(_rehearsalController.text) ?? 0;
-    final double effectivePay = pay - otherExpenses; // Calculate the pay after expenses
+    final double effectivePay = pay - otherExpenses;
     final double totalHoursForRateCalc = gigTime + driveSetupTime + rehearsalTime;
-
     String newRateString = "";
     Color newColor = Colors.grey;
-
     if (totalHoursForRateCalc > 0 && pay > 0) {
-      // Use the effectivePay for the live calculation
       final double calculatedRate = effectivePay / totalHoursForRateCalc;
       newRateString = '\$${calculatedRate.toStringAsFixed(2)} / hr';
-
-      // Make the rate red if it's negative (expenses > pay)
       newColor = calculatedRate >= 0 ? Colors.green : Colors.red;
     } else if (pay > 0 && totalHoursForRateCalc <= 0) {
       newRateString = "Enter hours";
@@ -825,15 +489,12 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     if (mounted) setState(() { _dynamicRateString = newRateString; _dynamicRateResultColor = newColor; });
   }
-
   Future<void> _loadSelectableVenuesForDropdown({bool defaultToAddVenue = false}) async {
-    // Load venues for Calculator Mode OR Add Gig Mode
     if (!_isCalculatorMode && !_isAddGigMode) {
       if(mounted) setState(() => _isLoadingVenues = false );
       return;
     }
     if(mounted) setState(() { _isLoadingVenues = true; });
-
     try {
       List<StoredLocation> activeVenues = _allKnownVenuesInternal.where((v) => !v.isArchived).toList();
       _selectableVenuesForDropdown = [];
@@ -841,7 +502,6 @@ class _BookingDialogState extends State<BookingDialog> {
       _selectableVenuesForDropdown.removeWhere((v) => v.placeId == _addNewVenuePlaceholder.placeId);
       _selectableVenuesForDropdown.sort((a,b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       _selectableVenuesForDropdown.insert(0, _addNewVenuePlaceholder);
-
       StoredLocation? initialSelection;
       if (defaultToAddVenue) {
         initialSelection = _addNewVenuePlaceholder;
@@ -851,7 +511,6 @@ class _BookingDialogState extends State<BookingDialog> {
         _selectableVenuesForDropdown = [_addNewVenuePlaceholder];
         initialSelection = _selectableVenuesForDropdown.first;
       }
-
       await _handleVenueSelection(initialSelection);
       if(mounted) {
         setState(() {
@@ -871,7 +530,6 @@ class _BookingDialogState extends State<BookingDialog> {
       if (mounted) setState(() { _isLoadingVenues = false; });
     }
   }
-
   Future<void> _pickDate(BuildContext context) async {
     final DateTime initialDatePickerDate = _selectedDate ?? DateTime.now();
     final DateTime? picked = await showDatePicker(context: context, initialDate: initialDatePickerDate, firstDate: DateTime(DateTime.now().year - 5), lastDate: DateTime(DateTime.now().year + 5));
@@ -879,7 +537,6 @@ class _BookingDialogState extends State<BookingDialog> {
       if(mounted) setState(() { _selectedDate = picked; });
     }
   }
-
   Future<void> _pickTime(BuildContext context) async {
     final TimeOfDay initialPickerTime = _selectedTime ?? _defaultGigTime;
     final TimeOfDay? picked = await showTimePicker(context: context, initialTime: initialPickerTime);
@@ -887,7 +544,6 @@ class _BookingDialogState extends State<BookingDialog> {
       if(mounted) setState(() { _selectedTime = picked; });
     }
   }
-
   Future<LatLng?> _geocodeAddress(String address) async {
     if (widget.googleApiKey.isEmpty || widget.googleApiKey == "YOUR_GOOGLE_PLACES_API_KEY_HERE") {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Geocoding failed: API Key not configured.'), backgroundColor: Colors.red));
@@ -919,7 +575,6 @@ class _BookingDialogState extends State<BookingDialog> {
       if (mounted) setState(() => _isGeocoding = false);
     }
   }
-
   Future<void> _saveNewVenueToPrefs(StoredLocation venueToSave) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final StoredLocation venueWithCorrectArchiveStatus = venueToSave.copyWith(isArchived: venueToSave.placeId.startsWith('manual_') ? false : venueToSave.isArchived);
@@ -956,7 +611,6 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     if (widget.onNewVenuePotentiallyAdded != null) await widget.onNewVenuePotentiallyAdded!();
   }
-
   Gig? _checkForConflict(DateTime newGigStart, double newGigDurationHours, List<Gig> otherGigsToCheck) {
     final newGigEnd = newGigStart.add(Duration(milliseconds: (newGigDurationHours * 3600000).toInt()));
     for (var existingGig in otherGigsToCheck) {
@@ -969,71 +623,29 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     return null;
   }
-
   Future<void> _handleGigCancellation() async {
     if (!_isEditingMode || widget.editingGig == null) return;
-
     Gig gigToCancel = widget.editingGig!;
     bool isRecurringTemplate = gigToCancel.isRecurring;
     bool isFromRecurringSeries = gigToCancel.isFromRecurring;
-
-    // Show a special dialog for recurring gigs
     if (isRecurringTemplate || isFromRecurringSeries) {
-      final RecurringCancelChoice? choice = await showDialog<RecurringCancelChoice>(
-        context: context,
-        builder: (BuildContext dialogContext) {
-          return AlertDialog(
-            title: const Text('Cancel Recurring Gig'),
-            content: Text('This is part of a recurring series. What would you like to do with the gig at "${gigToCancel.venueName}" on ${DateFormat.yMMMEd().format(gigToCancel.dateTime)}?'),
-            actions: <Widget>[
-              TextButton(
-                child: const Text('CANCEL THIS EVENT ONLY'),
-                onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.thisInstanceOnly),
-              ),
-              TextButton(
-                child: Text('CANCEL ALL FUTURE EVENTS', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.allFutureInstances),
-              ),
-              const SizedBox(height: 10),
-              TextButton(
-                child: const Text('NEVERMIND'),
-                onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.doNothing),
-              ),
-            ],
-          );
-        },
-      );
-
+      final RecurringCancelChoice? choice = await showDialog<RecurringCancelChoice>(context: context, builder: (BuildContext dialogContext) {
+        return AlertDialog(title: const Text('Cancel Recurring Gig'), content: Text('This is part of a recurring series. What would you like to do with the gig at "${gigToCancel.venueName}" on ${DateFormat.yMMMEd().format(gigToCancel.dateTime)}?'), actions: <Widget>[TextButton(child: const Text('CANCEL THIS EVENT ONLY'), onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.thisInstanceOnly)), TextButton(child: Text('CANCEL ALL FUTURE EVENTS', style: TextStyle(color: Theme.of(context).colorScheme.error)), onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.allFutureInstances)), const SizedBox(height: 10), TextButton(child: const Text('NEVERMIND'), onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.doNothing))]);
+      });
       if (choice == null || choice == RecurringCancelChoice.doNothing) {
-        return; // User cancelled the action
+        return;
       }
-
       if (choice == RecurringCancelChoice.thisInstanceOnly) {
         await _cancelGigNotifications(gigToCancel);
       }
       if (mounted) setState(() => _isProcessing = true);
-      // Pass the choice and the gig to the parent page to handle the logic
       Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.deleted, gig: gigToCancel, cancelChoice: choice));
-      return; // Stop execution here
+      return;
     }
-
-
-    // --- This is the original logic for non-recurring gigs ---
     if(mounted) setState(() => _isProcessing = true);
-    final bool confirmCancel = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Gig Cancellation'),
-          content: Text('Are you sure you want to cancel the gig at "${widget.editingGig!.venueName}" on ${DateFormat.yMMMEd().format(widget.editingGig!.dateTime)}? This cannot be undone.'),
-          actions: <Widget>[
-            TextButton(child: const Text('NO, KEEP GIG'), onPressed: () => Navigator.of(dialogContext).pop(false)),
-            TextButton(child: Text('YES, CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)), onPressed: () => Navigator.of(dialogContext).pop(true)),
-          ],
-        );
-      },
-    ) ?? false;
+    final bool confirmCancel = await showDialog<bool>(context: context, barrierDismissible: false, builder: (BuildContext dialogContext) {
+      return AlertDialog(title: const Text('Confirm Gig Cancellation'), content: Text('Are you sure you want to cancel the gig at "${widget.editingGig!.venueName}" on ${DateFormat.yMMMEd().format(widget.editingGig!.dateTime)}? This cannot be undone.'), actions: <Widget>[TextButton(child: const Text('NO, KEEP GIG'), onPressed: () => Navigator.of(dialogContext).pop(false)), TextButton(child: Text('YES, CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)), onPressed: () => Navigator.of(dialogContext).pop(true))]);
+    }) ?? false;
     if (!mounted) return;
     setState(() => _isProcessing = false);
     if (confirmCancel) {
@@ -1042,55 +654,19 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  Widget _buildDemoOverlay(DemoProvider demoProvider) {
-    // This dialog handles steps 8, 9, 10, 11.
-    // The demo provider's step is 1-based, our script list is 0-based.
-    // We subtract 8 to map the global step to the local script index.
-    int currentStepIndex = demoProvider.currentStep - 8;
 
-    if (currentStepIndex < 0 || currentStepIndex >= _demoScript.length) {
-      return const SizedBox.shrink();
-    }
-
-    final step = _demoScript[currentStepIndex];
-
-    if (step.onBefore != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // Ensure state changes from onBefore happen after the build.
-        step.onBefore!();
-      });
-    }
-
-    return TutorialOverlay(
-      key: ValueKey('dialog_demo_step_${demoProvider.currentStep}'),
-      highlightKey: step.key,
-      instructionalText: step.text,
-      textAlignment: step.alignment,
-      hideNextButton: step.hideNextButton,
-      onNext: () {
-        // For step 11, the CONFIRM & BOOK button handles advancement
-        // The overlay onNext should never be called since hideNextButton=true
-        // But if it somehow gets called, just advance normally
-        demoProvider.nextStep();
-      },
-    );
-  }
-
+  // ... inside _BookingDialogState class ...
 
   @override
   Widget build(BuildContext context) {
     if (!_isInitialized) {
-      // If initialization is not complete, show a loading indicator
-      // inside a correctly-sized AlertDialog shell.
       return const AlertDialog(
         title: Text("Loading..."),
-        content: Center(
-          heightFactor: 2,
-          child: CircularProgressIndicator(),
-        ),
-      );
+        content: Center(heightFactor: 2, child: CircularProgressIndicator()),);
     }
 
+    // 🎯 WRAP the entire dialog in a Consumer to make it reactive to demo step changes.
+    // This is what makes the "Next" button work.
     return Consumer<DemoProvider>(
       builder: (context, demoProvider, child) {
         bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode) || _isFetchingDriveTime;
@@ -1104,7 +680,7 @@ class _BookingDialogState extends State<BookingDialog> {
           dialogTitle = "Book Gig at Selected Venue";
         }
 
-        return AlertDialog(
+        final dialogUI = AlertDialog(
           title: Text(dialogTitle),
           contentPadding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 0.0),
           content: Stack(
@@ -1115,86 +691,55 @@ class _BookingDialogState extends State<BookingDialog> {
                   child: ListBody(
                     children: <Widget>[
                       if (_isCalculatorMode)
-                        Container(
-                          key: _summaryKey,
-                          child: CalculatorSummaryView(
+                        CalculatorSummaryView(
                             totalPay: widget.totalPay,
                             gigLengthHours: widget.gigLengthHours,
                             driveSetupTimeHours: widget.driveSetupTimeHours,
                             rehearsalTimeHours: widget.rehearsalTimeHours,
-                            calculatedHourlyRate: widget.calculatedHourlyRate,
-                          ),
-                        )
-                      else ...[
+                            calculatedHourlyRate: widget.calculatedHourlyRate)
+                      else
                         FinancialInputsView(
+                          payKey: _payKey,
+                          gigLengthKey: _gigLengthKey,
+                          driveSetupKey: _driveSetupKey,
+                          rehearsalKey: _rehearsalKey,
+                          otherExpensesKey: _otherExpensesKey,
+                          rateDisplayKey: _rateDisplayKey, // Pass the key
                           payController: _payController,
-                          otherExpensesController: _otherExpensesController, // Pass the new controller
+                          otherExpensesController: _otherExpensesController,
                           gigLengthController: _gigLengthController,
                           driveSetupController: _driveSetupController,
                           rehearsalController: _rehearsalController,
+                          // 🎯 The `showDynamicRate` flag is what shows the rate text.
+                          // It's correctly set here, so the issue isn't this line.
+                          // The problem is the overlay hiding it, which we've already fixed.
                           showDynamicRate: _isMapModeNewGig || _isEditingMode || _isAddGigMode,
                           dynamicRateString: _dynamicRateString,
                           dynamicRateResultColor: _dynamicRateResultColor,
                         ),
-                        const Divider(height: 24, thickness: 1),
-                      ],
-                      Container(
-                        key: _venueSectionKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text( _isEditingMode ? "Venue & Schedule:" : (_isMapModeNewGig ? "Confirm Venue & Schedule:" : "Venue & Schedule:"), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      const Divider(height: 24, thickness: 1),
+                      // ... (Rest of the UI inside the ListBody remains the same)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text( _isEditingMode ? "Venue & Schedule:" : (_isMapModeNewGig ? "Confirm Venue & Schedule:" : "Venue & Schedule:"), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 12),
+                          VenueSelectionView(isStaticDisplay: _isEditingMode || _isMapModeNewGig, isLoading: _isLoadingVenues, selectedVenue: _selectedVenue, selectableVenues: _selectableVenuesForDropdown, addNewVenuePlaceholder: _addNewVenuePlaceholder, onVenueSelected: (venue) {
+                            _handleVenueSelection(venue);
+                          },
+                          ),
+                          if (_isAddNewVenue) ...[
+                            const SizedBox(height: 8),
+                            TextFormField(controller: _newVenueNameController, decoration: const InputDecoration(labelText: 'New Venue Name*', border: OutlineInputBorder()), validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue name is required'; } return null; }),
                             const SizedBox(height: 12),
-                            VenueSelectionView(
-                              isStaticDisplay: _isEditingMode || _isMapModeNewGig,
-                              isLoading: _isLoadingVenues,
-                              selectedVenue: _selectedVenue,
-                              selectableVenues: _selectableVenuesForDropdown,
-                              addNewVenuePlaceholder: _addNewVenuePlaceholder,
-                              onVenueSelected: (venue) {
-                                _handleVenueSelection(venue);
-                              },
-                            ),
-                            if (_isAddNewVenue) ...[
-                              const SizedBox(height: 8),
-                              TextFormField(
-                                controller: _newVenueNameController,
-                                decoration: const InputDecoration(labelText: 'New Venue Name*', border: OutlineInputBorder()),
-                                validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue name is required'; } return null; },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _newVenueAddressController,
-                                focusNode: _newVenueAddressFocusNode,
-                                decoration: const InputDecoration(labelText: 'New Venue Address*', hintText: 'e.g., 1600 Amphitheatre Pkwy, MV, CA', border: OutlineInputBorder()),
-                                onFieldSubmitted: (_) => _fetchDriveTimeForManualAddress(),
-                                validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue address is required'; } return null; },
-                              ),
-                              const SizedBox(height: 8),
-                              SwitchListTile(
-                                title: const Text('Private Venue'),
-                                subtitle: const Text('Never shared'),
-                                value: _isPrivateVenue,
-                                onChanged: (bool value) {
-                                  setState((){ _isPrivateVenue = value;
-                                  });
-                                },
-                                dense: true,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                              )
-                            ],
-                            DriveTimeDisplay(
-                              isFetching: _isFetchingDriveTime,
-                              duration: _isAddNewVenue ? _manualDriveDurationString : _selectedVenue?.driveDuration,
-                              distance: _isAddNewVenue ? _manualDriveDistance : _selectedVenue?.driveDistance,
-                              userProfileAddress: _userProfileAddressForDisplay,
-                            ),
+                            TextFormField(controller: _newVenueAddressController, focusNode: _newVenueAddressFocusNode, decoration: const InputDecoration(labelText: 'New Venue Address*', hintText: 'e.g., 1600 Amphitheatre Pkwy, MV, CA', border: OutlineInputBorder()), onFieldSubmitted: (_) => _fetchDriveTimeForManualAddress(), validator: (value) { if (_isAddNewVenue && (value == null || value.trim().isEmpty)) { return 'Venue address is required'; } return null; }),
+                            const SizedBox(height: 8),
+                            SwitchListTile(title: const Text('Private Venue'), subtitle: const Text('Never shared'), value: _isPrivateVenue, onChanged: (bool value) => setState(() => _isPrivateVenue = value), dense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 4))
                           ],
-                        ),
+                          DriveTimeDisplay(isFetching: _isFetchingDriveTime, duration: _isAddNewVenue ? _manualDriveDurationString : _selectedVenue?.driveDuration, distance: _isAddNewVenue ? _manualDriveDistance : _selectedVenue?.driveDistance, userProfileAddress: _userProfileAddressForDisplay),
+                        ],
                       ),
                       const SizedBox(height: 4),
-
-                      // --- 4. ADD THE BUTTON TO THE UI ---
                       if (_isEditingMode)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -1205,121 +750,54 @@ class _BookingDialogState extends State<BookingDialog> {
                               onPressed: _openRecurringGigSettings,
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: _editableGig?.isRecurring ?? false ? Theme.of(context).colorScheme.primary : null,
-                                side: BorderSide(
-                                  color: _editableGig?.isRecurring ?? false ? Theme.of(context).colorScheme.primary : Colors.grey,
-                                ),
+                                side: BorderSide(color: _editableGig?.isRecurring ?? false ? Theme.of(context).colorScheme.primary : Colors.grey),
                               ),
                             ),
                           ),
                         ),
-
-                      Container(
-                        key: _dateSectionKey,
-                        child: Row(
-                          children: [
-                            // Date Button
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 8.0),
-                                child: ElevatedButton.icon(
-                                  onPressed: isDialogProcessing ? null : () => _pickDate(context),
-                                  icon: const Icon(Icons.calendar_today, size: 18),
-                                  label: Text(
-                                    _selectedDate == null
-                                        ? 'Select Date'
-                                        : DateFormat('M/d/yy').format(_selectedDate!),
-                                    style: const TextStyle(fontSize: 15),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: _selectedDate == null
-                                        ? Colors.orange.shade700
-                                        : Colors.green.shade700,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                      Row(
+                        key: _dateButtonKey,
+                        children: [
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: ElevatedButton.icon(onPressed: isDialogProcessing ? null : () => _pickDate(context), icon: const Icon(Icons.calendar_today, size: 18), label: Text(_selectedDate == null ? 'Select Date' : DateFormat('M/d/yy').format(_selectedDate!), style: const TextStyle(fontSize: 15)), style: ElevatedButton.styleFrom(backgroundColor: _selectedDate == null ? Colors.orange.shade700 : Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)))),
                             ),
-                            // Time Button
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.only(left: 8.0),
-                                child: ElevatedButton.icon(
-                                  onPressed: isDialogProcessing ? null : () => _pickTime(context),
-                                  icon: const Icon(Icons.access_time, size: 18),
-                                  label: Text(
-                                    _selectedTime == null
-                                        ? 'Select Time'
-                                        : _selectedTime!.format(context),
-                                    style: const TextStyle(fontSize: 15),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: _selectedTime == null
-                                        ? Colors.orange.shade700
-                                        : Colors.green.shade700,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 8.0),
+                              child: ElevatedButton.icon(onPressed: isDialogProcessing ? null : () => _pickTime(context), icon: const Icon(Icons.access_time, size: 18), label: Text(_selectedTime == null ? 'Select Time' : _selectedTime!.format(context), style: const TextStyle(fontSize: 15)), style: ElevatedButton.styleFrom(backgroundColor: _selectedTime == null ? Colors.orange.shade700 : Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)))),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 10),
                     ],
                   ),
                 ),
               ),
-              if (isDialogProcessing) Positioned.fill( child: Container( color: Colors.black.withOpacity(0.3), child: const Center(child: CircularProgressIndicator()), ), ),
-              if (demoProvider.isDemoModeActive)
-                _buildDemoOverlay(demoProvider),
+              if (isDialogProcessing)
+                Positioned.fill(child: Container(color: Colors.black.withOpacity(0.3), child: const Center(child: CircularProgressIndicator()))),
             ],
           ),
           actionsAlignment: MainAxisAlignment.spaceBetween,
           actionsPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           actions: <Widget>[
             if (_isEditingMode)
-              TextButton(
-                onPressed: isDialogProcessing ? null : _handleGigCancellation,
-                child: Text('CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              )
+              TextButton(onPressed: isDialogProcessing ? null : _handleGigCancellation, child: Text('CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)))
             else
-              TextButton(
-                onPressed: isDialogProcessing ? null : () {
-                  print('🚫 Cancel button pressed');
-                  print('   - canPop: ${Navigator.canPop(context)}');
-                  if (Navigator.canPop(context)) {
-                    print('✅ Popping dialog (Cancel)');
-                    Navigator.of(context).pop();
-                  } else {
-                    print('❌ Cannot pop dialog!');
-                  }
-                },
-                child: const Text('CANCEL'),
-              ),
+              TextButton(onPressed: isDialogProcessing ? null : () { if (Navigator.canPop(context)) { Navigator.of(context).pop(); } }, child: const Text('CANCEL')),
             Row(
               key: _confirmBtnKey,
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (_isEditingMode)
-                  TextButton(
-                    onPressed: isDialogProcessing ? null : () {
-                      if (Navigator.canPop(context)) {
-                        Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange));
-                      }
-                    },
-                    child: const Text('CLOSE'),
-                  ),
+                  TextButton(onPressed: isDialogProcessing ? null : () { if (Navigator.canPop(context)) { Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange)); } }, child: const Text('CLOSE')),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom( backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary ),
+                  style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
+                  // The onPressed logic is simplified now. It just calls the main confirm action.
                   onPressed: isDialogProcessing ? null : _confirmAction,
                   child: isDialogProcessing ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))) : Text(confirmButtonText),
                 ),
@@ -1327,7 +805,34 @@ class _BookingDialogState extends State<BookingDialog> {
             ),
           ],
         );
+
+        if (!_showDemoOverlay) {
+          return dialogUI;
+        }
+
+        // The Stack now correctly passes the reactive demoProvider.currentStep
+        return Stack(
+          children: [
+            dialogUI,
+            BookingDemoOverlay(
+              // This now gets the live step from the consumer
+              demoStep: demoProvider.currentStep,
+              // This flag prevents the crash
+              isAddNewVenueMode: _isAddNewVenue,
+              driveSetupKey: _driveSetupKey,
+              rehearsalKey: _rehearsalKey,
+              payKey: _payKey,
+              lengthKey: _gigLengthKey,
+              otherExpensesKey: _otherExpensesKey,
+              rateDisplayKey: _rateDisplayKey,
+              dateKey: _dateButtonKey,
+              confirmKey: _confirmBtnKey,
+            ),
+          ],
+        );
       },
     );
   }
 }
+
+

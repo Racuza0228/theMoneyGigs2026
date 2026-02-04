@@ -17,7 +17,7 @@ import 'firebase_options.dart';
 import 'core/services/app_update_service.dart';
 import 'core/services/notification_service.dart';
 import 'features/app_demo/providers/demo_provider.dart';
-import 'features/app_demo/widgets/tutorial_overlay.dart';
+import 'features/app_demo/widgets/coaching_demo_flow.dart'; // NEW: Coaching flow
 import 'features/gigs/views/gig_calculator_page.dart';
 import 'features/map_venues/views/map.dart';
 import 'features/gigs/views/gigs.dart';
@@ -25,7 +25,6 @@ import 'features/profile/views/profile.dart';
 import 'core/widgets/page_background_wrapper.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'global_refresh_notifier.dart';
-import 'features/app_demo/widgets/animated_text.dart';
 import 'features/gigs/widgets/booking_dialog.dart'; // For Add Gig button
 import 'features/gigs/models/gig_model.dart'; // For existing gigs
 import 'features/gigs/services/gig_retrospective_service.dart';
@@ -80,24 +79,6 @@ Future<void> initializeNetworkServices() async {
 }
 // --- END OF GLOBAL SECTION ---
 
-class _GlobalDemoStep {
-  final GlobalKey? key;
-  final String text;
-  final Alignment alignment;
-  final Widget? customChild;
-  final String nextButtonText;
-  final bool hideSkipButton;
-
-  _GlobalDemoStep({
-    this.key,
-    this.text = '',
-    required this.alignment,
-    this.customChild,
-    this.nextButtonText = 'NEXT',
-    this.hideSkipButton = false,
-  });
-}
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -150,17 +131,13 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
   bool _isInitializingLocalServices = true;
-  bool _reviewAlreadyRequested = false;  // Prevent duplicate review requests
+  bool _showCoachingFlow = false; // NEW: Track coaching flow visibility
 
   final List<Widget?> _widgetInstances = List.generate(4, (_) => null);
 
   late List<String?> _pageBackgroundPaths;
   late List<Color?> _pageBackgroundColors;
   late List<double> _pageBackgroundOpacities;
-
-  final GlobalKey _venuesTabKey = GlobalKey();
-  final GlobalKey _myGigsTabKey = GlobalKey();
-  late final List<_GlobalDemoStep> _globalDemoScript;
 
   // Retrospective notification state
   Gig? _gigNeedingReview;
@@ -179,11 +156,30 @@ class _MainPageState extends State<MainPage> {
     Provider.of<GlobalRefreshNotifier>(context, listen: false).addListener(_onSettingsChanged);
     Provider.of<DemoProvider>(context, listen: false).addListener(_onDemoStateChanged);
 
-    _globalDemoScript = [
-      _GlobalDemoStep( key: _venuesTabKey, text: 'You can now see your booked gig on the Venues Map! Come back here after the demo and click on places to add them or book gigs right from the map!', alignment: Alignment.bottomCenter),
-      _GlobalDemoStep( key: _myGigsTabKey, text: 'On the My Gigs List, you can see your gig in the list of Upcoming gigs.', alignment: Alignment.bottomCenter),
-      _GlobalDemoStep( key: null, alignment: Alignment.center, nextButtonText: 'FINISH', hideSkipButton: true, customChild: const AnimatedText( text: "Hey, It's Cliff. Thank you! It's not just an app, it's a movement. I can't do this without your support. I want to do this with you. I need your feedback! I look forward to hearing from you! NOW GO BOOK THEM MONEY GIGS!", style: TextStyle( color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600, height: 1.5, shadows: [Shadow(blurRadius: 8, color: Colors.black)], ), ), ),
-    ];
+    // NEW: Check if we should show coaching flow on first launch
+    _checkFirstLaunch();
+  }
+
+  // NEW: Check if this is first launch and should show coaching
+  Future<void> _checkFirstLaunch() async {
+    print('🎬 Main: _checkFirstLaunch() called');
+    final prefs = await SharedPreferences.getInstance();
+    const bool forceDemoForTesting = true;
+
+    final hasSeenIntro = prefs.getBool(DemoProvider.hasSeenIntroKey) ?? false;
+    print('🎬 Main: hasSeenIntro = $hasSeenIntro, mounted = $mounted, Forcing Demo: $forceDemoForTesting');
+
+    if ((!hasSeenIntro || forceDemoForTesting) && mounted) {
+      print('🎬 Main: Launch condition met, starting coaching demo...');
+      final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+
+      // 🎯 THE FIX: Pass the 'force' parameter to the startDemo() call.
+      await demoProvider.startDemo(force: forceDemoForTesting);
+
+      print('🎬 Main: startDemo() call completed');
+    } else {
+      print('🎬 Main: Not starting demo (hasSeenIntro=$hasSeenIntro, mounted=$mounted)');
+    }
   }
 
   Future<void> _initializeAppServices() async {
@@ -203,13 +199,9 @@ class _MainPageState extends State<MainPage> {
       _checkForAppUpdate(),
     ]);
 
-    // This needs SharedPreferences, so it runs after _initializeSettings.
-    await _checkAndRunFirstTimeDemo();
+    // Check for retrospectives
+    await _checkForPendingRetrospectives();
 
-    // Check for gigs needing retrospectives (after demo check)
-    await _checkForGigRetrospectives();
-
-    // Once local services are ready, show the UI.
     if (mounted) {
       setState(() {
         _isInitializingLocalServices = false;
@@ -217,14 +209,7 @@ class _MainPageState extends State<MainPage> {
     }
   }
 
-  @override
-  void dispose() {
-    Provider.of<GlobalRefreshNotifier>(context, listen: false).removeListener(_onSettingsChanged);
-    Provider.of<DemoProvider>(context, listen: false).removeListener(_onDemoStateChanged);
-    super.dispose();
-  }
-
-  Future<void> _checkForGigRetrospectives() async {
+  Future<void> _checkForPendingRetrospectives() async {
     try {
       final gigNeedingReview = await GigRetrospectiveService.checkForRetrospectiveOnStartup();
       final allGigsNeedingReview = await GigRetrospectiveService.getGigsNeedingRetrospective();
@@ -248,17 +233,12 @@ class _MainPageState extends State<MainPage> {
 
     // Check if there are more gigs to review
     final gigsNeedingReview = await GigRetrospectiveService.getGigsNeedingRetrospective();
-
     if (gigsNeedingReview.isNotEmpty && mounted) {
-      // Show next gig after a delay
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) {
-        setState(() {
-          _gigNeedingReview = gigsNeedingReview.first;
-          _totalGigsNeedingReview = gigsNeedingReview.length;
-          _showRetrospectiveBanner = true;
-        });
-      }
+      setState(() {
+        _gigNeedingReview = gigsNeedingReview.first;
+        _totalGigsNeedingReview = gigsNeedingReview.length;
+        _showRetrospectiveBanner = true;
+      });
     }
   }
 
@@ -267,46 +247,6 @@ class _MainPageState extends State<MainPage> {
     globalRefreshNotifier.notify();
     _dismissRetrospectiveBanner();
   }
-
-  void _onDemoStateChanged() {
-    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-    print('🎬 Main: _onDemoStateChanged called. isDemoActive=${demoProvider.isDemoModeActive}, currentStep=${demoProvider.currentStep}');
-    if (!mounted) return;
-    if (demoProvider.isDemoModeActive) {
-      int targetIndex = -1;
-      if (demoProvider.currentStep == 1) { targetIndex = 0; }
-      else if (demoProvider.currentStep == 12) {
-        print('🎬 Main: Step 12 - switching to Venues tab (index 1)');
-        targetIndex = 1;
-      }
-      else if (demoProvider.currentStep == 13) {
-        print('🎬 Main: Step 13 - switching to My Gigs tab (index 2)');
-        targetIndex = 2;
-      }
-      else if (demoProvider.currentStep == 14) {
-        print('🎬 Main: Step 14 - staying on My Gigs tab (index 2)');
-        targetIndex = 2;
-      }
-
-      if (targetIndex != -1 && _selectedIndex != targetIndex) {
-        print('🎬 Main: Scheduling tab switch from $_selectedIndex to $targetIndex');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            print('🎬 Main: Executing tab switch to $targetIndex');
-            setState(() { _selectedIndex = targetIndex; });
-          }
-        });
-      } else {
-        print('🎬 Main: No tab switch needed (targetIndex=$targetIndex, current=$_selectedIndex)');
-        setState(() {});
-      }
-    } else {
-      print('🎬 Main: Demo not active, just calling setState');
-      setState(() {});
-    }
-  }
-
-  void _onSettingsChanged() => _initializeSettings();
 
   Future<void> _initializeSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -330,70 +270,87 @@ class _MainPageState extends State<MainPage> {
     }
   }
 
-  Future<void> _checkAndRunFirstTimeDemo() async {
-    final prefs = await SharedPreferences.getInstance();
-    final bool hasSeenIntro = prefs.getBool(DemoProvider.hasSeenIntroKey) ?? false;
-    if (!hasSeenIntro && mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _startDemo(isFirstTime: true);
+  void _onDemoStateChanged() {
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    print('🎬 Main: Demo state changed - Active: ${demoProvider.isDemoModeActive}, Step: ${demoProvider.currentStep}');
+
+    if (demoProvider.isDemoModeActive && demoProvider.currentStep == DemoStep.coachingIntro) {
+      setState(() {
+        _showCoachingFlow = true;
       });
+    } else if (_showCoachingFlow) {
+      setState(() {
+        _showCoachingFlow = false;
+      });
+    }
+
+    // NEW: Auto-navigate to appropriate tab based on demo step
+    if (demoProvider.isDemoModeActive) {
+      switch (demoProvider.currentStep) {
+        case DemoStep.mapVenueSearch:
+        case DemoStep.mapAddVenue:
+        case DemoStep.mapBookGig:
+        // Navigate to Venues tab (index 1)
+          if (_selectedIndex != 1) {
+            setState(() {
+              _selectedIndex = 1;
+            });
+          }
+          break;
+        case DemoStep.gigListView:
+        // Navigate to My Gigs tab (index 2)
+          if (_selectedIndex != 2) {
+            setState(() {
+              _selectedIndex = 2;
+            });
+          }
+          break;
+        case DemoStep.profileConnect:
+        // Navigate to Profile tab (index 3)
+          if (_selectedIndex != 3) {
+            setState(() {
+              _selectedIndex = 3;
+            });
+          }
+          break;
+        case DemoStep.none:
+        case DemoStep.complete:
+        case DemoStep.coachingIntro:
+        default:
+          break;
+      }
     }
   }
 
-  void _onItemTapped(int index) => setState(() { _selectedIndex = index; });
+  void _onSettingsChanged() => _initializeSettings();
 
-  /// Opens the booking dialog to add a new gig from scratch
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
   Future<void> _openAddGigDialog() async {
     try {
-      // Get existing gigs for conflict checking
       final prefs = await SharedPreferences.getInstance();
       final String? gigsJsonString = prefs.getString('gigs_list');
       List<Gig> existingGigs = [];
-
       if (gigsJsonString != null && gigsJsonString.isNotEmpty) {
-        final List<dynamic> gigsList = json.decode(gigsJsonString);
-        existingGigs = gigsList.map((gigJson) => Gig.fromJson(gigJson)).toList();
+        existingGigs = Gig.decode(gigsJsonString);
       }
 
-      // Get Google API key from environment
-      const String googleApiKey = String.fromEnvironment('GOOGLE_API_KEY', defaultValue: '');
+      const String googleApiKey = String.fromEnvironment('GOOGLE_API_KEY');
 
-      if (!mounted) return;
-
-      // Open the booking dialog with no pre-filled data
-      final result = await showDialog<GigEditResult>(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext context) {
-          return BookingDialog(
-            googleApiKey: googleApiKey,
-            existingGigs: existingGigs,
-            // All other parameters are null - user starts from scratch
-          );
-        },
-      );
-
-      // Save the gig if one was added
-      if (result != null && result.action == GigEditResultAction.updated && result.gig != null) {
-        print('💾 Saving new gig: ${result.gig!.id}');
-
-        // Add the new gig to the list
-        existingGigs.add(result.gig!);
-
-        // Save to SharedPreferences
-        await prefs.setString('gigs_list', Gig.encode(existingGigs));
-
-        print('✅ Gig saved successfully!');
-
-        // Refresh the app UI with a small delay to ensure all widgets are ready
-        if (mounted) {
-          // Small delay to ensure the frame is complete
-          await Future.delayed(const Duration(milliseconds: 100));
-          if (mounted) {
-            print('🔄 Notifying GlobalRefreshNotifier');
-            globalRefreshNotifier.notify();
-          }
-        }
+      if (mounted) {
+        await showDialog(
+          context: context,
+          builder: (context) {
+            return BookingDialog(
+              googleApiKey: googleApiKey,
+              existingGigs: existingGigs,
+            );
+          },
+        );
       }
     } catch (e) {
       print('Error opening Add Gig dialog: $e');
@@ -410,60 +367,6 @@ class _MainPageState extends State<MainPage> {
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar( const SnackBar(content: Text('Could not launch website')), );
     }
-  }
-
-  Future<void> _startDemo({bool isFirstTime = false}) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(DemoProvider.hasSeenIntroKey, true);
-    _reviewAlreadyRequested = false;  // Reset for new demo session
-    print('🎬 Main: Starting demo, review flag reset');
-    if (mounted) {
-      Provider.of<DemoProvider>(context, listen: false).startDemo();
-      if (_selectedIndex != 0) setState(() => _selectedIndex = 0);
-    }
-  }
-
-  Widget _buildGlobalDemoOverlay(DemoProvider demoProvider) {
-    int currentStepIndex = -1;
-    if (demoProvider.currentStep == 12) currentStepIndex = 0;
-    else if (demoProvider.currentStep == 13) currentStepIndex = 1;
-    else if (demoProvider.currentStep == 14) currentStepIndex = 2;
-
-    if (currentStepIndex < 0 || currentStepIndex >= _globalDemoScript.length) {
-      return const SizedBox.shrink();
-    }
-    final step = _globalDemoScript[currentStepIndex];
-    final bool shouldDimOverlay = demoProvider.currentStep == 14;
-    return TutorialOverlay(
-      key: ValueKey('global_demo_step_${demoProvider.currentStep}'),
-      highlightKey: step.key,
-      instructionalText: step.text,
-      customInstructionalChild: step.customChild,
-      textAlignment: step.alignment,
-      hideNextButton: false,
-      nextButtonText: step.nextButtonText,
-      showDimmedOverlay: shouldDimOverlay,
-      hideSkipButton: step.hideSkipButton,
-      onNext: () async {
-        if (demoProvider.currentStep == 14) {
-          // Only request review once per demo session
-          if (!_reviewAlreadyRequested) {
-            print('🎬 Main: Requesting in-app review at step 14');
-            _reviewAlreadyRequested = true;
-            final InAppReview inAppReview = InAppReview.instance;
-            if (await inAppReview.isAvailable()) {
-              inAppReview.requestReview();
-            }
-          } else {
-            print('🎬 Main: Review already requested, skipping duplicate');
-          }
-          await Future.delayed(const Duration(seconds: 1));
-          demoProvider.endDemo();
-        } else {
-          demoProvider.nextStep();
-        }
-      },
-    );
   }
 
   @override
@@ -488,6 +391,21 @@ class _MainPageState extends State<MainPage> {
 
     return Consumer<DemoProvider>(
       builder: (context, demoProvider, child) {
+        // NEW: If in coaching intro step, show full-screen coaching flow
+        if (_showCoachingFlow && demoProvider.currentStep == DemoStep.coachingIntro) {
+          return Scaffold(
+            backgroundColor: Colors.black,
+            body: CoachingDemoFlow(
+              onComplete: () {
+                print('🎬 Main: Coaching flow complete, advancing to map demo');
+                demoProvider.nextStep();
+                // Navigation will happen automatically via _onDemoStateChanged
+              },
+            ),
+          );
+        }
+
+        // Otherwise show normal app with demo overlays
         return Scaffold(
           extendBodyBehindAppBar: true,
           appBar: AppBar(
@@ -558,22 +476,16 @@ class _MainPageState extends State<MainPage> {
                       }),
                     ),
                   ),
-                  // GestureDetector(
-                  //   onTap: _launchThirdRockURL,
-                  //   child: Container( height: 70, padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0), decoration: BoxDecoration( color: Colors.grey[850], border: Border(top: BorderSide(color: Colors.grey.shade700, width: 1.0)), ), child: Row( children: <Widget>[ Image.asset('assets/third_rock_logo.png', height: 50.0, width: 50.0, fit: BoxFit.contain), const SizedBox(width: 12.0), Expanded( child: Column( mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[ Text('Third Rock Music Center', style: TextStyle( fontWeight: FontWeight.bold, fontSize: 15, color: Colors.orangeAccent.shade100)), Text('Your one-stop shop for musical gear!', style: TextStyle(fontSize: 12, color: Colors.grey[300])), ], ), ), Icon(Icons.open_in_new, color: Colors.orangeAccent.shade100, size: 20.0), ], ),
-                  //   ),
-                  // ),
                 ],
               ),
-              if (demoProvider.isDemoModeActive) _buildGlobalDemoOverlay(demoProvider),
             ],
           ),
           bottomNavigationBar: BottomNavigationBar(
-            items: <BottomNavigationBarItem>[
-              const BottomNavigationBarItem(icon: Icon(Icons.attach_money_rounded), label: 'Pay'),
-              BottomNavigationBarItem( icon: Container(key: _venuesTabKey, child: const Icon(Icons.map)), label: 'Venues'),
-              BottomNavigationBarItem( icon: Container(key: _myGigsTabKey, child: const Icon(Icons.list)), label: 'My Gigs'),
-              const BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+            items: const <BottomNavigationBarItem>[
+              BottomNavigationBarItem(icon: Icon(Icons.attach_money_rounded), label: 'Pay'),
+              BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Venues'),
+              BottomNavigationBarItem(icon: Icon(Icons.list), label: 'My Gigs'),
+              BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
             ],
             currentIndex: _selectedIndex,
             selectedItemColor: Theme.of(context).colorScheme.primary,

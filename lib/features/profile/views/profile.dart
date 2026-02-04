@@ -5,13 +5,15 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
 
+
+import '../../app_demo/providers/demo_provider.dart';
+import '../../app_demo/widgets/simple_demo_overlay.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:the_money_gigs/core/services/export_service.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
-
-import '../../app_demo/providers/demo_provider.dart';
 import 'widgets/address_display.dart';
 import 'widgets/address_form_fields.dart';
 import 'package:the_money_gigs/features/profile/views/widgets/connect_widget.dart';
@@ -33,6 +35,7 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
+  final GlobalKey _connectWidgetKey = GlobalKey();
   final _formKey = GlobalKey<FormState>();
   final _address1Controller = TextEditingController();
   final _address2Controller = TextEditingController();
@@ -68,7 +71,6 @@ class _ProfilePageState extends State<ProfilePage> {
     super.dispose();
   }
 
-  //<<< NEW: Method to show the notification settings dialog
   void _showNotificationSettings() {
     showDialog(
       context: context,
@@ -350,214 +352,292 @@ class _ProfilePageState extends State<ProfilePage> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final formBackgroundColor = Colors.black.withAlpha(128);
+    // <<< 3. USE CONSUMER TO LISTEN FOR DEMO STEP CHANGES
+    return Consumer<DemoProvider>(
+      builder: (context, demoProvider, child) {
+        final isDemoStep = demoProvider.isDemoModeActive &&
+            demoProvider.currentStep == DemoStep.profileConnect;
 
-    bool hasAddressData = _address1Controller.text.isNotEmpty ||
-        _address2Controller.text.isNotEmpty ||
-        _cityController.text.isNotEmpty ||
-        _selectedState != null ||
-        _zipCodeController.text.isNotEmpty;
+        return Stack(
+          children: [
+            // Your existing page content
+            child!,
 
-    bool hasRateData = _minHourlyRateController.text.isNotEmpty;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-      child: Container(
-        padding: const EdgeInsets.all(20.0),
-        decoration: BoxDecoration(
-          color: formBackgroundColor,
-          borderRadius: BorderRadius.circular(16.0),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(100),
-              spreadRadius: 2,
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
+            // Conditionally display the overlay on top
+            if (isDemoStep)
+              SimpleDemoOverlay(
+                title: 'Connect to the Community',
+                message:
+                'Connecting requires an invitation code, and for just \$2/mo you gain access to the public venue repository where you can see all the venues that have been added, rated and commented on by other musicians. New features, including the ability to find other musicians will be added soon.',
+                highlightKeys: [_connectWidgetKey],
+                showNextButton: false,
+                blockInteraction: true, // Prevents accidental taps
+              ),
           ],
-        ),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              // <<< NEW: Notifications button
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: _showNotificationSettings,
-                  icon: const Icon(Icons.notifications_outlined),
-                  label: const Text('Notifications'),
-                  style: TextButton.styleFrom(
-                      foregroundColor: Colors.orangeAccent.shade100),
-                ),
+        );
+      },
+      // The child is the part of the UI that doesn't rebuild when the provider changes.
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+        child: Container(
+          padding: const EdgeInsets.all(20.0),
+          decoration: BoxDecoration(
+            color: Colors.black.withAlpha(128),
+            borderRadius: BorderRadius.circular(16.0),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withAlpha(100),
+                spreadRadius: 2,
+                blurRadius: 8,
+                offset: const Offset(0, 4),
               ),
-
-              // <<< NEW: Connect to Network widget
-              const ConnectWidget(),
-
-              // <<< START: INSERTED MUSICIAN PROFILE SECTION >>>
-              _buildSectionTitle(
-                'Musician Profile',
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8.0),
-                child: TagsWidget(),
-              ),
-              // <<< END: INSERTED MUSICIAN PROFILE SECTION >>>
-
-              // Background Settings section
-              _buildSectionTitle(
-                'Background Settings',
-                showSettingsIcon: true,
-              ),
-              Divider(color: Colors.grey.shade700, height: 1),
-
-              // Your Address section
-              _buildSectionTitle(
-                'Your Address',
-                showEditIcon: !_isEditingAddress && hasAddressData,
-                onEditPressed: () => setState(() => _isEditingAddress = true),
-                tooltip: 'Edit Address',
-              ),
-              if (_isEditingAddress)
-                AddressFormFields(
-                  address1Controller: _address1Controller,
-                  address2Controller: _address2Controller,
-                  cityController: _cityController,
-                  zipCodeController: _zipCodeController,
-                  selectedState: _selectedState,
-                  usStates: _usStates,
-                  onStateChanged: (newValue) => setState(() => _selectedState = newValue),
-                  formInputDecoration: ({required String labelText, String? hintText, IconData? icon, String? prefixText}) =>
-                      _formInputDecoration(labelText: labelText, hintText: hintText, icon: icon),
-                )
-              else
-                AddressDisplay(
-                  address1: _address1Controller.text,
-                  address2: _address2Controller.text,
-                  city: _cityController.text,
-                  state: _selectedState,
-                  zip: _zipCodeController.text,
-                ),
-
-              // Work Preferences section
-              _buildSectionTitle(
-                'Work Preferences',
-                showEditIcon: !_isEditingRate && hasRateData,
-                onEditPressed: () => setState(() => _isEditingRate = true),
-                tooltip: 'Edit Minimum Rate',
-              ),
-              if (_isEditingRate)
-                RateFormField(
-                  minHourlyRateController: _minHourlyRateController,
-                  formInputDecoration: _formInputDecoration,
-                )
-              else
-                RateDisplay(rate: _minHourlyRateController.text),
-              const SizedBox(height: 32.0),
-
-              // Save Changes button
-              ElevatedButton(
-                onPressed: (_isEditingAddress || _isEditingRate) && !_isExporting ? _saveProfile : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-                  minimumSize: const Size(double.infinity, 50),
-                ).copyWith(
-                  backgroundColor: WidgetStateProperty.resolveWith<Color?>(
-                        (Set<WidgetState> states) {
-                      if (states.contains(WidgetState.disabled)) return Colors.grey.shade700;
-                      return Theme.of(context).colorScheme.primary;
-                    },
+            ],
+          ),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _showNotificationSettings,
+                    icon: const Icon(Icons.notifications_outlined),
+                    label: const Text('Notifications'),
+                    style: TextButton.styleFrom(
+                        foregroundColor: Colors.orangeAccent.shade100),
                   ),
                 ),
-                child: Text((_isEditingAddress || _isEditingRate) ? 'Save Changes' : 'Profile Saved'),
-              ),
-              const SizedBox(height: 20.0),
 
-              // Support section
-              Divider(color: Colors.grey.shade700, height: 40),
-              Text(
-                "Support",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.orangeAccent.shade200, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10.0),
+                // <<< 4. ATTACH THE KEY TO THE WIDGET
+                Container(
+                  key: _connectWidgetKey,
+                  child: const ConnectWidget(),
+                ),
 
-              // TEST BUTTONS (only visible in debug mode)
-              if (kDebugMode) ...[
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.login),
-                  label: const Text('Test Google Sign-In'),
-                  onPressed: () async {
-                    final authService = AuthService();
+                // ... The rest of your form and widgets
+                _buildSectionTitle(
+                  'Musician Profile',
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8.0),
+                  child: TagsWidget(),
+                ),
+                // ... (rest of the file is unchanged)
+                _buildSectionTitle(
+                  'Background Settings',
+                  showSettingsIcon: true,
+                ),
+                Divider(color: Colors.grey.shade700, height: 1),
 
-                    // Show loading
-                    if (!mounted) return;
-                    showDialog(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (context) => const Center(child: CircularProgressIndicator()),
-                    );
+                Builder(builder: (context) {
+                  bool hasAddressData = _address1Controller.text.isNotEmpty ||
+                      _address2Controller.text.isNotEmpty ||
+                      _cityController.text.isNotEmpty ||
+                      _selectedState != null ||
+                      _zipCodeController.text.isNotEmpty;
+                  return _buildSectionTitle(
+                    'Your Address',
+                    showEditIcon: !_isEditingAddress && hasAddressData,
+                    onEditPressed: () => setState(() => _isEditingAddress = true),
+                    tooltip: 'Edit Address',
+                  );
+                }),
+                if (_isEditingAddress)
+                  AddressFormFields(
+                    address1Controller: _address1Controller,
+                    address2Controller: _address2Controller,
+                    cityController: _cityController,
+                    zipCodeController: _zipCodeController,
+                    selectedState: _selectedState,
+                    usStates: _usStates,
+                    onStateChanged: (newValue) => setState(() => _selectedState = newValue),
+                    formInputDecoration: ({required String labelText, String? hintText, IconData? icon, String? prefixText}) =>
+                        _formInputDecoration(labelText: labelText, hintText: hintText, icon: icon, prefixText: prefixText),
+                  )
+                else
+                  AddressDisplay(
+                    address1: _address1Controller.text,
+                    address2: _address2Controller.text,
+                    city: _cityController.text,
+                    state: _selectedState,
+                    zip: _zipCodeController.text,
+                  ),
 
-                    final result = await authService.signInWithGoogle();
+                Builder(builder: (context) {
+                  bool hasRateData = _minHourlyRateController.text.isNotEmpty;
+                  return _buildSectionTitle(
+                    'Work Preferences',
+                    showEditIcon: !_isEditingRate && hasRateData,
+                    onEditPressed: () => setState(() => _isEditingRate = true),
+                    tooltip: 'Edit Minimum Rate',
+                  );
+                }),
+                if (_isEditingRate)
+                  RateFormField(
+                    minHourlyRateController: _minHourlyRateController,
+                    formInputDecoration: _formInputDecoration,
+                  )
+                else
+                  RateDisplay(rate: _minHourlyRateController.text),
+                const SizedBox(height: 32.0),
 
-                    // Close loading
-                    if (!mounted) return;
-                    Navigator.pop(context);
-
-                    // Show result
-                    if (result != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('✅ Signed in as: ${result.user?.email}\nUser ID: ${result.user?.uid}'),
-                          backgroundColor: Colors.green,
-                          duration: const Duration(seconds: 5),
-                        ),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('❌ Sign-in failed or cancelled'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                  },
+                // Save Changes button
+                ElevatedButton(
+                  onPressed: (_isEditingAddress || _isEditingRate) && !_isExporting ? _saveProfile : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12.0),
-                    textStyle: const TextStyle(fontSize: 15),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                    textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+                    minimumSize: const Size(double.infinity, 50),
+                  ).copyWith(
+                    backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+                          (Set<WidgetState> states) {
+                        if (states.contains(WidgetState.disabled)) return Colors.grey.shade700;
+                        return Theme.of(context).colorScheme.primary;
+                      },
+                    ),
                   ),
+                  child: Text((_isEditingAddress || _isEditingRate) ? 'Save Changes' : 'Profile Saved'),
+                ),
+                const SizedBox(height: 20.0),
+
+                // Support section
+                Divider(color: Colors.grey.shade700, height: 40),
+                Text(
+                  "Support",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.orangeAccent.shade200, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10.0),
-                // TESTING: Reset Network State
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('🧪 Reset Network State'),
-                  onPressed: () async {
-                    final authService = AuthService();
-                    final prefs = await SharedPreferences.getInstance();
 
-                    // Confirm reset
+                // TEST BUTTONS (only visible in debug mode)
+                if (kDebugMode) ...[
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.login),
+                    label: const Text('Test Google Sign-In'),
+                    onPressed: () async {
+                      final authService = AuthService();
+
+                      // Show loading
+                      if (!mounted) return;
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) => const Center(child: CircularProgressIndicator()),
+                      );
+
+                      final result = await authService.signInWithGoogle();
+
+                      // Close loading
+                      if (!mounted) return;
+                      Navigator.pop(context);
+
+                      // Show result
+                      if (result != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('✅ Signed in as: ${result.user?.email}\nUser ID: ${result.user?.uid}'),
+                            backgroundColor: Colors.green,
+                            duration: const Duration(seconds: 5),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('❌ Sign-in failed or cancelled'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12.0),
+                      textStyle: const TextStyle(fontSize: 15),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                    ),
+                  ),
+                  const SizedBox(height: 10.0),
+                  // TESTING: Reset Network State
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('🧪 Reset Network State'),
+                    onPressed: () async {
+                      final authService = AuthService();
+                      final prefs = await SharedPreferences.getInstance();
+
+                      // Confirm reset
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Reset Network State'),
+                          content: const Text(
+                              'This will:\n'
+                                  '• Delete your networkMember record in Firestore\n'
+                                  '• Clear local network settings\n'
+                                  '• Keep you signed in to Google\n\n'
+                                  'Use this to test the invite code flow again.'
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                              child: const Text('Reset'),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirm != true) return;
+
+                      // Delete from Firestore
+                      final userId = authService.currentUserId;
+                      await FirebaseFirestore.instance
+                          .collection('networkMembers')
+                          .doc(userId)
+                          .delete();
+
+                      // Clear local state
+                      await prefs.setBool('is_connected_to_network', false);
+                      await prefs.remove('network_invite_code');
+
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('✅ Network state reset! You can test invite codes again.'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12.0),
+                      textStyle: const TextStyle(fontSize: 15),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                    ),
+                  ),
+                ], // End of debug-only buttons
+
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Sign Out'),
+                  onPressed: () async {
+                    // Confirm sign out
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (context) => AlertDialog(
-                        title: const Text('Reset Network State'),
-                        content: const Text(
-                            'This will:\n'
-                                '• Delete your networkMember record in Firestore\n'
-                                '• Clear local network settings\n'
-                                '• Keep you signed in to Google\n\n'
-                                'Use this to test the invite code flow again.'
-                        ),
+                        title: const Text('Sign Out'),
+                        content: const Text('Are you sure you want to sign out?'),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context, false),
@@ -566,7 +646,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           ElevatedButton(
                             onPressed: () => Navigator.pop(context, true),
                             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                            child: const Text('Reset'),
+                            child: const Text('Sign Out'),
                           ),
                         ],
                       ),
@@ -574,149 +654,97 @@ class _ProfilePageState extends State<ProfilePage> {
 
                     if (confirm != true) return;
 
-                    // Delete from Firestore
-                    final userId = authService.currentUserId;
-                    await FirebaseFirestore.instance
-                        .collection('networkMembers')
-                        .doc(userId)
-                        .delete();
+                    // Sign out from Google/Firebase
+                    final authService = AuthService();
+                    await authService.signOut();
 
-                    // Clear local state
+                    // Clear network connection state
+                    final prefs = await SharedPreferences.getInstance();
                     await prefs.setBool('is_connected_to_network', false);
                     await prefs.remove('network_invite_code');
 
+                    // Show confirmation
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('✅ Network state reset! You can test invite codes again.'),
+                        content: Text('✅ Signed out successfully'),
                         backgroundColor: Colors.green,
                       ),
                     );
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange.shade700,
+                    backgroundColor: Colors.red.shade700,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12.0),
                     textStyle: const TextStyle(fontSize: 15),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
                   ),
                 ),
-              ], // End of debug-only buttons
-
-              ElevatedButton.icon(
-                icon: const Icon(Icons.logout),
-                label: const Text('Sign Out'),
-                onPressed: () async {
-                  // Confirm sign out
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Sign Out'),
-                      content: const Text('Are you sure you want to sign out?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel'),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                          child: const Text('Sign Out'),
-                        ),
-                      ],
-                    ),
-                  );
-
-                  if (confirm != true) return;
-
-                  // Sign out from Google/Firebase
-                  final authService = AuthService();
-                  await authService.signOut();
-
-                  // Clear network connection state
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setBool('is_connected_to_network', false);
-                  await prefs.remove('network_invite_code');
-
-                  // Show confirmation
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('✅ Signed out successfully'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12.0),
-                  textStyle: const TextStyle(fontSize: 15),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                const SizedBox(height: 12.0),
+                ElevatedButton.icon(
+                  icon: _isExporting
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.feedback_outlined),
+                  label: const Text('Send Feedback Email'),
+                  onPressed: _isExporting ? null : _sendFeedbackEmail,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    textStyle: const TextStyle(fontSize: 15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12.0),
-              ElevatedButton.icon(
-                icon: _isExporting
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.feedback_outlined),
-                label: const Text('Send Feedback Email'),
-                onPressed: _isExporting ? null : _sendFeedbackEmail,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12.0),
-                  textStyle: const TextStyle(fontSize: 15),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    "This helps the developer understand how the app is being used during testing.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Text(
-                  "This helps the developer understand how the app is being used during testing.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.replay_outlined),
+                  label: const Text('Replay App Demo'),
+                  onPressed: () {
+                    // 🎯 USE force: true to ensure it starts from the coaching intro
+                    context.read<DemoProvider>().startDemo(force: true);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Starting demo from the beginning...'),
+                        backgroundColor: Colors.blueAccent,
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueGrey.shade600,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    textStyle: const TextStyle(fontSize: 15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.replay_outlined),
-                label: const Text('Replay App Demo'),
-                onPressed: () {
-                  context.read<DemoProvider>().startDemo();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Starting demo now...'),
-                      backgroundColor: Colors.blueAccent,
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueGrey.shade600,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12.0),
-                  textStyle: const TextStyle(fontSize: 15),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () {
+                    context.read<DemoProvider>().resetDemoFlagForTesting();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Demo flag reset. The demo will run on the next app restart.'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    '',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () {
-                  context.read<DemoProvider>().resetDemoFlagForTesting();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Demo flag reset. The demo will run on the next app restart.'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                },
-                child: const Text(
-                  '',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ),
-              const SizedBox(height: 20.0),
-            ],
+                const SizedBox(height: 20.0),
+              ],
+            ),
           ),
         ),
       ),

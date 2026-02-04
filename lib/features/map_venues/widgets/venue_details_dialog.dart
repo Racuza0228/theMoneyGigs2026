@@ -2,14 +2,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:the_money_gigs/core/services/auth_service.dart';
+import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
+import 'package:the_money_gigs/features/app_demo/widgets/simple_demo_overlay.dart';
+import 'package:the_money_gigs/features/app_demo/widgets/venue_details_demo_overlay.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
+import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_tags_widget.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:the_money_gigs/core/services/auth_service.dart';
 
 class VenueDetailsDialog extends StatefulWidget {
   final StoredLocation venue;
@@ -20,6 +24,7 @@ class VenueDetailsDialog extends StatefulWidget {
   final VoidCallback onEditContact;
   final VoidCallback onEditJamSettings;
   final VoidCallback? onDataChanged;
+  final DemoStep? currentDemoStep;
 
   const VenueDetailsDialog({
     super.key,
@@ -31,6 +36,7 @@ class VenueDetailsDialog extends StatefulWidget {
     required this.onEditContact,
     required this.onEditJamSettings,
     this.onDataChanged,
+    this.currentDemoStep,
   });
 
   @override
@@ -38,51 +44,93 @@ class VenueDetailsDialog extends StatefulWidget {
 }
 
 class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
-  // State for editable fields
+  // State variables remain the same
   late double _currentRating;
   late final TextEditingController _commentController;
   late bool _isPrivateVenue;
   late List<String> _instrumentTags;
   late List<String> _genreTags;
-
-  // Repository and connection state
   final _venueRepository = VenueRepository();
   bool _isConnected = false;
   static const String _isConnectedKey = 'is_connected_to_network';
-
-  // State for average rating and comments
   List<Map<String, dynamic>> _recentComments = [];
   bool _loadingComments = true;
   int _currentCommentIndex = 0;
 
+  // Keys for highlighting
+  final GlobalKey _bookButtonKey = GlobalKey();
+  final GlobalKey _nextGigKey = GlobalKey();
+  final GlobalKey _saveCloseKey = GlobalKey();
+
+  // This is our handle to the overlay entry so we can remove it later
+  OverlayEntry? _overlayEntry;
+
   @override
   void initState() {
     super.initState();
-    // Non-async setup remains here
     _currentRating = widget.venue.rating;
     _commentController = TextEditingController(text: widget.venue.comment);
     _isPrivateVenue = widget.venue.isPrivate;
     _instrumentTags = List.from(widget.venue.instrumentTags);
     _genreTags = List.from(widget.venue.genreTags);
-
-    // <<< 1. CALL THE NEW INITIALIZER METHOD >>>
     _initializeDialog();
+
+    // We now use the post frame callback to MANUALLY INSERT the overlay
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+      final currentStep = demoProvider.currentStep;
+
+      if (currentStep == DemoStep.mapBookGig) {
+        _showOverlayForBook();
+      } else if (currentStep == DemoStep.venueDetailsConfirmation) {
+        _showOverlayForConfirmation();
+      }
+    });
   }
 
-  Future<void> _initializeDialog() async {
-    // First, await the connection status. This is the crucial change.
-    await _checkConnectionStatus();
+  @override
+  void dispose() {
+    // IMPORTANT: Clean up the overlay when the dialog is disposed
+    _removeOverlay();
+    _commentController.dispose();
+    super.dispose();
+  }
 
-    // Now that _checkConnectionStatus has completed and _isConnected is correctly set,
-    // we can safely call the methods that depend on it.
-    // The internal guards in these methods will now work as expected.
+  // New helper methods to show and hide the overlay
+  void _showOverlayForBook() {
+    _overlayEntry = OverlayEntry(
+      builder: (context) => VenueDetailsDemoOverlay(bookButtonKey: _bookButtonKey),
+    );
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  void _showOverlayForConfirmation() {
+    _overlayEntry = OverlayEntry(
+      builder: (context) => SimpleDemoOverlay(
+        title: "Gig Booked!",
+        message: "Here you can see you now have a gig coming up at this venue. Let's click Save.",
+        highlightKeys: [_nextGigKey, _saveCloseKey],
+        showNextButton: false,
+      ),
+    );
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  // All other helper methods (_initializeDialog, etc.)
+  Future<void> _initializeDialog() async {
+    await _checkConnectionStatus();
     if (mounted) {
       _loadRecentComments();
       _loadUserRating();
     }
   }
-
-
 
   Future<void> _checkConnectionStatus() async {
     final prefs = await SharedPreferences.getInstance();
@@ -94,31 +142,20 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   }
 
   Future<void> _loadUserRating() async {
-    // In standalone mode, skip Firebase operations
     if (!widget.venue.isPublic || !_isConnected) {
-      print('ℹ️ Skipping Firebase rating load (standalone mode or not connected).');
       return;
     }
-
     try {
       final authService = AuthService();
       final userId = authService.isSignedIn ? authService.currentUserId : 'anonymous';
       final docId = '${widget.venue.placeId}_$userId';
-
-      final doc = await FirebaseFirestore.instance
-          .collection('venueRatings')
-          .doc(docId)
-          .get();
-
+      final doc = await FirebaseFirestore.instance.collection('venueRatings').doc(docId).get();
       if (doc.exists && mounted) {
         final data = doc.data()!;
         setState(() {
           _currentRating = (data['rating'] as num).toDouble();
           _commentController.text = data['comment'] as String? ?? '';
         });
-        print('✅ Loaded user rating from Firebase: $_currentRating');
-      } else {
-        print('ℹ️ No existing rating found for this user');
       }
     } catch (e) {
       print('❌ Error loading user rating: $e');
@@ -142,21 +179,14 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   }
 
   Future<void> _loadRecentComments() async {
-    // In standalone mode, skip Firebase operations
     if (!widget.venue.isPublic || !_isConnected) {
-      print('ℹ️ Skipping Firebase comments load (standalone mode or not connected).');
       if (mounted) {
         setState(() => _loadingComments = false);
       }
       return;
     }
-
     try {
-      final comments = await _venueRepository.getRecentComments(
-        placeId: widget.venue.placeId,
-        limit: 10,
-      );
-
+      final comments = await _venueRepository.getRecentComments(placeId: widget.venue.placeId, limit: 10);
       if (mounted) {
         setState(() {
           _recentComments = comments;
@@ -172,19 +202,12 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
     }
   }
 
-  @override
-  void dispose() {
-    _commentController.dispose();
-    super.dispose();
-  }
-
   Future<void> _openInMaps() async {
     final lat = widget.venue.coordinates.latitude;
     final lng = widget.venue.coordinates.longitude;
     final query = Uri.encodeComponent(widget.venue.address.isNotEmpty ? widget.venue.address : widget.venue.name);
     final webUrl = 'https://www.google.com/maps/search/?api=1&query=$query&query_place_id=${widget.venue.placeId}';
     final Uri uri = Uri.parse('geo:$lat,$lng?q=$query');
-
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     } else {
@@ -193,9 +216,6 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   }
 
   StoredLocation _buildUpdatedVenue() {
-    print('🏷️ VenueDetailsDialog: Building updated venue');
-    print('   - Current _instrumentTags: $_instrumentTags');
-    print('   - Current _genreTags: $_genreTags');
     return widget.venue.copyWith(
       rating: _currentRating,
       comment: _commentController.text.trim().isEmpty ? null : _commentController.text.trim(),
@@ -205,94 +225,60 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
     );
   }
 
-  void _handleSave({bool popOnSave = true}) async {
+  void _handleSave({bool popOnSave = true}) {
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    if (demoProvider.currentStep == DemoStep.venueDetailsConfirmation) {
+      demoProvider.nextStep();
+    }
+    _removeOverlay();
+
     final updatedVenue = _buildUpdatedVenue();
-    print("--- 🔵 DEBUG: _handleSave triggered ---");
-
-    // 1. Always save the complete venue object locally.
     widget.onSave(updatedVenue);
-    print("💾 DEBUG: Local save callback (onSave) has been called.");
-
-    // 2. If online and the venue is NOT marked as private, save relevant data to the cloud.
     if (_isConnected && !updatedVenue.isPrivate) {
       try {
         final authService = AuthService();
         final userId = authService.isSignedIn ? authService.currentUserId : 'anonymous';
-        print("☁️ DEBUG: Preparing to save to Firebase...");
-        print("   - userId: $userId");
-        print("   - isConnected: $_isConnected");
-        print("   - isPrivate: ${updatedVenue.isPrivate}");
-
-        // 2a. If the venue wasn't already public, this user is submitting it.
         if (!widget.venue.isPublic) {
-          print("-> This is a NEW public venue submission. Saving core venue data.");
-          await _venueRepository.saveVenue(updatedVenue, userId);
-        } else {
-          print("-> This is an EXISTING public venue. Skipping core data save.");
+          _venueRepository.saveVenue(updatedVenue, userId);
         }
-
-        // 2b. ALWAYS save the user's rating and comment for any non-private venue.
-        print("   - Calling repository to save rating/comment with data:");
-        print("     - userId: $userId");
-        print("     - placeId: ${updatedVenue.placeId}");
-        print("     - rating: ${updatedVenue.rating}");
-        print("     - comment: ${updatedVenue.comment}");
-
-        final bool saveVerified = await _venueRepository.saveVenueRating(
+        _venueRepository.saveVenueRating(
           userId: userId,
           placeId: updatedVenue.placeId,
           rating: updatedVenue.rating,
           comment: updatedVenue.comment,
-        );
-        if(saveVerified) {
-          print("✅ DEBUG: Firebase save and verification successful!");
-
-          // 🏷️ NEW: Sync tags to Firebase if there are any
-          if (updatedVenue.genreTags.isNotEmpty || updatedVenue.instrumentTags.isNotEmpty) {
-            print("🏷️ DEBUG: Syncing tags to Firebase...");
-            print("   - Genres: ${updatedVenue.genreTags}");
-            print("   - Instruments: ${updatedVenue.instrumentTags}");
-
-            try {
-              await _venueRepository.syncLocalTagsToFirebase(
+        ).then((saveVerified) {
+          if (saveVerified) {
+            if (updatedVenue.genreTags.isNotEmpty || updatedVenue.instrumentTags.isNotEmpty) {
+              _venueRepository.syncLocalTagsToFirebase(
                 placeId: updatedVenue.placeId,
                 userId: userId,
                 genreTags: updatedVenue.genreTags,
                 instrumentTags: updatedVenue.instrumentTags,
-              );
-              print("✅ DEBUG: Tags synced to Firebase successfully!");
-            } catch (e) {
-              print("❌ DEBUG: Error syncing tags to Firebase: $e");
+              ).catchError((e) => print("❌ DEBUG: Error syncing tags to Firebase: $e"));
             }
-          } else {
-            print("ℹ️ DEBUG: No tags to sync to Firebase");
+            widget.onDataChanged?.call();
           }
-
-          // Notify parent to refresh venues
-          widget.onDataChanged?.call();
-        } else {
-          print("🔥 DEBUG: Firebase save verification FAILED!");
-        }
+        });
       } catch (e) {
         print("❌ DEBUG: Error during Firebase save: $e");
       }
-    } else {
-      print("⏭️ DEBUG: Skipping Firebase save (offline or private venue).");
     }
-
-    // 3. Close the dialog if requested.
     if (popOnSave && mounted) {
       Navigator.of(context).pop();
     }
   }
 
   void _handleBook() {
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    if (demoProvider.isDemoModeActive && demoProvider.currentStep == DemoStep.mapBookGig) {
+      demoProvider.nextStep();
+    }
+    _removeOverlay();
     final updatedVenue = _buildUpdatedVenue();
     widget.onBook(updatedVenue);
   }
 
   Widget _buildAverageRating() {
-    // Only show if venue is public and has enough ratings
     if (!widget.venue.isPublic || widget.venue.totalRatings < 5) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -303,23 +289,15 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
         ),
       );
     }
-
     return Column(
       children: [
-        const Text(
-          'Average Rating:',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        const Text('Average Rating:', style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
-        // Changed to Column instead of Row to prevent overflow
         Column(
           children: [
             RatingBarIndicator(
               rating: widget.venue.averageRating,
-              itemBuilder: (context, _) => const Icon(
-                Icons.star,
-                color: Colors.amber,
-              ),
+              itemBuilder: (context, _) => const Icon(Icons.star, color: Colors.amber),
               itemCount: 5,
               itemSize: 24,
               direction: Axis.horizontal,
@@ -340,163 +318,93 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
     if (!widget.venue.isPublic) {
       return const SizedBox.shrink();
     }
-
     if (_loadingComments) {
-      return const Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Center(child: CircularProgressIndicator()),
-      );
+      return const Padding(padding: EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator()));
     }
-
     if (_recentComments.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 8.0),
-        child: Text(
-          'No comments yet. Be the first to leave one!',
-          style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
-          textAlign: TextAlign.center,
-        ),
+        child: Text('No comments yet. Be the first to leave one!', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey), textAlign: TextAlign.center),
       );
     }
-
-    // Show the current comment
     final commentData = _recentComments[_currentCommentIndex];
     final comment = commentData['comment'] as String;
     final rating = commentData['rating'] as double;
     final timestamp = commentData['updatedAt'] as Timestamp?;
-
-    // Format date
     String dateStr = 'Recently';
     if (timestamp != null) {
       final date = timestamp.toDate();
       final now = DateTime.now();
       final diff = now.difference(date);
-
-      if (diff.inDays == 0) {
-        dateStr = 'Today';
-      } else if (diff.inDays == 1) {
-        dateStr = 'Yesterday';
-      } else if (diff.inDays < 7) {
-        dateStr = '${diff.inDays} days ago';
-      } else if (diff.inDays < 30) {
-        dateStr = '${(diff.inDays / 7).floor()} weeks ago';
-      } else {
-        dateStr = DateFormat('MMM d, yyyy').format(date);
-      }
+      if (diff.inDays == 0) dateStr = 'Today';
+      else if (diff.inDays == 1) dateStr = 'Yesterday';
+      else if (diff.inDays < 7) dateStr = '${diff.inDays} days ago';
+      else if (diff.inDays < 30) dateStr = '${(diff.inDays / 7).floor()} weeks ago';
+      else dateStr = DateFormat('MMM d, yyyy').format(date);
     }
-
     final hasMultipleComments = _recentComments.length > 1;
     final canGoBack = _currentCommentIndex > 0;
     final canGoForward = _currentCommentIndex < _recentComments.length - 1;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Recent Comments:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
+            const Text('Recent Comments:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             if (hasMultipleComments)
-              Text(
-                '${_currentCommentIndex + 1} of ${_recentComments.length}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
+              Text('${_currentCommentIndex + 1} of ${_recentComments.length}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic)),
           ],
         ),
         const SizedBox(height: 12),
         Row(
           children: [
-            // Left arrow
             if (hasMultipleComments)
               IconButton(
-                icon: Icon(
-                  Icons.arrow_back_ios,
-                  color: canGoBack ? Colors.blue : Colors.grey.shade300,
-                ),
+                icon: Icon(Icons.arrow_back_ios, color: canGoBack ? Colors.blue : Colors.grey.shade300),
                 iconSize: 20,
                 onPressed: canGoBack ? _previousComment : null,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               )
-            else
-              const SizedBox(width: 8),
-
-            // Comment box
+            else const SizedBox(width: 8),
             Expanded(
               child: Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
+                decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Rating stars and date on same row - FIXED with Expanded
                     Row(
                       children: [
                         RatingBarIndicator(
                           rating: rating,
-                          itemBuilder: (context, _) => const Icon(
-                            Icons.star,
-                            color: Colors.amber,
-                          ),
+                          itemBuilder: (context, _) => const Icon(Icons.star, color: Colors.amber),
                           itemCount: 5,
                           itemSize: 18,
                           direction: Axis.horizontal,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            dateStr,
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade400,
-                              fontStyle: FontStyle.italic,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          child: Text(dateStr, textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: Colors.grey.shade400, fontStyle: FontStyle.italic), overflow: TextOverflow.ellipsis),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    // Comment text
-                    Text(
-                      comment,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        height: 1.4,
-                        color: Colors.white,
-                      ),
-                    ),
+                    Text(comment, style: const TextStyle(fontSize: 15, height: 1.4, color: Colors.white)),
                   ],
                 ),
               ),
             ),
-
-            // Right arrow
             if (hasMultipleComments)
               IconButton(
-                icon: Icon(
-                  Icons.arrow_forward_ios,
-                  color: canGoForward ? Colors.blue : Colors.grey.shade300,
-                ),
+                icon: Icon(Icons.arrow_forward_ios, color: canGoForward ? Colors.blue : Colors.grey.shade300),
                 iconSize: 20,
                 onPressed: canGoForward ? _nextComment : null,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               )
-            else
-              const SizedBox(width: 8),
+            else const SizedBox(width: 8),
           ],
         ),
         const SizedBox(height: 16),
@@ -506,6 +414,7 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // The build method is now SIMPLE. It just builds the dialog. No stacks, no consumers.
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
@@ -513,52 +422,34 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
       titlePadding: EdgeInsets.zero,
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       actionsPadding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 12.0),
-      // ✅ CHANGED: Wrap title in Column to add archived banner
       title: Column(
         children: [
-          // ✅ ARCHIVED BANNER (if archived)
           if (widget.venue.isArchived)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.orange.shade700,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(4),
-                  topRight: Radius.circular(4),
-                ),
+                borderRadius: const BorderRadius.only(topLeft: Radius.circular(4), topRight: Radius.circular(4)),
               ),
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.archive, color: Colors.white, size: 18),
                   SizedBox(width: 8),
-                  Text(
-                    'ARCHIVED',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
+                  Text('ARCHIVED', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                 ],
               ),
             ),
-          // Venue name
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
-            child: Text(
-              widget.venue.name,
-              style: textTheme.headlineSmall,
-              textAlign: TextAlign.center,
-            ),
+            child: Text(widget.venue.name, style: textTheme.headlineSmall, textAlign: TextAlign.center),
           ),
         ],
       ),
       content: SingleChildScrollView(
         child: ListBody(
           children: <Widget>[
-            // Address
             if (widget.venue.address.isNotEmpty)
               InkWell(
                 onTap: _openInMaps,
@@ -567,60 +458,44 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
                   child: Text(
                     widget.venue.address,
                     textAlign: TextAlign.center,
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                      decoration: TextDecoration.underline,
-                    ),
+                    style: textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary, decoration: TextDecoration.underline),
                   ),
                 ),
               ),
+            // Assign the key for highlighting
+            if (widget.nextGig != null)
+              Column(
+                key: _nextGigKey,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Next Gig:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text('${DateFormat.yMMMEd().format(widget.nextGig!.dateTime)} at ${DateFormat.jm().format(widget.nextGig!.dateTime)}'),
+                  const SizedBox(height: 16),
+                ],
+              ),
 
-            // Next Gig
-            if (widget.nextGig != null) ...[
-              const Text('Next Gig:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('${DateFormat.yMMMEd().format(widget.nextGig!.dateTime)} at ${DateFormat.jm().format(widget.nextGig!.dateTime)}'),
-              const SizedBox(height: 16),
-            ],
-
-            // --- "SHARED INFORMATION" BOX ---
             Container(
               padding: const EdgeInsets.all(12.0),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade400),
-                borderRadius: BorderRadius.circular(8.0),
-              ),
+              decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(8.0)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Shared Information',
-                    style: textTheme.titleMedium?.copyWith(color: theme.colorScheme.primary),
-                  ),
+                  Text('Shared Information', style: textTheme.titleMedium?.copyWith(color: theme.colorScheme.primary)),
                   const SizedBox(height: 12),
-
                   _buildAverageRating(),
                   _buildRecentComments(),
-
                   const Divider(),
                   VenueTagsWidget(
                     venue: widget.venue,
-                    isConnected: _isConnected,  // ← Pass connection status
+                    isConnected: _isConnected,
                     onTagsChanged: (instruments, genres) {
-                      print('🏷️ VenueDetailsDialog: Received tag changes from widget');
-                      print('   - Instruments received: $instruments');
-                      print('   - Genres received: $genres');
                       setState(() {
                         _instrumentTags = instruments;
                         _genreTags = genres;
                       });
-                      print('   - _instrumentTags updated to: $_instrumentTags');
-                      print('   - _genreTags updated to: $_genreTags');
                     },
                   ),
-
                   const Divider(height: 24),
-
-                  // RATING (Your personal rating)
                   const Text('Your Rating:', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   Center(
@@ -636,37 +511,23 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // COMMENTS (Your personal comment)
                   const Text('Your Comments:', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _commentController,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g., Great sound, load-in info...',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: const InputDecoration(hintText: 'e.g., Great sound, load-in info...', border: OutlineInputBorder()),
                     maxLines: 2,
                     textCapitalization: TextCapitalization.sentences,
                   ),
                   const SizedBox(height: 16),
-
-                  // JAM SESSION
                   const Text('Jam/Open Mic:', style: TextStyle(fontWeight: FontWeight.bold)),
                   Text(widget.venue.jamOpenMicDisplayString(context)),
-                  Center(
-                    child: TextButton(
-                      onPressed: widget.onEditJamSettings,
-                      child: const Text('Edit Jam/Open Mic Settings'),
-                    ),
-                  ),
+                  Center(child: TextButton(onPressed: widget.onEditJamSettings, child: const Text('Edit Jam/Open Mic Settings'))),
                 ],
               ),
             ),
             const SizedBox(height: 16),
             const Divider(),
-
-            // --- "PRIVATE VENUE" SWITCH (Conditional) ---
             if (!widget.venue.isPublic)
               SwitchListTile(
                 title: const Text('Private Venue'),
@@ -676,8 +537,6 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
                 contentPadding: EdgeInsets.zero,
                 dense: true,
               ),
-
-            // --- CONTACT INFO (Always Private) ---
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -713,7 +572,6 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
       ),
       actionsAlignment: MainAxisAlignment.spaceBetween,
       actions: <Widget>[
-        // ✅ CHANGED: Archive button now toggles to Restore when archived
         if (!widget.venue.isPublic)
           TextButton(
             onPressed: widget.onArchive,
@@ -729,19 +587,20 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
                 : Text('ARCHIVE', style: TextStyle(color: theme.colorScheme.error)),
           )
         else
-          const SizedBox(), // Maintain alignment for public venues
-
-        // --- SAVE / BOOK BUTTONS ---
+          const SizedBox(),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            OutlinedButton(onPressed: _handleSave, child: const Text('SAVE/CLOSE')),
+            OutlinedButton(
+              key: _saveCloseKey,
+              onPressed: () => _handleSave(popOnSave: true), // Updated onPressed
+              child: const Text('SAVE/CLOSE'),
+            ),
             const SizedBox(width: 8),
             ElevatedButton(
+              key: _bookButtonKey,
               onPressed: _handleBook,
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: theme.colorScheme.onPrimary),
+              style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.primary, foregroundColor: theme.colorScheme.onPrimary),
               child: const Text('BOOK'),
             ),
           ],
