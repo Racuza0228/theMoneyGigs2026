@@ -77,8 +77,8 @@ class GigRetrospectiveService {
   static Future<Gig?> checkForRetrospectiveOnStartup() async {
     // Check if we should show prompt (rate limiting)
     if (!await shouldShowRetrospectivePrompt()) {
-      return null;
-    }
+       return null;
+     }
 
     // Get gigs needing review
     final gigsNeedingReview = await getGigsNeedingRetrospective();

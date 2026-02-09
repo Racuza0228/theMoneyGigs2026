@@ -30,6 +30,8 @@ import 'features/gigs/models/gig_model.dart'; // For existing gigs
 import 'features/gigs/services/gig_retrospective_service.dart';
 import 'features/gigs/widgets/retrospective_notification_banner.dart';
 
+import 'package:the_money_gigs/features/app_demo/widgets/email_capture_screen.dart';
+
 // --- 1. GLOBAL STATE AND LAZY INITIALIZER ---
 // This global flag ensures network services are only initialized once.
 bool _areNetworkServicesInitialized = false;
@@ -59,10 +61,10 @@ Future<void> initializeNetworkServices() async {
 
   // Initialize Firebase
   // This needs to be done before any other Firebase services are used.
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  print('✅ Firebase Initialized');
+  // await Firebase.initializeApp(
+  //   options: DefaultFirebaseOptions.currentPlatform,
+  // );
+  // print('✅ Firebase Initialized');
 
   // Initialize RevenueCat for subscriptions.
   try {
@@ -82,6 +84,10 @@ Future<void> initializeNetworkServices() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  print('✅ Firebase Initialized');
   // Set preferred orientations. This is fast and can stay.
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -145,7 +151,7 @@ class _MainPageState extends State<MainPage> {
   bool _showRetrospectiveBanner = false;
 
   static const List<String> _pageTitles = [ 'Gig Pay', 'Venues', 'My Gigs', 'Profile', ];
-  static const List<String?> _defaultBackgroundImages = [ 'assets/background1.png', null, 'assets/background2.png', 'assets/background3.png', ];
+  static const List<String?> _defaultBackgroundImages = [ null, null, null, null, ];
   static const double _defaultOpacity = 0.7;
 
   @override
@@ -164,7 +170,7 @@ class _MainPageState extends State<MainPage> {
   Future<void> _checkFirstLaunch() async {
     print('🎬 Main: _checkFirstLaunch() called');
     final prefs = await SharedPreferences.getInstance();
-    const bool forceDemoForTesting = true;
+    const bool forceDemoForTesting = false;
 
     final hasSeenIntro = prefs.getBool(DemoProvider.hasSeenIntroKey) ?? false;
     print('🎬 Main: hasSeenIntro = $hasSeenIntro, mounted = $mounted, Forcing Demo: $forceDemoForTesting');
@@ -313,7 +319,13 @@ class _MainPageState extends State<MainPage> {
             });
           }
           break;
-        case DemoStep.none:
+        case DemoStep.emailCapture:
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const EmailCaptureScreen(),
+            ),
+          );
+          break;case DemoStep.none:
         case DemoStep.complete:
         case DemoStep.coachingIntro:
         default:
@@ -359,13 +371,6 @@ class _MainPageState extends State<MainPage> {
           SnackBar(content: Text('Could not open gig form: $e')),
         );
       }
-    }
-  }
-
-  Future<void> _launchThirdRockURL() async {
-    final Uri url = Uri.parse('https://www.thirdrockmusiccenter.com/');
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar( const SnackBar(content: Text('Could not launch website')), );
     }
   }
 
@@ -466,6 +471,7 @@ class _MainPageState extends State<MainPage> {
                           } else if (defaultPath != null) {
                             provider = AssetImage(defaultPath);
                           }
+                          bgColor ??= Colors.black12;
                         }
                         return PageBackgroundWrapper(
                           imageProvider: provider,

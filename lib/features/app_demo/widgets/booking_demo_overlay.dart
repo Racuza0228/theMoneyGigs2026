@@ -234,10 +234,12 @@ class _MultiHighlightPainter extends CustomPainter {
     }
 
     for (final key in highlightKeys) {
-      final targetRenderBox = key.currentContext?.findRenderObject() as RenderBox?;
-      if (targetRenderBox == null || !targetRenderBox.hasSize) {
+      final renderObject = key.currentContext?.findRenderObject();
+
+      if (renderObject == null || !renderObject.attached || renderObject is! RenderBox || !renderObject.hasSize) {
         continue;
       }
+      final targetRenderBox = renderObject;
 
       // 🎯 3. This is the correct coordinate conversion logic
       final offset = pageRenderBox!.globalToLocal(targetRenderBox.localToGlobal(Offset.zero));

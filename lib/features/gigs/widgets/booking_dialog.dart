@@ -669,6 +669,8 @@ class _BookingDialogState extends State<BookingDialog> {
     // This is what makes the "Next" button work.
     return Consumer<DemoProvider>(
       builder: (context, demoProvider, child) {
+        final bool isFirstBookingDemoStep = demoProvider.currentStep == DemoStep.bookingFormValue;
+
         bool isDialogProcessing = _isProcessing || _isGeocoding || (_isLoadingVenues && _isCalculatorMode) || _isFetchingDriveTime;
 
         String dialogTitle = "Book New Gig";
@@ -683,11 +685,12 @@ class _BookingDialogState extends State<BookingDialog> {
         final dialogUI = AlertDialog(
           title: Text(dialogTitle),
           contentPadding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 0.0),
-          content: Stack(
-            children: [
-              Form(
-                key: _formKey,
-                child: SingleChildScrollView(
+          content: SingleChildScrollView(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+            child: Stack(
+              children: [
+                Form(
+                  key: _formKey,
                   child: ListBody(
                     children: <Widget>[
                       if (_isCalculatorMode)
@@ -704,21 +707,17 @@ class _BookingDialogState extends State<BookingDialog> {
                           driveSetupKey: _driveSetupKey,
                           rehearsalKey: _rehearsalKey,
                           otherExpensesKey: _otherExpensesKey,
-                          rateDisplayKey: _rateDisplayKey, // Pass the key
+                          rateDisplayKey: _rateDisplayKey,
                           payController: _payController,
                           otherExpensesController: _otherExpensesController,
                           gigLengthController: _gigLengthController,
                           driveSetupController: _driveSetupController,
                           rehearsalController: _rehearsalController,
-                          // 🎯 The `showDynamicRate` flag is what shows the rate text.
-                          // It's correctly set here, so the issue isn't this line.
-                          // The problem is the overlay hiding it, which we've already fixed.
                           showDynamicRate: _isMapModeNewGig || _isEditingMode || _isAddGigMode,
                           dynamicRateString: _dynamicRateString,
                           dynamicRateResultColor: _dynamicRateResultColor,
                         ),
                       const Divider(height: 24, thickness: 1),
-                      // ... (Rest of the UI inside the ListBody remains the same)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -776,14 +775,14 @@ class _BookingDialogState extends State<BookingDialog> {
                     ],
                   ),
                 ),
-              ),
-              if (isDialogProcessing)
-                Positioned.fill(child: Container(color: Colors.black.withOpacity(0.3), child: const Center(child: CircularProgressIndicator()))),
-            ],
+                if (isDialogProcessing)
+                  Positioned.fill(child: Container(color: Colors.black.withOpacity(0.3), child: const Center(child: CircularProgressIndicator()))),
+              ],
+            ),
           ),
           actionsAlignment: MainAxisAlignment.spaceBetween,
           actionsPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          actions: <Widget>[
+          actions: isFirstBookingDemoStep ? <Widget>[] : <Widget>[
             if (_isEditingMode)
               TextButton(onPressed: isDialogProcessing ? null : _handleGigCancellation, child: Text('CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)))
             else
@@ -797,11 +796,32 @@ class _BookingDialogState extends State<BookingDialog> {
                 const SizedBox(width: 8),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
-                  // The onPressed logic is simplified now. It just calls the main confirm action.
                   onPressed: isDialogProcessing ? null : _confirmAction,
                   child: isDialogProcessing ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))) : Text(confirmButtonText),
                 ),
               ],
+            ),
+          ],
+        );
+
+        if (!_showDemoOverlay) {
+          return dialogUI;
+        }
+
+        return Stack(
+          children: [
+            dialogUI,
+            BookingDemoOverlay(
+              demoStep: demoProvider.currentStep,
+              isAddNewVenueMode: _isAddNewVenue,
+              driveSetupKey: _driveSetupKey,
+              rehearsalKey: _rehearsalKey,
+              payKey: _payKey,
+              lengthKey: _gigLengthKey,
+              otherExpensesKey: _otherExpensesKey,
+              rateDisplayKey: _rateDisplayKey,
+              dateKey: _dateButtonKey,
+              confirmKey: _confirmBtnKey,
             ),
           ],
         );

@@ -106,7 +106,7 @@ class _MapPageState extends State<MapPage> {
     super.initState();
     // Initialize services that don't depend on context or build.
     _placesService = PlacesService(apiKey: _googleApiKey);
-    _setInitialCameraPosition(); // Start fetching the map center immediately.
+    //_setInitialCameraPosition(); // Start fetching the map center immediately.
   }
 
   Future<void> _setInitialCameraPosition() async {
@@ -124,6 +124,7 @@ class _MapPageState extends State<MapPage> {
   Future<void> _initializeAndLoadData() async {
     // Prevent re-initialization if already done.
     if (_isFullyInitialized) return;
+    await _setInitialCameraPosition();
 
     await _checkAndRequestLocationPermission();
 
@@ -847,7 +848,7 @@ class _MapPageState extends State<MapPage> {
   Widget buildMapContent() {
     // Show a loading screen until BOTH the initial camera position is ready
     // AND the main data has been loaded.
-    if (_initialCameraPosition == null || !_isFullyInitialized) {
+    if (_initialCameraPosition == null) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

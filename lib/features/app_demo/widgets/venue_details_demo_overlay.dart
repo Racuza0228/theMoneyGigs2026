@@ -13,65 +13,67 @@ class VenueDetailsDemoOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 🎯 THE FIX: Wrap the Stack with a Material widget.
-    return Material(
-      type: MaterialType.transparency, // Makes the Material widget itself invisible
-      child: Stack(
-        children: [
-          // The painter for the spotlight effect
-          IgnorePointer(
-            child: CustomPaint(
+    // 🎯 THE FIX: Wrap the entire contents in an IgnorePointer
+    // This allows taps to pass through the overlay to the buttons underneath.
+    return IgnorePointer(
+      child: Material(
+        type: MaterialType.transparency,
+        child: Stack(
+          children: [
+            // This is the semi-transparent backdrop with a hole punched out for the button.
+            CustomPaint(
               size: MediaQuery.of(context).size,
               painter: _HighlightPainter(
                 highlightKey: bookButtonKey,
                 context: context,
               ),
             ),
-          ),
 
-          // The instructional text, positioned safely
-          Positioned(
-            top: MediaQuery.of(context).size.height * 0.35, // Adjusted position slightly for better balance
-            left: 24,
-            right: 24,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.85),
-                border: Border.all(color: Colors.white, width: 2),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.edit_document, size: 24, color: Colors.white),
-                  const SizedBox(height: 16),
-                  // The Text widgets will now render correctly.
-                  const Text(
-                    'Here you can enter information about the venue.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+            // The instructional text box.
+            Positioned(
+              top: MediaQuery.of(context).size.height * 0.35,
+              left: 24,
+              right: 24,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.85),
+                  border: Border.all(color: Colors.white, width: 2),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.edit_document, size: 48, color: Colors.white),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Here you can enter information about the venue.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    "For now, let's book a gig here by clicking Book.",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: Colors.white70),
-                  ),
-                  const SizedBox(height: 20),
-                  TextButton(
-                    onPressed: () => Provider.of<DemoProvider>(context, listen: false).endDemo(),
-                    child: const Text('Exit Demo', style: TextStyle(color: Colors.white70)),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    const Text(
+                      "For now, let's book a gig here by clicking Book.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 16, color: Colors.white70),
+                    ),
+                    const SizedBox(height: 20),
+                    // Note: This button also becomes non-interactive, which is acceptable
+                    // as the user's primary action should be to click 'BOOK'.
+                    TextButton(
+                      onPressed: () {}, // This will now be ignored
+                      child: const Text('Exit Demo', style: TextStyle(color: Colors.white70)),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

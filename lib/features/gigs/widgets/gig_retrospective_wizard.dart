@@ -152,9 +152,7 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
   Future<void> _saveAndComplete() async {
     if (_isSaving) return;
 
-    setState(() => _isSaving = true);
-
-    try {
+    setState(() => _isSaving = true);    try {
       // Build list of ratings
       final List<GigRating> ratings = [];
       for (final entry in _ratings.entries) {
@@ -171,6 +169,9 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
       final List<Gig> allGigs = Gig.decode(gigsJsonString);
       final gigIndex = allGigs.indexWhere((g) => g.id == widget.gig.id);
 
+      // --- 1. Prepare the result BEFORE the delay ---
+      Gig? updatedGig;
+
       if (gigIndex != -1) {
         allGigs[gigIndex] = allGigs[gigIndex].copyWith(
           gigRatings: ratings,
@@ -179,6 +180,9 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
               : _notesController.text.trim(),
           retrospectiveCompleted: true,
         );
+
+        // Capture the updated gig to return later.
+        updatedGig = allGigs[gigIndex];
 
         await prefs.setString('gigs_list', Gig.encode(allGigs));
       }
@@ -193,7 +197,10 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
         await Future.delayed(const Duration(milliseconds: 800));
 
         if (mounted) {
-          Navigator.of(context).pop(allGigs[gigIndex]);
+          // --- 2. USE THE CAPTURED GIG ---
+          // This is now safe, as `updatedGig` will either be the correct gig
+          // or null, both of which are valid to pass to pop().
+          Navigator.of(context).pop(updatedGig);
           widget.onComplete?.call();
         }
       }
@@ -209,6 +216,7 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
       }
     }
   }
+
 
   Future<void> _exportReview() async {
     final dateFormat = DateFormat('MMMM d, yyyy \'at\' h:mm a');
@@ -455,7 +463,7 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
                       _currentDimensionIndex == _dimensions.length - 1
                           ? 'ADD NOTES'
                           : 'NEXT',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
                     ),
                   ),
                 ),

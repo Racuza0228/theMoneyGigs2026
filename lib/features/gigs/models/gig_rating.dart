@@ -72,9 +72,7 @@ class GigRating {
 /// Users can add custom dimensions beyond these.
 class DefaultGigDimensions {
   static const List<String> performance = [
-    'Energy',
-    'Crowd Size',
-    'Song Reception',
+    'Crowd Size/Energy',
   ];
 
   static const List<String> financial = [
@@ -82,12 +80,15 @@ class DefaultGigDimensions {
   ];
 
   static const List<String> venue = [
-    'Venue Communication',
-    'Sound Quality',
+    'Parking',
+    'Physical Comfort',
+    'Venue Staff',
+    'Venue Sound',
   ];
 
   static const List<String> personal = [
-    'Creative Fulfillment',
+    'Creativity',
+    'Social',
   ];
 
   /// All default dimensions in a flat list

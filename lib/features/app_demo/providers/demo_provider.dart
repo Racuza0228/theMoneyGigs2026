@@ -12,7 +12,8 @@ enum DemoStep {
   bookingFormAction,      // "Fill in the details and book"
   venueDetailsConfirmation,
   gigListView,            // Show the gig appears in gigs list
-  profileConnect, // <<< ADD THIS NEW STEP
+  profileConnect,
+  emailCapture,
   complete,               // Demo finished
 }
 
@@ -60,9 +61,12 @@ class DemoProvider with ChangeNotifier {
       case DemoStep.profileConnect:
         print('🎬 DemoProvider: profileConnect');
         return 9;
+      case DemoStep.emailCapture:  // 🆕 NEW
+        print('🎬 DemoProvider: emailCapture');
+        return 10;
       case DemoStep.complete:
         print('🎬 DemoProvider: complete');
-        return 10;
+        return 11;
     }
   }
 
@@ -122,7 +126,10 @@ class DemoProvider with ChangeNotifier {
           _currentStep = DemoStep.profileConnect; // <<< ...GO TO THE NEW PROFILE STEP
           break;
         case DemoStep.profileConnect: // <<< THE NEW STEP...
-          _currentStep = DemoStep.complete; // <<< ...LEADS TO COMPLETION
+          _currentStep = DemoStep.emailCapture; // <<< ...LEADS TO COMPLETION
+          break;
+        case DemoStep.emailCapture:  // 🆕 NEW
+          _currentStep = DemoStep.complete;
           break;
         case DemoStep.complete:
           endDemo();

@@ -1,10 +1,8 @@
 // lib/features/profile/views/profile.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
-
 
 import '../../app_demo/providers/demo_provider.dart';
 import '../../app_demo/widgets/simple_demo_overlay.dart';
@@ -22,7 +20,6 @@ import 'widgets/notification_settings_dialog.dart';
 import 'widgets/rate_display.dart';
 import 'widgets/rate_form_field.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
-import 'package:the_money_gigs/core/services/network_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 
@@ -360,7 +357,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
         return Stack(
           children: [
-            // Your existing page content
             child!,
 
             // Conditionally display the overlay on top
@@ -370,8 +366,11 @@ class _ProfilePageState extends State<ProfilePage> {
                 message:
                 'Connecting requires an invitation code, and for just \$2/mo you gain access to the public venue repository where you can see all the venues that have been added, rated and commented on by other musicians. New features, including the ability to find other musicians will be added soon.',
                 highlightKeys: [_connectWidgetKey],
-                showNextButton: false,
-                blockInteraction: true, // Prevents accidental taps
+                showNextButton: true,
+                blockInteraction: false, // Prevents accidental taps
+                onNext: () {
+                  demoProvider.nextStep();
+                }
               ),
           ],
         );
