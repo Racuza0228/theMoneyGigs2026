@@ -161,10 +161,6 @@ class _ConnectWidgetState extends State<ConnectWidget> {
     final networkService = NetworkService();
 
     if (value) {
-      // ========================================
-      // TURNING ON - Complete Onboarding Flow
-      // ========================================
-
       // STEP 1: Ensure user is signed in with Google
       if (!authService.isSignedIn) {
         if (!mounted) return;
@@ -308,7 +304,20 @@ class _ConnectWidgetState extends State<ConnectWidget> {
 
       // STEP 5: Check if founder code (free) or requires subscription
       final inviteCodeDoc = await networkService.validateInviteCode(code);
-      final isFreeUser = inviteCodeDoc?.isFounderCode ?? false;
+      if (inviteCodeDoc == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ Invite code is no longer valid or has been deactivated.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+        await networkService.deleteMember(userId);
+        return;
+      }
+
+      final isFreeUser = inviteCodeDoc.isFounderCode;
       final subscriptionService = SubscriptionService();
 
       if (isFreeUser) {

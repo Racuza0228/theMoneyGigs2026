@@ -105,6 +105,16 @@ class NetworkService {
     }
   }
 
+  Future<void> deleteMember(String userId) async {
+    try {
+      await _firestore.collection('networkMembers').doc(userId).delete();
+      print('✅ Rolled back and deleted member: $userId');
+    } catch (e) {
+      print('❌ Error rolling back member creation for user $userId: $e');
+      // Even if this fails, we don't block the user. Log for admin review.
+    }
+  }
+
   /// Check if user has access (simple boolean check)
   Future<bool> hasNetworkAccess(String userId) async {
     final member = await getMember(userId);

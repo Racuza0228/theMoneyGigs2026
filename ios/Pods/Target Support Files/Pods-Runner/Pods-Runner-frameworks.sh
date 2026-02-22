@@ -204,6 +204,7 @@ if [[ "$CONFIGURATION" == "Debug" ]]; then
   install_framework "${BUILT_PRODUCTS_DIR}/flutter_timezone/flutter_timezone.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/gRPC-C++/grpcpp.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/gRPC-Core/grpc.framework"
+  install_framework "${BUILT_PRODUCTS_DIR}/geocoding_ios/geocoding_ios.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/geolocator_apple/geolocator_apple.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/image_picker_ios/image_picker_ios.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/in_app_review/in_app_review.framework"
@@ -213,6 +214,7 @@ if [[ "$CONFIGURATION" == "Debug" ]]; then
   install_framework "${BUILT_PRODUCTS_DIR}/path_provider_foundation/path_provider_foundation.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/purchases_flutter/purchases_flutter.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/purchases_ui_flutter/purchases_ui_flutter.framework"
+  install_framework "${BUILT_PRODUCTS_DIR}/share_plus/share_plus.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/shared_preferences_foundation/shared_preferences_foundation.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/url_launcher_ios/url_launcher_ios.framework"
 fi
@@ -245,6 +247,7 @@ if [[ "$CONFIGURATION" == "Profile" ]]; then
   install_framework "${BUILT_PRODUCTS_DIR}/flutter_timezone/flutter_timezone.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/gRPC-C++/grpcpp.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/gRPC-Core/grpc.framework"
+  install_framework "${BUILT_PRODUCTS_DIR}/geocoding_ios/geocoding_ios.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/geolocator_apple/geolocator_apple.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/image_picker_ios/image_picker_ios.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/in_app_review/in_app_review.framework"
@@ -254,6 +257,7 @@ if [[ "$CONFIGURATION" == "Profile" ]]; then
   install_framework "${BUILT_PRODUCTS_DIR}/path_provider_foundation/path_provider_foundation.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/purchases_flutter/purchases_flutter.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/purchases_ui_flutter/purchases_ui_flutter.framework"
+  install_framework "${BUILT_PRODUCTS_DIR}/share_plus/share_plus.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/shared_preferences_foundation/shared_preferences_foundation.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/url_launcher_ios/url_launcher_ios.framework"
 fi
@@ -286,6 +290,7 @@ if [[ "$CONFIGURATION" == "Release" ]]; then
   install_framework "${BUILT_PRODUCTS_DIR}/flutter_timezone/flutter_timezone.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/gRPC-C++/grpcpp.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/gRPC-Core/grpc.framework"
+  install_framework "${BUILT_PRODUCTS_DIR}/geocoding_ios/geocoding_ios.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/geolocator_apple/geolocator_apple.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/image_picker_ios/image_picker_ios.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/in_app_review/in_app_review.framework"
@@ -295,6 +300,7 @@ if [[ "$CONFIGURATION" == "Release" ]]; then
   install_framework "${BUILT_PRODUCTS_DIR}/path_provider_foundation/path_provider_foundation.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/purchases_flutter/purchases_flutter.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/purchases_ui_flutter/purchases_ui_flutter.framework"
+  install_framework "${BUILT_PRODUCTS_DIR}/share_plus/share_plus.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/shared_preferences_foundation/shared_preferences_foundation.framework"
   install_framework "${BUILT_PRODUCTS_DIR}/url_launcher_ios/url_launcher_ios.framework"
 fi

@@ -1,7 +1,5 @@
 // lib/main.dart
-import 'package:in_app_review/in_app_review.dart';
 import 'dart:async';
-import 'dart:convert'; // For json.decode
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -32,8 +30,6 @@ import 'features/gigs/widgets/retrospective_notification_banner.dart';
 
 import 'package:the_money_gigs/features/app_demo/widgets/email_capture_screen.dart';
 
-// --- 1. GLOBAL STATE AND LAZY INITIALIZER ---
-// This global flag ensures network services are only initialized once.
 bool _areNetworkServicesInitialized = false;
 
 String _getRevenueCatApiKey() {
@@ -55,27 +51,17 @@ String _getRevenueCatApiKey() {
 /// Initializes all network-dependent services.
 /// This function is called on-demand from the Profile page.
 Future<void> initializeNetworkServices() async {
-  // If already initialized, do nothing.
   if (_areNetworkServicesInitialized) return;
   print("🚀 Initializing Network Services for the first time...");
 
-  // Initialize Firebase
-  // This needs to be done before any other Firebase services are used.
-  // await Firebase.initializeApp(
-  //   options: DefaultFirebaseOptions.currentPlatform,
-  // );
-  // print('✅ Firebase Initialized');
-
-  // Initialize RevenueCat for subscriptions.
   try {
-    // Get appropriate RevenueCat API key based on platform and build mode
     String apiKey = _getRevenueCatApiKey();
-
     await Purchases.configure(PurchasesConfiguration(apiKey));
     print('✅ RevenueCat initialized with ${kDebugMode ? 'TEST' : 'PRODUCTION'} key');
   } catch (e) {
     print('❌ Error initializing RevenueCat: $e');
   }
+
   _areNetworkServicesInitialized = true;
   print("✅ Network Services Initialization Complete.");
 }
@@ -84,14 +70,31 @@ Future<void> initializeNetworkServices() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Set orientations
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
+
+  // --- START: MODIFIED CONDITIONAL INITIALIZATION ---
+
+  // 1. Always initialize Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
   print('✅ Firebase Initialized');
-  // Set preferred orientations. This is fast and can stay.
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-  ]);
+
+  // 2. Check if the user has EVER connected to the network
+  final prefs = await SharedPreferences.getInstance();
+  final bool hasEverConnected = prefs.getBool('is_connected_to_network') ?? false;
+
+  // 3. ONLY initialize RevenueCat at startup if they are a network user
+  if (hasEverConnected) {
+    print("👤 User is part of the network, initializing RevenueCat at startup.");
+    await initializeNetworkServices(); // This now configures RevenueCat
+  } else {
+    print("👤 User is not part of the network, skipping RevenueCat initialization.");
+  }
+  // --- END: MODIFIED CONDITIONAL INITIALIZATION ---
 
   // Run the app immediately. All other initializations are deferred.
   runApp(
