@@ -70,10 +70,10 @@ class MapDemoOverlay extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Use search bar above.',
+                  'Use search bar above, enter a restaurant, bar or other place you''d like to play.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 16,
                     color: Colors.white70,
                   ),
                 ),
@@ -84,14 +84,9 @@ class MapDemoOverlay extends StatelessWidget {
                     TextButton(
                       onPressed: () => demoProvider.endDemo(),
                       child: const Text(
-                        'Exit Demo',
+                        'Exit Onboarding',
                         style: TextStyle(color: Colors.white70),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    ElevatedButton(
-                      onPressed: () => demoProvider.nextStep(),
-                      child: const Text('Skip'),
                     ),
                   ],
                 ),

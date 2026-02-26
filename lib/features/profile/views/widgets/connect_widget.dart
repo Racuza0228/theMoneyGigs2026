@@ -12,7 +12,14 @@ import 'package:the_money_gigs/core/services/subscription_service.dart';
 import 'package:the_money_gigs/main.dart';
 
 class ConnectWidget extends StatefulWidget {
-  const ConnectWidget({super.key});
+  final GlobalKey? demoHighlightKey;
+
+  const ConnectWidget({
+    super.key,
+    // --- 2. ADD THIS ---
+    // Add the new property to the constructor.
+    this.demoHighlightKey,
+  });
 
   @override
   State<ConnectWidget> createState() => _ConnectWidgetState();
@@ -655,6 +662,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SwitchListTile(
+          key: widget.demoHighlightKey,
           title: const Text('Connect to Community Edition'),
           subtitle: Text(subtitle),
           value: _isConnected,

@@ -107,13 +107,18 @@ class _BookingDialogState extends State<BookingDialog> {
   String? _profileZipCode;
   String? _userProfileAddressForDisplay;
 
+  // --- START: ADDED FOR DEMO ---
+  final FocusNode _payFocusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
+  // --- END: ADDED FOR DEMO ---
+
   // --- DEMO KEYS & SCRIPT ---
   final GlobalKey _payKey = GlobalKey();
   final GlobalKey _gigLengthKey = GlobalKey();
   final GlobalKey _driveSetupKey = GlobalKey();
   final GlobalKey _rehearsalKey = GlobalKey();
   final GlobalKey _otherExpensesKey = GlobalKey();
-  final GlobalKey _rateDisplayKey = GlobalKey(); // 🎯 1. DEFINE THE KEY
+  final GlobalKey _rateDisplayKey = GlobalKey();
   final GlobalKey _dateButtonKey = GlobalKey();
   final GlobalKey _confirmBtnKey = GlobalKey();
   bool _showDemoOverlay = false;
@@ -125,7 +130,6 @@ class _BookingDialogState extends State<BookingDialog> {
   bool _isInitialized = false;
   final TimeOfDay _defaultGigTime = const TimeOfDay(hour: 20, minute: 0);
 
-  // initState and other helper methods remain the same
   @override
   void initState() {
     super.initState();
@@ -133,6 +137,7 @@ class _BookingDialogState extends State<BookingDialog> {
     _newVenueAddressFocusNode.addListener(_onAddressFocusChange);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final demoProvider = Provider.of<DemoProvider>(context, listen: false);
       final isBookingDemo = widget.currentDemoStep == DemoStep.bookingFormValue ||
           widget.currentDemoStep == DemoStep.bookingFormAction;
 
@@ -142,16 +147,34 @@ class _BookingDialogState extends State<BookingDialog> {
             setState(() {
               _showDemoOverlay = true;
             });
+            // Initial call when dialog opens
+            _handleDemoStepChange(demoProvider.currentStep);
           }
         });
       }
     });
   }
 
-  // All other methods like dispose, _initializeDialogState, _confirmAction, etc. remain the same.
-  // ... (paste all your other methods here, no changes needed in them)
+  void _handleDemoStepChange(DemoStep? demoStep) {
+    if (demoStep == DemoStep.bookingFormAction) {
+      final context = _dateButtonKey.currentContext;
+      if (context != null) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 300),
+          alignment: 0.5, // Center it in the viewport
+          curve: Curves.easeInOut,
+        );
+      }
+    } else if (demoStep == DemoStep.bookingFormValue) {
+      _payFocusNode.requestFocus();
+    }
+  }
+
   @override
   void dispose() {
+    _scrollController.dispose();
+    _payFocusNode.dispose();
     _audioPlayer.dispose();
     _newVenueNameController.dispose();
     _newVenueAddressController.dispose();
@@ -171,6 +194,7 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     super.dispose();
   }
+
   void _onAddressFocusChange() {
     if (!_newVenueAddressFocusNode.hasFocus &&
         _isAddNewVenue &&
@@ -178,6 +202,7 @@ class _BookingDialogState extends State<BookingDialog> {
       _fetchDriveTimeForManualAddress();
     }
   }
+
   Future<void> _scheduleGigNotifications(Gig gig) async {
     final prefs = await SharedPreferences.getInstance();
     final notificationService = NotificationService();
@@ -214,12 +239,14 @@ class _BookingDialogState extends State<BookingDialog> {
       await notificationService.cancelNotification(daysBeforeNotificationId);
     }
   }
+
   Future<void> _cancelGigNotifications(Gig gig) async {
     final notificationService = NotificationService();
     final int baseNotificationId = gig.id.hashCode;
     await notificationService.cancelNotification(baseNotificationId);
     await notificationService.cancelNotification(baseNotificationId + 1);
   }
+
   Future<void> _loadProfileAddress() async {
     final prefs = await SharedPreferences.getInstance();
     _profileAddress1 = prefs.getString('profile_address1');
@@ -232,6 +259,7 @@ class _BookingDialogState extends State<BookingDialog> {
       _userProfileAddressForDisplay = null;
     }
   }
+
   Future<void> _initializeDialogState() async {
     await _loadProfileAddress();
     await _loadAllKnownVenuesInternal();
@@ -292,9 +320,11 @@ class _BookingDialogState extends State<BookingDialog> {
       });
     }
   }
+
   DriveTimeService _createDriveTimeService() {
     return DriveTimeService(googleApiKey: widget.googleApiKey, allKnownVenues: _allKnownVenuesInternal, address1: _profileAddress1, city: _profileCity, state: _profileState, zipCode: _profileZipCode);
   }
+
   Future<void> _handleVenueSelection(StoredLocation? venue) async {
     setState(() {
       _manualDriveDistance = null;
@@ -332,6 +362,7 @@ class _BookingDialogState extends State<BookingDialog> {
       }
     }
   }
+
   Future<void> _fetchDriveTimeForManualAddress() async {
     final address = _newVenueAddressController.text.trim();
     if (address.isEmpty) return;
@@ -352,6 +383,7 @@ class _BookingDialogState extends State<BookingDialog> {
       setState(() => _isFetchingDriveTime = false);
     }
   }
+
   Future<void> _openRecurringGigSettings() async {
     if (_editableGig == null) return;
     Gig gigForDialog = _editableGig!;
@@ -366,6 +398,7 @@ class _BookingDialogState extends State<BookingDialog> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_editableGig!.isRecurring ? 'Recurrence settings applied.' : 'Recurrence settings removed.'), duration: const Duration(seconds: 2), backgroundColor: Theme.of(context).colorScheme.primary));
     }
   }
+
   void _confirmAction() async {
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     if (demoProvider.isDemoModeActive && widget.currentDemoStep == DemoStep.bookingFormAction) {
@@ -446,12 +479,14 @@ class _BookingDialogState extends State<BookingDialog> {
       Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.updated, gig: newOrUpdatedGigData));
     }
   }
+
   Future<bool> _areNotificationsEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     final bool notifyOnDayOfGig = prefs.getBool('notify_on_day_of_gig') ?? false;
     final int? daysBefore = prefs.getInt('notify_days_before');
     return notifyOnDayOfGig || (daysBefore != null && daysBefore > 0);
   }
+
   Future<void> _loadAllKnownVenuesInternal() async {
     final prefs = await SharedPreferences.getInstance();
     final List<String>? locationsJson = prefs.getStringList('saved_locations');
@@ -462,6 +497,7 @@ class _BookingDialogState extends State<BookingDialog> {
       }).whereType<StoredLocation>().toList();
     }
   }
+
   void _calculateDynamicRate() {
     if (!mounted || _isCalculatorMode) return;
     final double pay = double.tryParse(_payController.text) ?? 0;
@@ -489,6 +525,7 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     if (mounted) setState(() { _dynamicRateString = newRateString; _dynamicRateResultColor = newColor; });
   }
+
   Future<void> _loadSelectableVenuesForDropdown({bool defaultToAddVenue = false}) async {
     if (!_isCalculatorMode && !_isAddGigMode) {
       if(mounted) setState(() => _isLoadingVenues = false );
@@ -530,6 +567,7 @@ class _BookingDialogState extends State<BookingDialog> {
       if (mounted) setState(() { _isLoadingVenues = false; });
     }
   }
+
   Future<void> _pickDate(BuildContext context) async {
     final DateTime initialDatePickerDate = _selectedDate ?? DateTime.now();
     final DateTime? picked = await showDatePicker(context: context, initialDate: initialDatePickerDate, firstDate: DateTime(DateTime.now().year - 5), lastDate: DateTime(DateTime.now().year + 5));
@@ -537,6 +575,7 @@ class _BookingDialogState extends State<BookingDialog> {
       if(mounted) setState(() { _selectedDate = picked; });
     }
   }
+
   Future<void> _pickTime(BuildContext context) async {
     final TimeOfDay initialPickerTime = _selectedTime ?? _defaultGigTime;
     final TimeOfDay? picked = await showTimePicker(context: context, initialTime: initialPickerTime);
@@ -544,6 +583,7 @@ class _BookingDialogState extends State<BookingDialog> {
       if(mounted) setState(() { _selectedTime = picked; });
     }
   }
+
   Future<LatLng?> _geocodeAddress(String address) async {
     if (widget.googleApiKey.isEmpty || widget.googleApiKey == "YOUR_GOOGLE_PLACES_API_KEY_HERE") {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Geocoding failed: API Key not configured.'), backgroundColor: Colors.red));
@@ -575,6 +615,7 @@ class _BookingDialogState extends State<BookingDialog> {
       if (mounted) setState(() => _isGeocoding = false);
     }
   }
+
   Future<void> _saveNewVenueToPrefs(StoredLocation venueToSave) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final StoredLocation venueWithCorrectArchiveStatus = venueToSave.copyWith(isArchived: venueToSave.placeId.startsWith('manual_') ? false : venueToSave.isArchived);
@@ -611,6 +652,7 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     if (widget.onNewVenuePotentiallyAdded != null) await widget.onNewVenuePotentiallyAdded!();
   }
+
   Gig? _checkForConflict(DateTime newGigStart, double newGigDurationHours, List<Gig> otherGigsToCheck) {
     final newGigEnd = newGigStart.add(Duration(milliseconds: (newGigDurationHours * 3600000).toInt()));
     for (var existingGig in otherGigsToCheck) {
@@ -623,6 +665,7 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     return null;
   }
+
   Future<void> _handleGigCancellation() async {
     if (!_isEditingMode || widget.editingGig == null) return;
     Gig gigToCancel = widget.editingGig!;
@@ -654,9 +697,6 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-
-  // ... inside _BookingDialogState class ...
-
   @override
   Widget build(BuildContext context) {
     if (!_isInitialized) {
@@ -665,8 +705,6 @@ class _BookingDialogState extends State<BookingDialog> {
         content: Center(heightFactor: 2, child: CircularProgressIndicator()),);
     }
 
-    // 🎯 WRAP the entire dialog in a Consumer to make it reactive to demo step changes.
-    // This is what makes the "Next" button work.
     return Consumer<DemoProvider>(
       builder: (context, demoProvider, child) {
         final bool isFirstBookingDemoStep = demoProvider.currentStep == DemoStep.bookingFormValue;
@@ -686,6 +724,7 @@ class _BookingDialogState extends State<BookingDialog> {
           title: Text(dialogTitle),
           contentPadding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 0.0),
           content: SingleChildScrollView(
+            controller: _scrollController,
             padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
             child: Stack(
               children: [
@@ -702,6 +741,7 @@ class _BookingDialogState extends State<BookingDialog> {
                             calculatedHourlyRate: widget.calculatedHourlyRate)
                       else
                         FinancialInputsView(
+                          payFocusNode: _payFocusNode,
                           payKey: _payKey,
                           gigLengthKey: _gigLengthKey,
                           driveSetupKey: _driveSetupKey,
@@ -808,36 +848,13 @@ class _BookingDialogState extends State<BookingDialog> {
           return dialogUI;
         }
 
-        return Stack(
-          children: [
-            dialogUI,
-            BookingDemoOverlay(
-              demoStep: demoProvider.currentStep,
-              isAddNewVenueMode: _isAddNewVenue,
-              driveSetupKey: _driveSetupKey,
-              rehearsalKey: _rehearsalKey,
-              payKey: _payKey,
-              lengthKey: _gigLengthKey,
-              otherExpensesKey: _otherExpensesKey,
-              rateDisplayKey: _rateDisplayKey,
-              dateKey: _dateButtonKey,
-              confirmKey: _confirmBtnKey,
-            ),
-          ],
-        );
-
-        if (!_showDemoOverlay) {
-          return dialogUI;
-        }
-
         // The Stack now correctly passes the reactive demoProvider.currentStep
         return Stack(
           children: [
             dialogUI,
             BookingDemoOverlay(
-              // This now gets the live step from the consumer
               demoStep: demoProvider.currentStep,
-              // This flag prevents the crash
+              onStepChange: _handleDemoStepChange,
               isAddNewVenueMode: _isAddNewVenue,
               driveSetupKey: _driveSetupKey,
               rehearsalKey: _rehearsalKey,
@@ -854,5 +871,3 @@ class _BookingDialogState extends State<BookingDialog> {
     );
   }
 }
-
-

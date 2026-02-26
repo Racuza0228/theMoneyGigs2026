@@ -279,198 +279,216 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
     final progress = (_currentDimensionIndex + 1) / _dimensions.length;
     final category = DefaultGigDimensions.getCategoryFor(dimension);
 
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: Column(
-        children: [
-          // Progress indicator
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
+    return SingleChildScrollView(
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            // Ensure the content fills the screen height, minus the AppBar and padding
+            minHeight: MediaQuery.of(context).size.height -
+                (Scaffold.of(context).appBarMaxHeight ?? 0) -
+                MediaQuery.of(context).padding.top -
+                MediaQuery.of(context).padding.bottom,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween, // Distribute space
+            children: [
+              // This top part doesn't need a Spacer anymore
+              Column(
+                children: [
+                  // Progress indicator
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 0),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Step ${_currentDimensionIndex + 1} of ${_dimensions.length}',
+                              style: TextStyle(
+                                color: Colors.grey.shade500,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              '${(progress * 100).toInt()}%',
+                              style: TextStyle(
+                                color: Colors.grey.shade500,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            minHeight: 6,
+                            backgroundColor: Colors.grey.shade800,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Conversational prompt
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: Column(
+                      children: [
+                        if (category != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              category.toUpperCase(),
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'How was the',
+                          style: TextStyle(
+                            color: Colors.grey.shade400,
+                            fontSize: 18,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          dimension,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'at ${widget.gig.venueName}?',
+                          style: TextStyle(
+                            color: Colors.grey.shade400,
+                            fontSize: 18,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 40),
+
+                  // Rating bar
+                  RatingBar.builder(
+                    initialRating: currentRating ?? 0,
+                    minRating: 0,
+                    direction: Axis.horizontal,
+                    allowHalfRating: true,
+                    itemCount: 5,
+                    itemSize: 56,
+                    unratedColor: Colors.grey.shade700,
+                    glowColor: Colors.amber.withOpacity(0.3),
+                    itemBuilder: (context, _) => const Icon(
+                      Icons.star,
+                      color: Colors.amber,
+                    ),
+                    onRatingUpdate: (rating) {
+                      HapticFeedback.mediumImpact();
+                      _setRating(rating);
+                    },
+                  ),
+
+                  if (currentRating != null) ...[
+                    const SizedBox(height: 16),
                     Text(
-                      'Step ${_currentDimensionIndex + 1} of ${_dimensions.length}',
+                      '${currentRating.toStringAsFixed(1)} / 5.0',
                       style: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontSize: 12,
+                        color: Colors.grey.shade400,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                    Text(
-                      '${(progress * 100).toInt()}%',
-                      style: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontSize: 12,
+                  ],
+                ],
+              ),
+              // REMOVED The Spacer() here, as mainAxisAlignment: MainAxisAlignment.spaceBetween does the job
+
+              // Navigation buttons (now guaranteed to be at the bottom)
+              Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Row(
+                  children: [
+                    // Back button
+                    if (_currentDimensionIndex > 0)
+                      Flexible(
+                        flex: 2,
+                        child: OutlinedButton(
+                          onPressed: _previousStep,
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: const Text('BACK'),
+                        ),
+                      ),
+                    if (_currentDimensionIndex > 0) const SizedBox(width: 12),
+
+                    // Skip button
+                    Flexible(
+                      flex: 2,
+                      child: OutlinedButton(
+                        onPressed: _skipCurrentRating,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          side: BorderSide(color: Colors.grey.shade600),
+                        ),
+                        child: const Text('SKIP'),
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    // Next button
+                    Flexible(
+                      flex: 3,
+                      child: ElevatedButton(
+                        onPressed: currentRating != null ? _nextStep : null,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          backgroundColor: Theme.of(context).colorScheme.primary,
+                        ),
+                        child: Text(
+                          _currentDimensionIndex == _dimensions.length - 1
+                              ? 'ADD NOTES'
+                              : 'NEXT',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 6,
-                    backgroundColor: Colors.grey.shade800,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 32),
-
-          // Conversational prompt
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Column(
-              children: [
-                if (category != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      category.toUpperCase(),
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                Text(
-                  'How was the',
-                  style: TextStyle(
-                    color: Colors.grey.shade400,
-                    fontSize: 18,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  dimension,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'at ${widget.gig.venueName}?',
-                  style: TextStyle(
-                    color: Colors.grey.shade400,
-                    fontSize: 18,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 40),
-
-          // Rating bar
-          RatingBar.builder(
-            initialRating: currentRating ?? 0,
-            minRating: 0,
-            direction: Axis.horizontal,
-            allowHalfRating: true,
-            itemCount: 5,
-            itemSize: 56,
-            unratedColor: Colors.grey.shade700,
-            glowColor: Colors.amber.withOpacity(0.3),
-            itemBuilder: (context, _) => const Icon(
-              Icons.star,
-              color: Colors.amber,
-            ),
-            onRatingUpdate: (rating) {
-              HapticFeedback.mediumImpact();
-              _setRating(rating);
-            },
-          ),
-
-          if (currentRating != null) ...[
-            const SizedBox(height: 16),
-            Text(
-              '${currentRating.toStringAsFixed(1)} / 5.0',
-              style: TextStyle(
-                color: Colors.grey.shade400,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
               ),
-            ),
-          ],
-
-          const Spacer(),
-
-          // Navigation buttons
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Row(
-              children: [
-                // Back button
-                if (_currentDimensionIndex > 0)
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: _previousStep,
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: const Text('BACK'),
-                    ),
-                  ),
-                if (_currentDimensionIndex > 0) const SizedBox(width: 12),
-
-                // Skip button
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _skipCurrentRating,
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      side: BorderSide(color: Colors.grey.shade600),
-                    ),
-                    child: const Text('SKIP'),
-                  ),
-                ),
-
-                const SizedBox(width: 12),
-
-                // Next button
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton(
-                    onPressed: currentRating != null ? _nextStep : null,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                    ),
-                    child: Text(
-                      _currentDimensionIndex == _dimensions.length - 1
-                          ? 'ADD NOTES'
-                          : 'NEXT',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -480,150 +498,162 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
         ? 0.0
         : _ratings.values.reduce((a, b) => a + b) / _ratings.values.length;
 
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: Column(
-        children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              children: [
-                const Icon(
-                  Icons.edit_note,
-                  size: 48,
-                  color: Colors.white,
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Any other thoughts?',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Add some notes about how this gig went',
-                  style: TextStyle(
-                    color: Colors.grey.shade400,
-                    fontSize: 16,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade900.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.green.shade700.withOpacity(0.5),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.star,
-                        color: Colors.amber,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Average Rating: ${avgRating.toStringAsFixed(1)}/5.0',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+    return SingleChildScrollView(
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: MediaQuery.of(context).size.height -
+                (Scaffold.of(context).appBarMaxHeight ?? 0) -
+                MediaQuery.of(context).padding.top -
+                MediaQuery.of(context).padding.bottom,
           ),
-
-          // Notes field
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: TextField(
-                controller: _notesController,
-                maxLines: null,
-                expands: true,
-                textAlignVertical: TextAlignVertical.top,
-                style: const TextStyle(fontSize: 16),
-                decoration: InputDecoration(
-                  hintText: 'What stood out? What could be improved? Any memorable moments?\n\n(Optional - you can export this to use with AI tools like Rosebud)',
-                  hintStyle: TextStyle(color: Colors.grey.shade600),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  contentPadding: const EdgeInsets.all(16),
-                ),
-              ),
-            ),
-          ),
-
-          // Action buttons
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              children: [
-                Row(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
                   children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _previousStep,
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
-                        child: const Text('BACK'),
-                      ),
+                    const Icon(
+                      Icons.edit_note,
+                      size: 48,
+                      color: Colors.white,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: ElevatedButton(
-                        onPressed: _isSaving ? null : _saveAndComplete,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: Colors.green.shade700,
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Any other thoughts?',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Add some notes about how this gig went',
+                      style: TextStyle(
+                        color: Colors.grey.shade400,
+                        fontSize: 16,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade900.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.green.shade700.withOpacity(0.5),
                         ),
-                        child: _isSaving
-                            ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.star,
+                            color: Colors.amber,
+                            size: 24,
                           ),
-                        )
-                            : const Text(
-                          'COMPLETE REVIEW',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Average Rating: ${avgRating.toStringAsFixed(1)}/5.0',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                TextButton.icon(
-                  onPressed: _exportReview,
-                  icon: const Icon(Icons.share, size: 18),
-                  label: const Text('Export Review to Share/Copy'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.grey.shade400,
+              ),
+
+              // Notes field - Use SizedBox to give it a flexible height
+              SizedBox(
+                height: 200, // Adjust as needed
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: TextField(
+                    controller: _notesController,
+                    maxLines: null,
+                    expands: true,
+                    textAlignVertical: TextAlignVertical.top,
+                    style: const TextStyle(fontSize: 16),
+                    decoration: InputDecoration(
+                      hintText: 'What stood out? What could be improved? Any memorable moments?\n\n(Optional - you can export this to use with AI tools like Rosebud)',
+                      hintStyle: TextStyle(color: Colors.grey.shade600),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.all(16),
+                    ),
                   ),
                 ),
-              ],
-            ),
+              ),
+
+              // Action buttons
+              Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _previousStep,
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                            ),
+                            child: const Text('BACK'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: _isSaving ? null : _saveAndComplete,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              backgroundColor: Colors.green.shade700,
+                            ),
+                            child: _isSaving
+                                ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                                : const Text(
+                              'COMPLETE REVIEW',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: _exportReview,
+                      icon: const Icon(Icons.share, size: 18),
+                      label: const Text('Export Review to Share/Copy'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey.shade400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -685,7 +715,7 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
               builder: (context) => AlertDialog(
                 title: const Text('Exit Review?'),
                 content: const Text(
-                  'Your progress will be saved, but you can come back to finish this review later.',
+                  'Your progress will be saved if you exit now. You can resume later.',
                 ),
                 actions: [
                   TextButton(
@@ -693,13 +723,17 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
                     child: const Text('CANCEL'),
                   ),
                   TextButton(
-                    onPressed: () => Navigator.of(context).pop(true),
+                    onPressed: () {
+                      // This now pops the dialog AND returns true
+                      Navigator.of(context).pop(true);
+                    },
                     child: const Text('SKIP FOR NOW'),
                   ),
                 ],
               ),
             );
 
+            // This part of the logic remains correct.
             if (shouldExit == true) {
               await _skipEntireReview();
             }

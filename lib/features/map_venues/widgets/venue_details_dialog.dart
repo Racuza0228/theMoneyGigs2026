@@ -110,7 +110,7 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
     _overlayEntry = OverlayEntry(
       builder: (context) => SimpleDemoOverlay(
         title: "Gig Booked!",
-        message: "Here you can see you now have a gig coming up at this venue. Let's click Save.",
+        message: "Here you can see you now have a gig coming up at this venue. Let's click SAVE/CLOSE below.",
         highlightKeys: [_nextGigKey, _saveCloseKey],
         showNextButton: false,
       ),

@@ -5,6 +5,7 @@ import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
 // 🎯 Convert to StatefulWidget to manage its own state and lifecycle
 class BookingDemoOverlay extends StatefulWidget {
   final DemoStep? demoStep;
+  final Function(DemoStep?) onStepChange;
   final GlobalKey driveSetupKey;
   final GlobalKey rehearsalKey;
   final GlobalKey payKey;
@@ -18,6 +19,7 @@ class BookingDemoOverlay extends StatefulWidget {
   const BookingDemoOverlay({
     super.key,
     required this.demoStep,
+    required this.onStepChange,
     required this.driveSetupKey,
     required this.rehearsalKey,
     required this.payKey,
@@ -58,6 +60,8 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
       setState(() {
         _isReadyToPaint = false;
       });
+      widget.onStepChange(widget.demoStep);
+
       _calculateLayout();
     }
   }
@@ -79,7 +83,7 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
       switch (demoStep) {
         case DemoStep.bookingFormValue:
           title = "What's your REAL hourly rate?";
-          message = "Fill in ALL of the time involved to see your true earnings. Then, tap Next to continue.";
+          message = "Fill in all of the time involved to see your true earnings. Then, tap Next to continue.";
           showNextButton = true;
 
           if (!widget.isAddNewVenueMode) {
@@ -102,10 +106,10 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
 
         case DemoStep.bookingFormAction:
           title = "Let's Book It";
-          message = "Now, select the date for the gig and press Confirm & Book to save it to your schedule.";
+          message = "Now, SELECT A DATE for the gig and press Confirm & Book to save it to your schedule.";
           showNextButton = false;
           highlightKeys = [widget.dateKey, widget.confirmKey];
-          textYOffset = MediaQuery.of(context).size.height * 0.1;
+          textYOffset = MediaQuery.of(context).size.height * 0.3;
           break;
         default:
           break;
@@ -194,7 +198,7 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
                     children: [
                       TextButton(
                         onPressed: () => demoProvider.endDemo(),
-                        child: const Text('Exit Demo', style: TextStyle(color: Colors.white70)),
+                        child: const Text('Exit Onboarding', style: TextStyle(color: Colors.white70)),
                       ),
                       if (_showNextButton)
                         ElevatedButton(

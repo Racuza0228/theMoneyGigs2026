@@ -40,31 +40,36 @@ class RetrospectiveNotificationBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      elevation: 4,
-      color: Colors.transparent,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.9),
-              Theme.of(context).colorScheme.primary.withOpacity(0.7),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          border: Border(
-            bottom: BorderSide(
-              color: Colors.white.withOpacity(0.2),
-              width: 1,
+    print("✅ BANNER_DEBUG: RetrospectiveNotificationBanner build() method CALLED for gig: '${gig.venueName}'");
+
+    return SafeArea(
+      bottom: false, // We only care about the top safe area
+      child: Material(
+        elevation: 4,
+        color: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Theme.of(context).colorScheme.primary.withOpacity(0.9),
+                Theme.of(context).colorScheme.primary.withOpacity(0.7),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            // The bottom border can remain as it is not affected by safe area
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.white.withOpacity(0.2),
+                width: 1,
+              ),
             ),
           ),
-        ),
-        child: SafeArea(
-          bottom: false,
+          // The Padding is now the direct child of the Container, not SafeArea
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
+              // The rest of the row layout is correct and remains unchanged...
               children: [
                 // Icon
                 Container(

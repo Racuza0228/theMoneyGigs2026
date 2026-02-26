@@ -8,6 +8,7 @@ class FinancialInputsView extends StatelessWidget {
   final Key? rehearsalKey;
   final Key? otherExpensesKey; // 🎯 ADD THIS KEY
   final Key? rateDisplayKey;
+  final FocusNode? payFocusNode;
 
   final TextEditingController payController;
   final TextEditingController otherExpensesController;
@@ -27,6 +28,7 @@ class FinancialInputsView extends StatelessWidget {
     this.rehearsalKey,
     this.otherExpensesKey,
     this.rateDisplayKey,
+    this.payFocusNode,
     required this.payController,
     required this.otherExpensesController,
     required this.gigLengthController,
@@ -45,6 +47,7 @@ class FinancialInputsView extends StatelessWidget {
       children: [
         TextFormField(
           key: payKey, // Assign the key
+          focusNode: payFocusNode,
           controller: payController,
           decoration: const InputDecoration(labelText: 'Total Pay (\$)*', border: OutlineInputBorder()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),

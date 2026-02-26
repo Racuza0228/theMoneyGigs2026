@@ -166,7 +166,7 @@ class _CoachingDemoFlowState extends State<CoachingDemoFlow> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Skip Onboarding?'),
+        title: const Text('Exit Onboarding?'),
         content: const Text('You can always update your profile later from the Profile tab.'),
         actions: [
           TextButton(
@@ -175,7 +175,7 @@ class _CoachingDemoFlowState extends State<CoachingDemoFlow> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Skip'),
+            child: const Text('Exit Onboarding'),
           ),
         ],
       ),
@@ -228,7 +228,7 @@ class _CoachingDemoFlowState extends State<CoachingDemoFlow> {
                   ),
                   TextButton(
                     onPressed: _skip,
-                    child: const Text('Skip', style: TextStyle(color: Colors.white70)),
+                    child: const Text('Exit Onboarding', style: TextStyle(color: Colors.white70)),
                   ),
                 ],
               ),
@@ -322,9 +322,9 @@ class _CoachingDemoFlowState extends State<CoachingDemoFlow> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const AnimatedText(
-          text: 'What instrument(s) do you play?',
+          text: 'Let''s onboard you.  You can click Exit Onboarding if you want to skip this, but it will set up the app to work for you.  What instrument(s) do you play?',
           style: TextStyle(
-            fontSize: 24,
+            fontSize: 16,
             fontWeight: FontWeight.bold,
             color: Colors.white,
           ),
@@ -640,7 +640,7 @@ class _CoachingDemoFlowState extends State<CoachingDemoFlow> {
       children: [
         const AnimatedText(text: "What's your home base?", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
         const SizedBox(height: 8),
-        const Text("We use this to calculate travel distance to gigs. You can skip this and add it later in your Profile.", style: TextStyle(fontSize: 16, color: Colors.white70)),
+        const Text("We use this to calculate travel distance to gigs. You can skip this and add it later in your Profile.  You can enter as much of your address as you like (City, St, for example).", style: TextStyle(fontSize: 16, color: Colors.white70)),
         const SizedBox(height: 32),
         AddressFormFields(
           address1Controller: _address1Controller,

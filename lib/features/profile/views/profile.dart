@@ -411,8 +411,10 @@ class _ProfilePageState extends State<ProfilePage> {
 
                 // <<< 4. ATTACH THE KEY TO THE WIDGET
                 Container(
-                  key: _connectWidgetKey,
-                  child: const ConnectWidget(),
+                  child: ConnectWidget(
+                    // ADD THIS property to pass the key down
+                    demoHighlightKey: _connectWidgetKey,
+                  ),
                 ),
 
                 // ... The rest of your form and widgets

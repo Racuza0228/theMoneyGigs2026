@@ -192,69 +192,99 @@ class _MainPageState extends State<MainPage> {
   }
 
   Future<void> _initializeAppServices() async {
+    print("✅ BANNER_DEBUG: _initializeAppServices started.");
+
     // These services are local and required for the app to function.
     // They are fast and don't require network.
+    final results = await Future.wait([
+      _initializeSettings(),
+      _checkForAppUpdate(),
+      GigRetrospectiveService.checkForRetrospectiveOnStartup(),
+    ]);
+
+    final pendingGigResult = results[2] as Gig?;
+    print("✅ BANNER_DEBUG: checkForRetrospectiveOnStartup returned: ${pendingGigResult?.venueName ?? 'null'}");
+
     tz.initializeTimeZones();
     final notificationService = NotificationService();
     await notificationService.init();
     await notificationService.debugPendingNotifications();
-
-    // The permission request is a blocking UI popup, so it happens here.
     await notificationService.requestPermissions();
 
     // These can run in parallel.
-    await Future.wait([
-      _initializeSettings(),
-      _checkForAppUpdate(),
-    ]);
-
-    // Check for retrospectives
-    await _checkForPendingRetrospectives();
-
     if (mounted) {
+      print("✅ BANNER_DEBUG: Component is mounted, proceeding to setState.");
+
       setState(() {
-        _isInitializingLocalServices = false;
-      });
-    }
-  }
+        if (pendingGigResult != null) {
+          print("✅ BANNER_DEBUG: pendingGigResult is NOT null. Setting state for banner.");
 
-  Future<void> _checkForPendingRetrospectives() async {
-    try {
-      final gigNeedingReview = await GigRetrospectiveService.checkForRetrospectiveOnStartup();
-      final allGigsNeedingReview = await GigRetrospectiveService.getGigsNeedingRetrospective();
-
-      if (mounted && gigNeedingReview != null) {
-        setState(() {
-          _gigNeedingReview = gigNeedingReview;
-          _totalGigsNeedingReview = allGigsNeedingReview.length;
+          _gigNeedingReview = pendingGigResult;
+          // We need to get the total count separately as the startup check only gets one.
+          // This can be a fire-and-forget call for now to update the count later.
+          GigRetrospectiveService.getGigsNeedingRetrospective().then((allGigs) {
+            if (mounted) {
+              print("✅ BANNER_DEBUG: Fetched total gigs needing review: ${allGigs.length}");
+              setState(() {
+                _totalGigsNeedingReview = allGigs.length;
+              });
+            }
+          });
           _showRetrospectiveBanner = true;
-        });
-      }
-    } catch (e) {
-      print('Error checking for retrospectives: $e');
+        }
+
+        // Mark initialization as complete to hide the loading spinner.
+        _isInitializingLocalServices = false;
+        print("✅ BANNER_DEBUG: setState complete. _isInitializingLocalServices=false, _showRetrospectiveBanner=$_showRetrospectiveBanner");
+
+      });
+    } else {
+      print("❌ BANNER_DEBUG: Component was unmounted before setState could be called.");
+
     }
   }
 
-  void _dismissRetrospectiveBanner() async {
+  void _skipAndDismissBanner() async {
+    if (_gigNeedingReview == null) return;
+    print("✅ BANNER_DEBUG: User clicked 'X'. Skipping gig: '${_gigNeedingReview!.venueName}'");
+
+    // Tell the service to ignore this gig for the rest of the session.
+    await GigRetrospectiveService.skipGigRetrospective(_gigNeedingReview!.id);
+
+    // Simply hide the banner. Do NOT check for more.
+    setState(() {
+      _showRetrospectiveBanner = false;
+    });
+  }
+  void _showNextRetrospectiveBanner() async {
+    // Hide the current banner first
     setState(() {
       _showRetrospectiveBanner = false;
     });
 
+    // Give the UI a frame to update
+    await Future.delayed(const Duration(milliseconds: 50));
+
     // Check if there are more gigs to review
     final gigsNeedingReview = await GigRetrospectiveService.getGigsNeedingRetrospective();
     if (gigsNeedingReview.isNotEmpty && mounted) {
+      print("✅ BANNER_DEBUG: Showing next banner for: '${gigsNeedingReview.first.venueName}'");
       setState(() {
         _gigNeedingReview = gigsNeedingReview.first;
         _totalGigsNeedingReview = gigsNeedingReview.length;
-        _showRetrospectiveBanner = true;
+        _showRetrospectiveBanner = true; // Show the next banner
       });
+    } else {
+      print("✅ BANNER_DEBUG: No more gigs to review.");
     }
   }
 
   void _onRetrospectiveComplete() {
-    // Refresh the UI to reflect the completed retrospective
+    print("✅ BANNER_DEBUG: Review completed.");
+    // Refresh any UI that depends on gig data
     globalRefreshNotifier.notify();
-    _dismissRetrospectiveBanner();
+    // Advance to the next banner
+    _showNextRetrospectiveBanner();
   }
 
   Future<void> _initializeSettings() async {
@@ -379,6 +409,8 @@ class _MainPageState extends State<MainPage> {
 
   @override
   Widget build(BuildContext context) {
+    print("✅ BANNER_DEBUG: Main page build running. _isInitializing: $_isInitializingLocalServices, _showBanner: $_showRetrospectiveBanner");
+
     if (_isInitializingLocalServices) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -444,48 +476,46 @@ class _MainPageState extends State<MainPage> {
               ),
             ],
           ),
-          body: Stack(
-            children: [
-              Column(
-                children: <Widget>[
-                  // Retrospective notification banner
-                  if (_showRetrospectiveBanner && _gigNeedingReview != null)
-                    RetrospectiveNotificationBanner(
-                      gig: _gigNeedingReview!,
-                      totalPendingCount: _totalGigsNeedingReview,
-                      onDismiss: _dismissRetrospectiveBanner,
-                      onComplete: _onRetrospectiveComplete,
-                    ),
-                  Expanded(
-                    child: IndexedStack(
-                      index: _selectedIndex,
-                      // The children are now built on demand
-                      children: List.generate(4, (index) {
-                        final color = _pageBackgroundColors[index];
-                        ImageProvider? provider;
-                        Color? bgColor;
-                        if (color != null) {
-                          bgColor = color;
-                        } else {
-                          final path = _pageBackgroundPaths[index];
-                          final defaultPath = _defaultBackgroundImages[index];
-                          if (path != null) {
-                            provider = path.startsWith('/') ? FileImage(File(path)) : AssetImage(path);
-                          } else if (defaultPath != null) {
-                            provider = AssetImage(defaultPath);
-                          }
-                          bgColor ??= Colors.black12;
-                        }
-                        return PageBackgroundWrapper(
-                          imageProvider: provider,
-                          backgroundColor: bgColor,
-                          backgroundOpacity: _pageBackgroundOpacities[index],
-                          child: buildPage(index), // Use the lazy builder
-                        );
-                      }),
-                    ),
-                  ),
-                ],
+          body: Column(
+            children: <Widget>[
+              // Retrospective notification banner
+              if (_showRetrospectiveBanner && _gigNeedingReview != null)
+                RetrospectiveNotificationBanner(
+                  gig: _gigNeedingReview!,
+                  totalPendingCount: _totalGigsNeedingReview,
+                  onDismiss: _skipAndDismissBanner,
+                  onComplete: _onRetrospectiveComplete,
+                ),
+
+              // The main page content
+              Expanded(
+                child: IndexedStack(
+                  index: _selectedIndex,
+                  // The children are now built on demand
+                  children: List.generate(4, (index) {
+                    final color = _pageBackgroundColors[index];
+                    ImageProvider? provider;
+                    Color? bgColor;
+                    if (color != null) {
+                      bgColor = color;
+                    } else {
+                      final path = _pageBackgroundPaths[index];
+                      final defaultPath = _defaultBackgroundImages[index];
+                      if (path != null) {
+                        provider = path.startsWith('/') ? FileImage(File(path)) : AssetImage(path);
+                      } else if (defaultPath != null) {
+                        provider = AssetImage(defaultPath);
+                      }
+                      bgColor ??= Colors.black12;
+                    }
+                    return PageBackgroundWrapper(
+                      imageProvider: provider,
+                      backgroundColor: bgColor,
+                      backgroundOpacity: _pageBackgroundOpacities[index],
+                      child: buildPage(index), // Use the lazy builder
+                    );
+                  }),
+                ),
               ),
             ],
           ),

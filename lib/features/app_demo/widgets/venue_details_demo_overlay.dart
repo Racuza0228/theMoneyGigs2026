@@ -66,7 +66,7 @@ class VenueDetailsDemoOverlay extends StatelessWidget {
                     // as the user's primary action should be to click 'BOOK'.
                     TextButton(
                       onPressed: () {}, // This will now be ignored
-                      child: const Text('Exit Demo', style: TextStyle(color: Colors.white70)),
+                      child: const Text('Exit Onboarding', style: TextStyle(color: Colors.white70)),
                     ),
                   ],
                 ),

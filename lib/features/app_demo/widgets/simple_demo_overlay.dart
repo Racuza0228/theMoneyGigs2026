@@ -173,7 +173,7 @@ class _SimpleDemoOverlayState extends State<SimpleDemoOverlay> {
                           TextButton(
                             onPressed: () => demoProvider.endDemo(),
                             child: const Text(
-                              'Exit Demo',
+                              'Exit Onboarding',
                               style: TextStyle(color: Colors.white70),
                             ),
                           ),
