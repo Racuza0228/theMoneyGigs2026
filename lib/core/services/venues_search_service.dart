@@ -1,7 +1,6 @@
 // lib/features/map_venues/services/venue_search_service.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:the_money_gigs/features/map_venues/models/place_models.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 // Import your existing Google Places service

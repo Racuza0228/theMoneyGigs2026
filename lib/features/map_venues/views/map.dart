@@ -94,6 +94,8 @@ class _MapPageState extends State<MapPage> {
 
   // Services and keys
   VenueRepository? _venueRepository;
+  DemoProvider? _demoProvider;
+
   static const String _googleApiKey = String.fromEnvironment('GOOGLE_API_KEY');
   static const String _isConnectedKey = 'is_connected_to_network';
   static const String _keyGigsList = 'gigs_list';
@@ -132,7 +134,9 @@ class _MapPageState extends State<MapPage> {
 
     // Set up listeners.
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
-    Provider.of<DemoProvider>(context, listen: false).addListener(_onDemoStateChanged);
+
+    _demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    _demoProvider?.addListener(_onDemoStateChanged);
 
     _searchController.addListener(() {
       if (_debounce?.isActive ?? false) _debounce!.cancel();
@@ -182,6 +186,8 @@ class _MapPageState extends State<MapPage> {
     } catch (e) {
       // Ignore error during dispose.
     }
+    _demoProvider?.removeListener(_onDemoStateChanged);
+
     _searchController.dispose();
     _debounce?.cancel();
     super.dispose();
@@ -220,6 +226,8 @@ class _MapPageState extends State<MapPage> {
 
   // --- DEMO ---
   void _onDemoStateChanged() {
+    if (!mounted) return;
+
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     if (!demoProvider.isDemoModeActive || !mounted) return;
 

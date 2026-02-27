@@ -21,7 +21,6 @@ import 'features/map_venues/views/map.dart';
 import 'features/gigs/views/gigs.dart';
 import 'features/profile/views/profile.dart';
 import 'core/widgets/page_background_wrapper.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'global_refresh_notifier.dart';
 import 'features/gigs/widgets/booking_dialog.dart'; // For Add Gig button
 import 'features/gigs/models/gig_model.dart'; // For existing gigs

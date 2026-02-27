@@ -1,7 +1,6 @@
 // lib/features/map_venues/widgets/venue_tags_widget.dart
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';

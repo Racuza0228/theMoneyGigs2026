@@ -12,6 +12,7 @@ class SimpleDemoOverlay extends StatefulWidget {
   final bool showExitButton;
   final bool blockInteraction; // When true, the highlight is visual only — all taps are blocked except the buttons
   final VoidCallback? onNext;
+  final VoidCallback onExit; // 🎯 ADD THIS LINE
 
   const SimpleDemoOverlay({
     super.key,
@@ -22,6 +23,7 @@ class SimpleDemoOverlay extends StatefulWidget {
     this.showExitButton = true,
     this.blockInteraction = false,
     this.onNext,
+    required this.onExit,
   });
 
   @override
@@ -171,7 +173,11 @@ class _SimpleDemoOverlayState extends State<SimpleDemoOverlay> {
                       children: [
                         if (widget.showExitButton)
                           TextButton(
-                            onPressed: () => demoProvider.endDemo(),
+                            onPressed: () {// 🎯 1. End the global demo state
+                              Provider.of<DemoProvider>(context, listen: false).endDemo();
+                              // 🎯 2. Call the callback to remove the OverlayEntry
+                              widget.onExit();
+                            },
                             child: const Text(
                               'Exit Onboarding',
                               style: TextStyle(color: Colors.white70),

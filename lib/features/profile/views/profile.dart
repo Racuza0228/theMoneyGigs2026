@@ -364,13 +364,17 @@ class _ProfilePageState extends State<ProfilePage> {
               SimpleDemoOverlay(
                 title: 'Connect to the Community',
                 message:
-                'Connecting requires an invitation code, and for just \$2/mo you gain access to the public venue repository where you can see all the venues that have been added, rated and commented on by other musicians. New features, including the ability to find other musicians will be added soon.',
+                'Two bucks a month connects you to a growing musician community — shared venues, honest ratings, and more on the way.',
                 highlightKeys: [_connectWidgetKey],
                 showNextButton: true,
                 blockInteraction: false, // Prevents accidental taps
                 onNext: () {
                   demoProvider.nextStep();
-                }
+                },
+                // 🎯 ADD THIS:
+                onExit: () {
+                  demoProvider.endDemo();
+                },
               ),
           ],
         );

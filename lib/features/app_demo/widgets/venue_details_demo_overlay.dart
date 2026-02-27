@@ -5,79 +5,88 @@ import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
 
 class VenueDetailsDemoOverlay extends StatelessWidget {
   final GlobalKey bookButtonKey;
+  final VoidCallback onExit;
 
   const VenueDetailsDemoOverlay({
     super.key,
     required this.bookButtonKey,
+    required this.onExit,
   });
 
   @override
   Widget build(BuildContext context) {
-    // 🎯 THE FIX: Wrap the entire contents in an IgnorePointer
-    // This allows taps to pass through the overlay to the buttons underneath.
-    return IgnorePointer(
-      child: Material(
-        type: MaterialType.transparency,
-        child: Stack(
-          children: [
-            // This is the semi-transparent backdrop with a hole punched out for the button.
-            CustomPaint(
+    // ❌ REMOVE the root IgnorePointer. We will handle pointers more granularly.
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(
+        children: [
+          // ✅ 1. Wrap the backdrop in its OWN IgnorePointer.
+          // This makes the semi-transparent part non-tappable, allowing
+          // clicks to pass through to the underlying UI (the "Book" button).
+          IgnorePointer(
+            child: CustomPaint(
               size: MediaQuery.of(context).size,
               painter: _HighlightPainter(
                 highlightKey: bookButtonKey,
                 context: context,
               ),
             ),
+          ),
 
-            // The instructional text box.
-            Positioned(
-              top: MediaQuery.of(context).size.height * 0.35,
-              left: 24,
-              right: 24,
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.85),
-                  border: Border.all(color: Colors.white, width: 2),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.edit_document, size: 48, color: Colors.white),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Here you can enter information about the venue.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+          // The instructional text box. Since it's NOT wrapped in an
+          // IgnorePointer, it will receive taps by default.
+          Positioned(
+            top: MediaQuery.of(context).size.height * 0.35,
+            left: 24,
+            right: 24,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.85),
+                border: Border.all(color: Colors.white, width: 2),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.edit_document, size: 48, color: Colors.white),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Here you can enter information about the venue.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
                     ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      "For now, let's book a gig here by clicking Book.",
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.white70),
-                    ),
-                    const SizedBox(height: 20),
-                    // Note: This button also becomes non-interactive, which is acceptable
-                    // as the user's primary action should be to click 'BOOK'.
-                    TextButton(
-                      onPressed: () {}, // This will now be ignored
-                      child: const Text('Exit Onboarding', style: TextStyle(color: Colors.white70)),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    "For now, let's book a gig here by clicking Book.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 16, color: Colors.white70),
+                  ),
+                  const SizedBox(height: 20),
+                  // ✅ 2. Now this button is tappable without needing an AbsorbPointer.
+                  TextButton(
+                    onPressed: () {
+                      // Find the provider and end the demo
+                      Provider.of<DemoProvider>(context, listen: false).endDemo();
+                      // Call the onExit callback to remove the overlay
+                      onExit();
+                    },
+                    child: const Text('Exit Onboarding', style: TextStyle(color: Colors.white70)),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
+
 
 // This painter is identical to the one in map_demo_overlay.dart
 // It correctly calculates the position of the highlight.

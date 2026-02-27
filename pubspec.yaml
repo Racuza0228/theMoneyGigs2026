@@ -36,7 +36,7 @@ dependencies:
   google_maps_flutter: ^2.12.3
   shared_preferences: ^2.2.2
   http: ^1.1.0
-  uuid: ^4.2.1                 # For generating session tokens for Places API
+  uuid: ^4.5.3                 # For generating session tokens for Places API
   intl: ^0.20.2
   flutter_rating_bar: ^4.0.1 # Or the latest version
   table_calendar: ^3.0.0

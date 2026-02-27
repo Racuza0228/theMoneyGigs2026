@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:uuid/uuid.dart';
 
 class VenueDiscoveryService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;

@@ -101,10 +101,15 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
   // New helper methods to show and hide the overlay
   void _showOverlayForBook() {
     _overlayEntry = OverlayEntry(
-      builder: (context) => VenueDetailsDemoOverlay(bookButtonKey: _bookButtonKey),
+      builder: (context) => VenueDetailsDemoOverlay(
+        bookButtonKey: _bookButtonKey,
+        // ✅ THE FIX: Pass the method that removes the overlay.
+        onExit: _removeOverlay,
+      ),
     );
     Overlay.of(context).insert(_overlayEntry!);
   }
+
 
   void _showOverlayForConfirmation() {
     _overlayEntry = OverlayEntry(
@@ -113,6 +118,7 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
         message: "Here you can see you now have a gig coming up at this venue. Let's click SAVE/CLOSE below.",
         highlightKeys: [_nextGigKey, _saveCloseKey],
         showNextButton: false,
+        onExit: _removeOverlay,
       ),
     );
     Overlay.of(context).insert(_overlayEntry!);

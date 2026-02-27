@@ -1,6 +1,7 @@
 // lib/features/app_demo/providers/demo_provider.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:the_money_gigs/features/app_demo/services/demo_tracking_service.dart'; // 🎯 Import the service
 
 enum DemoStep {
   none,                    // Not in demo
@@ -27,6 +28,9 @@ class DemoProvider with ChangeNotifier {
 
   bool get isDemoModeActive => _isDemoModeActive;
   DemoStep get currentStep => _currentStep;
+
+  final DemoTrackingService _trackingService = DemoTrackingService(); // 🎯 Instantiate the service
+
 
   // Legacy support - convert step enum to number for existing code
   int get currentStepNumber {
@@ -85,6 +89,9 @@ class DemoProvider with ChangeNotifier {
         _currentStep = DemoStep.mapVenueSearch;
       }
 
+      // 🎯 Start tracking the demo session
+      await _trackingService.startDemoSession();
+
       print('🎬 DemoProvider: Starting demo at step $_currentStep');
       Future.microtask(() {
         notifyListeners();
@@ -93,68 +100,104 @@ class DemoProvider with ChangeNotifier {
   }
 
   void nextStep() {
-    if (_isDemoModeActive) {
-      print('🎬 DemoProvider: Advancing from step $_currentStep');
+    if (!_isDemoModeActive) return;
 
-      // 🎯 THIS IS THE CORRECTED SWITCH STATEMENT
-      switch (_currentStep) {
-        case DemoStep.none:
-          _currentStep = DemoStep.coachingIntro;
-          break;
-        case DemoStep.coachingIntro:
-          _currentStep = DemoStep.mapVenueSearch;
-          break;
-        case DemoStep.mapVenueSearch:
-          _currentStep = DemoStep.mapAddVenue;
-          break;
-        case DemoStep.mapAddVenue:
-          _currentStep = DemoStep.mapBookGig;
-          break;
-        case DemoStep.mapBookGig:
-          _currentStep = DemoStep.bookingFormValue; // -> To the new booking step
-          break;
-        case DemoStep.bookingFormValue:
-          _currentStep = DemoStep.bookingFormAction; // -> To the second booking step
-          break;
-        case DemoStep.bookingFormAction:
-          _currentStep = DemoStep.venueDetailsConfirmation; // -> To the gigs list after booking
-          break;
-        case DemoStep.venueDetailsConfirmation:
-          _currentStep = DemoStep.gigListView; // -> To the gigs list after booking
-          break;
-        case DemoStep.gigListView: // <<< AFTER THE GIG LIST VIEW...
-          _currentStep = DemoStep.profileConnect; // <<< ...GO TO THE NEW PROFILE STEP
-          break;
-        case DemoStep.profileConnect: // <<< THE NEW STEP...
-          _currentStep = DemoStep.emailCapture; // <<< ...LEADS TO COMPLETION
-          break;
-        case DemoStep.emailCapture:  // 🆕 NEW
-          _currentStep = DemoStep.complete;
-          break;
-        case DemoStep.complete:
-          endDemo();
-          return;
-      }
+    print('🎬 DemoProvider: Advancing from step $_currentStep');
 
-      print('🎬 DemoProvider: Now at step $_currentStep');
-      notifyListeners();
+    // 🎯 REFACTORED LOGIC
+    DemoStep nextStepValue;
+    switch (_currentStep) {
+      case DemoStep.none:
+        nextStepValue = DemoStep.coachingIntro;
+        break;
+      case DemoStep.coachingIntro:
+        nextStepValue = DemoStep.mapVenueSearch;
+        break;
+      case DemoStep.mapVenueSearch:
+        nextStepValue = DemoStep.mapAddVenue;
+        break;
+      case DemoStep.mapAddVenue:
+        nextStepValue = DemoStep.mapBookGig;
+        break;
+      case DemoStep.mapBookGig:
+        nextStepValue = DemoStep.bookingFormValue;
+        break;
+      case DemoStep.bookingFormValue:
+        nextStepValue = DemoStep.bookingFormAction;
+        break;
+      case DemoStep.bookingFormAction:
+        nextStepValue = DemoStep.venueDetailsConfirmation;
+        break;
+      case DemoStep.venueDetailsConfirmation:
+        nextStepValue = DemoStep.gigListView;
+        break;
+      case DemoStep.gigListView:
+        nextStepValue = DemoStep.profileConnect;
+        break;
+      case DemoStep.profileConnect:
+        nextStepValue = DemoStep.emailCapture;
+        break;
+      case DemoStep.emailCapture:
+        nextStepValue = DemoStep.complete;
+        break;
+      case DemoStep.complete:
+      // If we are already at complete, advancing does nothing more
+      // than trigger the completion handler.
+        _handleDemoCompletion();
+        return; // Exit
     }
+
+    _currentStep = nextStepValue;
+    _trackingService.updateDemoStep(_currentStep); // Update Firestore with the new step
+
+    // If the new step IS complete, trigger the final cleanup.
+    if (_currentStep == DemoStep.complete) {
+      _handleDemoCompletion();
+    }
+
+    print('🎬 DemoProvider: Now at step $_currentStep');
+    notifyListeners();
   }
 
   void skipToStep(DemoStep step) {
     if (_isDemoModeActive) {
       print('🎬 DemoProvider: Skipping to step $step');
       _currentStep = step;
+      _trackingService.updateDemoStep(_currentStep);
       notifyListeners();
     }
   }
 
-  Future<void> endDemo() async {
+  // 🎯 Handles NATURAL completion of the demo
+  Future<void> _handleDemoCompletion() async {
     if (_isDemoModeActive) {
-      print('🎬 DemoProvider: endDemo() called at step $_currentStep');
+      print('🎬 DemoProvider: Demo completed naturally.');
+      // The `updateDemoStep` call in `nextStep` already marked it complete in Firestore.
+      // We just need to clean up the local state.
+      await _trackingService.completeDemoSession(); // Clears local session ID
+
       _isDemoModeActive = false;
       _currentStep = DemoStep.none;
-      print('🎬 DemoProvider: Demo ended, notifying listeners');
+
+      print('🎬 DemoProvider: Demo session ended and cleaned up.');
+      notifyListeners();
+    }
+  }
+
+
+  // 🎯 Handles PREMATURE exit from the demo (user clicks "Exit")
+  Future<void> endDemo() async {
+    if (_isDemoModeActive) {
+      print('🎬 DemoProvider: endDemo() called at step $_currentStep. User is exiting.');
+
+      // 🎯 Log the exit at the CURRENT step
+      await _trackingService.exitDemoSession(_currentStep);
+
+      // Reset local state
+      _isDemoModeActive = false;
+      _currentStep = DemoStep.none;
+
+      print('🎬 DemoProvider: Demo exited, notifying listeners');
       notifyListeners();
     }
   }

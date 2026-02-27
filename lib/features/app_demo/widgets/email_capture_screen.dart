@@ -14,13 +14,15 @@ class EmailCaptureScreen extends StatefulWidget {
 
 class _EmailCaptureScreenState extends State<EmailCaptureScreen> {
   final _emailController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
+
+  late final GlobalKey<FormState> _formKey;
   bool _isSubmitting = false;
   String? _userCity;
 
   @override
   void initState() {
     super.initState();
+    _formKey = GlobalKey<FormState>();
     _loadUserCity();
   }
 

@@ -273,7 +273,7 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
     }
   }
 
-  Widget _buildRatingStep() {
+  Widget _buildRatingStep(BuildContext context) {
     final dimension = _currentDimension;
     final currentRating = _ratings[dimension];
     final progress = (_currentDimensionIndex + 1) / _dimensions.length;
@@ -493,7 +493,7 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
     );
   }
 
-  Widget _buildNotesStep() {
+  Widget _buildNotesStep(BuildContext context) {
     final avgRating = _ratings.values.isEmpty
         ? 0.0
         : _ratings.values.reduce((a, b) => a + b) / _ratings.values.length;
@@ -753,8 +753,14 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
             ),
         ],
       ),
-      body: SafeArea(
-        child: _isOnNotesStep ? _buildNotesStep() : _buildRatingStep(),
+      body: Builder(
+        builder: (scaffoldContext) {
+          return SafeArea(
+            child: _isOnNotesStep
+                ? _buildNotesStep(scaffoldContext) // Pass the new context
+                : _buildRatingStep(scaffoldContext), // Pass the new context
+          );
+        },
       ),
     );
   }

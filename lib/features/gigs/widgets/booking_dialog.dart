@@ -138,6 +138,8 @@ class _BookingDialogState extends State<BookingDialog> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+      demoProvider.addListener(_onDemoStatusChanged); // Register listener
+
       final isBookingDemo = widget.currentDemoStep == DemoStep.bookingFormValue ||
           widget.currentDemoStep == DemoStep.bookingFormAction;
 
@@ -147,12 +149,24 @@ class _BookingDialogState extends State<BookingDialog> {
             setState(() {
               _showDemoOverlay = true;
             });
-            // Initial call when dialog opens
             _handleDemoStepChange(demoProvider.currentStep);
           }
         });
       }
     });
+  }
+
+  void _onDemoStatusChanged() {
+    //🎯 CRITICAL: Check mounted BEFORE accessing context or calling setState
+    if (!mounted) return;
+
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+
+    if (!demoProvider.isDemoModeActive) {
+      setState(() {
+        _showDemoOverlay = false;
+      });
+    }
   }
 
   void _handleDemoStepChange(DemoStep? demoStep) {
@@ -173,6 +187,12 @@ class _BookingDialogState extends State<BookingDialog> {
 
   @override
   void dispose() {
+
+    try {
+      Provider.of<DemoProvider>(context, listen: false).removeListener(_onDemoStatusChanged);
+    } catch (_) {}
+
+
     _scrollController.dispose();
     _payFocusNode.dispose();
     _audioPlayer.dispose();
@@ -844,7 +864,7 @@ class _BookingDialogState extends State<BookingDialog> {
           ],
         );
 
-        if (!_showDemoOverlay) {
+        if (!_showDemoOverlay || demoProvider.currentStep == DemoStep.none) {
           return dialogUI;
         }
 

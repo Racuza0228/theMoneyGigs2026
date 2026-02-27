@@ -45,6 +45,7 @@ class GigsPage extends StatefulWidget {
 class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late ScrollController _scrollController;
+  late DemoProvider _demoProvider;
 
   List<Gig> _allGigs = []; // Raw data from SharedPreferences, including recurring templates
   List<Gig> _displayedGigs = []; // Generated, displayable occurrences for the list view
@@ -81,16 +82,16 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
 
     // 🎬 Listen to DemoProvider so we react when the step changes to gigListView.
-    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-    demoProvider.addListener(_handleDemoStepChange);
-    print('🎬 [GigsPage] initState: DemoProvider listener registered. Current step = ${demoProvider.currentStep}');
+    _demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    _demoProvider.addListener(_handleDemoStepChange);
+    print('🎬 [GigsPage] initState: DemoProvider listener registered. Current step = ${_demoProvider.currentStep}');
   }
 
   @override
   void dispose() {
     _removeOverlay();
-    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-    demoProvider.removeListener(_handleDemoStepChange);
+    _demoProvider.removeListener(_handleDemoStepChange);
+
     globalRefreshNotifier.removeListener(_handleGlobalRefresh);
     _tabController.removeListener(_handleTabSelection);
     _tabController.dispose();
@@ -117,8 +118,11 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           message: "Each card is a gig where you can edit details, schedule recurring dates, or view notes with that icon on the right. Click Next.",
           highlightKeys: [_demoGigTileKey],
           showNextButton: true,
-          // 🎯 2. SIMPLIFY the onNext callback.
-          // It only needs to remove the overlay and advance the demo step.
+          // 🎯 ADD THIS: Remove the overlay and end the demo when "Exit" is clicked.
+          onExit: () {
+            _removeOverlay();
+            demoProvider.endDemo();
+          },
           onNext: () {
             _removeOverlay();
             demoProvider.nextStep();

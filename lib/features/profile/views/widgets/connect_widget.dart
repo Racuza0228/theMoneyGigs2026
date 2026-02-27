@@ -1,9 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';  // NEW: For Clipboard
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
-import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
 import 'package:the_money_gigs/features/profile/views/reconciliation_screen.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
