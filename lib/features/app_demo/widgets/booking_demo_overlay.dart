@@ -73,17 +73,19 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
   void _calculateLayout() {
     if (!mounted) return;
 
-    // Use postFrameCallback to ensure the underlying widgets have rendered
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
       final demoStep = widget.demoStep;
       if (demoStep == null) return;
 
+      // 🎯 Define statusBarHeight inside this method scope
+      final double statusBarHeight = MediaQuery.of(context).padding.top;
+
       String title = '';
       String message = '';
       List<GlobalKey> highlightKeys = [];
-      double textYOffset = MediaQuery.of(context).size.height * 0.1;
+      double textYOffset = statusBarHeight; // Default to top
       bool showNextButton = false;
 
       switch (demoStep) {
@@ -101,28 +103,22 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
               widget.otherExpensesKey,
               widget.rateDisplayKey,
             ];
-            double lowestInputBottom = _getLowestBottom(highlightKeys);
-
-            // 🎯 3. Improved positioning logic
-            if (lowestInputBottom > 0) {
-              textYOffset = lowestInputBottom + 16;
-            } else {
-              // If we measured 0, try again in a moment
-              Future.delayed(const Duration(milliseconds: 100), _calculateLayout);
-              return;
-            }
-          } else {
-            textYOffset = MediaQuery.of(context).size.height * 0.25;
           }
+          // Offset is handled by the "isBannerStep" logic in build(),
+          // but we set it here for consistency.
+          textYOffset = statusBarHeight;
           break;
 
         case DemoStep.bookingFormAction:
           title = "Let's Book It";
-          message = "Now, SELECT A DATE for the gig and press Confirm & Book to save it to your schedule.";
+          message = "Select a DATE and press Confirm & Book to save to your schedule.";
           showNextButton = false;
           highlightKeys = [widget.dateKey, widget.confirmKey];
-          textYOffset = MediaQuery.of(context).size.height * 0.3;
+
+          // 🎯 Pin to top banner
+          textYOffset = statusBarHeight;
           break;
+
         default:
           break;
       }
@@ -139,91 +135,103 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
   }
 
 
-  double _getLowestBottom(List<GlobalKey> keys) {
-    double lowestBottom = 0;
-    for (var key in keys) {
-      final context = key.currentContext;
-      if (context == null) continue;
-
-      final renderBox = context.findRenderObject() as RenderBox?;
-      if (renderBox != null && renderBox.hasSize && renderBox.attached) {
-        try {
-          final position = renderBox.localToGlobal(Offset.zero);
-          // 🎯 4. Log the measurement to verify it's working
-          // print('📏 [Overlay] Measured key: ${key.hashCode} at ${position.dy}');
-
-          final bottom = position.dy + renderBox.size.height;
-          if (bottom > lowestBottom) {
-            lowestBottom = bottom;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-    }
-    return lowestBottom;
-  }
 
   @override
   Widget build(BuildContext context) {
-    // 🎯 5. We always return the Stack, but only show the "holes" when measured
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     final RenderBox? parentRenderBox = context.findRenderObject() as RenderBox?;
+    final double statusBarHeight = MediaQuery.of(context).padding.top;
 
-    return Stack(
-      children: [
-        IgnorePointer(
-          child: CustomPaint(
-            size: MediaQuery.of(context).size,
-            painter: _MultiHighlightPainter(
-              // Only pass keys if we have actually measured them (lowestBottom > 0)
-              highlightKeys: _isReadyToPaint ? _highlightKeys : [],
-              pageRenderBox: parentRenderBox,
-            ),
-          ),
-        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // We use the Banner style for all steps in this form
+        bool isBannerStep = widget.demoStep == DemoStep.bookingFormValue ||
+            widget.demoStep == DemoStep.bookingFormAction;
 
-        if (_isReadyToPaint && widget.demoStep != null)
-          Positioned(
-            top: _textYOffset,
-            left: 24,
-            right: 24,
-            child: Material(
-              type: MaterialType.transparency,
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.9),
-                  border: Border.all(color: Colors.white, width: 2),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(_title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    Text(_message, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.white70)),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        TextButton(
-                          onPressed: () => Future.microtask(() => demoProvider.endDemo()),
-                          child: const Text('Exit Onboarding', style: TextStyle(color: Colors.white70)),
-                        ),
-                        if (_showNextButton)
-                          ElevatedButton(
-                            onPressed: () => demoProvider.nextStep(),
-                            child: const Text('Next'),
-                          ),
-                      ],
-                    )
-                  ],
+        return Stack(
+          children: [
+            // 1. VISUAL MASK ONLY
+            // We wrap this in IgnorePointer. It draws the "holes" but
+            // the finger goes straight through them to the TextFields.
+            if (_isReadyToPaint)
+              IgnorePointer(
+                child: CustomPaint(
+                  size: Size(constraints.maxWidth, constraints.maxHeight),
+                  painter: _MultiHighlightPainter(
+                    highlightKeys: _isReadyToPaint ? _highlightKeys : [],
+                    pageRenderBox: parentRenderBox,
+                  ),
                 ),
               ),
-            ),
-          ),
-      ],
+
+            // 2. THE INSTRUCTION BANNER
+            // Positioned at the very top, safe from the keyboard.
+            if (_isReadyToPaint && widget.demoStep != null)
+              Positioned(
+                top: statusBarHeight,
+                left: 0,
+                right: 0,
+                child: Material(
+                  elevation: 8,
+                  color: Colors.black.withOpacity(0.95),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: Colors.orangeAccent.shade100, width: 2),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _title,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.orangeAccent.shade100,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _message,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 12, color: Colors.white),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            TextButton(
+                              onPressed: () => demoProvider.endDemo(),
+                              child: const Text('Exit Demo',
+                                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+                            ),
+                            if (_showNextButton)
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orangeAccent.shade700,
+                                  foregroundColor: Colors.white,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () {
+                                  // This allows the user to progress only when ready
+                                  FocusScope.of(context).unfocus();
+                                  demoProvider.nextStep();
+                                },
+                                child: const Text('Next Step',
+                                    style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

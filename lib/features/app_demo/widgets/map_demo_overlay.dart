@@ -29,75 +29,112 @@ class MapDemoOverlay extends StatelessWidget {
   }
 
   Widget _buildVenueSearchOverlay(BuildContext context, DemoProvider demoProvider) {
-    return Stack(
-      children: [
-        // This allows tap events to pass through the dimmed area to the
-        // autocomplete results list underneath.
-        IgnorePointer(
-          ignoring: true, // It should always ignore pointers.
-          child: CustomPaint(
-            size: MediaQuery.of(context).size,
-            painter: _HighlightPainter(
-              highlightKey: searchBarKey,
-              context: context,
-            ),
-          ),
-        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Default fallback position (30% down the screen)
+        double topOffset = MediaQuery.of(context).size.height * 0.3;
 
-        // Place the instructional text in the center of the screen.
-        // This widget is NOT wrapped in IgnorePointer, so its buttons are still tappable.
-        Center(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24.0),
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.85),
-              border: Border.all(color: Colors.white, width: 2),
-              borderRadius: BorderRadius.circular(16),
+        if (searchBarKey?.currentContext != null) {
+          final RenderBox? box = searchBarKey!.currentContext!.findRenderObject() as RenderBox?;
+
+          // 🛠️ FIX: Added hasSize check to prevent "RenderBox was not laid out" error
+          if (box != null && box.hasSize) {
+            final Offset position = box.localToGlobal(Offset.zero);
+            // Position below: Top of search bar + height + extra room for the autocomplete height
+            topOffset = position.dy + (box.size.height * 2.5) + 20;
+          }
+        }
+
+        // 🛠️ KEYBOARD SAFETY: If the topOffset is so low it's off-screen (due to keyboard),
+        // cap it so it stays visible.
+        double screenHeight = MediaQuery.of(context).size.height;
+        if (topOffset > screenHeight - 150) {
+          topOffset = screenHeight - 160;
+        }
+
+        return Stack(
+          children: [
+            IgnorePointer(
+              ignoring: true,
+              child: CustomPaint(
+                size: Size(constraints.maxWidth, constraints.maxHeight),
+                painter: _HighlightPainter(
+                  highlightKey: searchBarKey,
+                  context: context,
+                ),
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.location_on, size: 36, color: Colors.white),
-                const SizedBox(height: 16),
-                const AnimatedText(
-                  text: 'Where would you like to play?',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+
+            // Positioned instructions below the search area
+            Positioned(
+              top: topOffset,
+              left: 24,
+              right: 24,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.9),
+                    border: Border.all(color: Colors.white, width: 2),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Use search bar above, enter a restaurant, bar or other place you''d like to play.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white70,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    TextButton(
-                      onPressed: () => demoProvider.endDemo(),
-                      child: const Text(
-                        'Exit Onboarding',
-                        style: TextStyle(color: Colors.white70),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on, size: 24, color: Colors.white),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: AnimatedText(
+                              text: 'Where would you like to play?',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Enter a restaurant, bar or place to search.',
+                        textAlign: TextAlign.left,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(50, 30),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () => demoProvider.endDemo(),
+                          child: const Text(
+                            'Exit Onboarding',
+                            style: TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
+
 
 class _HighlightPainter extends CustomPainter {
   final GlobalKey? highlightKey;

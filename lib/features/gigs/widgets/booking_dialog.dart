@@ -85,11 +85,21 @@ class _BookingDialogState extends State<BookingDialog> {
   String _dynamicRateString = "";
   Color _dynamicRateResultColor = Colors.grey;
   List<StoredLocation> _allKnownVenuesInternal = [];
+  List<String> _allKnownBands = [];
+
   List<StoredLocation> _selectableVenuesForDropdown = [];
   StoredLocation? _selectedVenue;
   bool _isAddNewVenue = false;
+
+  String? _selectedBand;
+  bool _isAddNewBand = false;
+  static const String _keyGigsList = 'gigs_list';
+  static const String _addNewBandPlaceholder = "--- Add New Band ---";
+
   final TextEditingController _newVenueNameController = TextEditingController();
   final TextEditingController _newVenueAddressController = TextEditingController();
+  final TextEditingController _newBandNameController = TextEditingController();
+
   final FocusNode _newVenueAddressFocusNode = FocusNode();
   String? _manualDriveDurationString;
   String? _manualDriveDistance;
@@ -170,6 +180,8 @@ class _BookingDialogState extends State<BookingDialog> {
   }
 
   void _handleDemoStepChange(DemoStep? demoStep) {
+    FocusScope.of(context).unfocus();
+
     if (demoStep == DemoStep.bookingFormAction) {
       final context = _dateButtonKey.currentContext;
       if (context != null) {
@@ -281,11 +293,37 @@ class _BookingDialogState extends State<BookingDialog> {
   }
 
   Future<void> _initializeDialogState() async {
+    print("--- Initializing Dialog State ---");
     await _loadProfileAddress();
     await _loadAllKnownVenuesInternal();
+    await _loadAllKnownBands();
     if (!mounted) return;
     if (_isEditingMode) {
-      _editableGig = widget.editingGig!.copyWith(id: widget.editingGig!.id, venueName: widget.editingGig!.venueName, latitude: widget.editingGig!.latitude, longitude: widget.editingGig!.longitude, address: widget.editingGig!.address, placeId: widget.editingGig!.placeId, dateTime: widget.editingGig!.dateTime, pay: widget.editingGig!.pay, gigLengthHours: widget.editingGig!.gigLengthHours, driveSetupTimeHours: widget.editingGig!.driveSetupTimeHours, rehearsalLengthHours: widget.editingGig!.rehearsalLengthHours, isJamOpenMic: widget.editingGig!.isJamOpenMic, notes: widget.editingGig!.notes, notesUrl: widget.editingGig!.notesUrl, isRecurring: widget.editingGig!.isRecurring, recurrenceFrequency: widget.editingGig!.recurrenceFrequency, recurrenceDay: widget.editingGig!.recurrenceDay, recurrenceNthValue: widget.editingGig!.recurrenceNthValue, recurrenceEndDate: widget.editingGig!.recurrenceEndDate);
+      print("Editing Mode: Gig has bandName = '${widget.editingGig?.bandName}'");
+
+      _editableGig = widget.editingGig!.copyWith(
+        id: widget.editingGig!.id,
+        bandName: widget.editingGig!.bandName, // <-- CRITICAL: This was missing
+        venueName: widget.editingGig!.venueName,
+        latitude: widget.editingGig!.latitude,
+        longitude: widget.editingGig!.longitude,
+        address: widget.editingGig!.address,
+        placeId: widget.editingGig!.placeId,
+        dateTime: widget.editingGig!.dateTime,
+        pay: widget.editingGig!.pay,
+        otherExpenses: widget.editingGig!.otherExpenses,
+        gigLengthHours: widget.editingGig!.gigLengthHours,
+        driveSetupTimeHours: widget.editingGig!.driveSetupTimeHours,
+        rehearsalLengthHours: widget.editingGig!.rehearsalLengthHours,
+        isJamOpenMic: widget.editingGig!.isJamOpenMic,
+        notes: widget.editingGig!.notes,
+        notesUrl: widget.editingGig!.notesUrl,
+        isRecurring: widget.editingGig!.isRecurring,
+        recurrenceFrequency: widget.editingGig!.recurrenceFrequency,
+        recurrenceDay: widget.editingGig!.recurrenceDay,
+        recurrenceNthValue: widget.editingGig!.recurrenceNthValue,
+        recurrenceEndDate: widget.editingGig!.recurrenceEndDate,
+      );
       _payController = TextEditingController(text: _editableGig!.pay.toStringAsFixed(0));
       _otherExpensesController = TextEditingController(text: (_editableGig!.otherExpenses ?? 0.0).toStringAsFixed(2));
       _gigLengthController = TextEditingController(text: _editableGig!.gigLengthHours.toStringAsFixed(1));
@@ -336,8 +374,11 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     if (mounted) {
       setState(() {
+        // This is where the dropdown UI gets its value
+        _selectedBand = _editableGig?.bandName;
         _isInitialized = true;
       });
+      print("Setting UI state: _selectedBand = '$_selectedBand'");
     }
   }
 
@@ -470,7 +511,46 @@ class _BookingDialogState extends State<BookingDialog> {
       setState(() => _isProcessing = false);
       return;
     }
-    final Gig newOrUpdatedGigData = _editableGig!.copyWith(venueName: finalVenueDetails.name, latitude: finalVenueDetails.coordinates.latitude, longitude: finalVenueDetails.coordinates.longitude, address: finalVenueDetails.address, placeId: finalVenueDetails.placeId, dateTime: selectedFullDateTime, pay: finalPay, otherExpenses: finalOtherExpenses, gigLengthHours: finalGigLengthHours, driveSetupTimeHours: finalDriveSetupHours, rehearsalLengthHours: finalRehearsalHours, notes: _editableGig!.notes, notesUrl: _editableGig!.notesUrl, isRecurring: _editableGig!.isRecurring, recurrenceFrequency: _editableGig!.recurrenceFrequency, recurrenceDay: _editableGig!.recurrenceDay, recurrenceNthValue: _editableGig!.recurrenceNthValue, recurrenceEndDate: _editableGig!.recurrenceEndDate);
+
+    String? finalBandName;
+    if (_isAddNewBand) {
+      finalBandName = _newBandNameController.text.trim();
+      if (finalBandName.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a band name.')));
+        return;
+      }
+      // Save to global list if new
+      if (!_allKnownBands.contains(finalBandName)) {
+        _allKnownBands.add(finalBandName);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList('saved_band_names', _allKnownBands);
+      }
+    } else {
+      finalBandName = _selectedBand;
+    }
+
+    print("--- Confirming Action ---");
+    print("Returning gig with bandName: '$finalBandName'");
+
+    final Gig newOrUpdatedGigData = _editableGig!.copyWith(
+        venueName: finalVenueDetails.name,
+        bandName: finalBandName,
+        latitude: finalVenueDetails.coordinates.latitude,
+        longitude: finalVenueDetails.coordinates.longitude,
+        address: finalVenueDetails.address,
+        placeId: finalVenueDetails.placeId,
+        dateTime: selectedFullDateTime,
+        pay: finalPay,
+        otherExpenses: finalOtherExpenses,
+        gigLengthHours: finalGigLengthHours,
+        driveSetupTimeHours: finalDriveSetupHours,
+        rehearsalLengthHours: finalRehearsalHours,
+        notes: _editableGig!.notes,
+        notesUrl: _editableGig!.notesUrl,
+        isRecurring: _editableGig!.isRecurring,
+        recurrenceFrequency: _editableGig!.recurrenceFrequency,
+        recurrenceDay: _editableGig!.recurrenceDay, recurrenceNthValue: _editableGig!.recurrenceNthValue, recurrenceEndDate: _editableGig!.recurrenceEndDate);
+
     List<Gig> otherGigsToCheck = List.from(widget.existingGigs.where((g) => !g.isJamOpenMic));
     if (_isEditingMode) {
       otherGigsToCheck.removeWhere((g) => g.id == widget.editingGig!.id);
@@ -516,6 +596,33 @@ class _BookingDialogState extends State<BookingDialog> {
         catch (e) { print("Error decoding one stored location in BookingDialog: $e"); return null; }
       }).whereType<StoredLocation>().toList();
     }
+  }
+
+  Future<void> _loadAllKnownBands() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // 1. Load the manual list of "Saved Bands"
+    final List<String> savedBands = prefs.getStringList('saved_band_names') ?? [];
+
+    // 2. Load the actual Gigs list from disk using our shared key to extract any bands used
+    final String? gigsJson = prefs.getString(_keyGigsList); // <--- USING THE KEY HERE
+    Set<String> bandsFromDisk = {};
+    if (gigsJson != null) {
+      final List<Gig> decodedGigs = Gig.decode(gigsJson);
+      bandsFromDisk = decodedGigs.map((g) => g.bandName).whereType<String>().toSet();
+    }
+
+    // 3. Combine with the list passed from the widget (existingGigs)
+    final Set<String> bandsFromWidget = widget.existingGigs
+        .map((g) => g.bandName)
+        .whereType<String>()
+        .toSet();
+
+    setState(() {
+      // Merge all sources to ensure the dropdown is exhaustive
+      _allKnownBands = {...savedBands, ...bandsFromDisk, ...bandsFromWidget}.toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    });
   }
 
   void _calculateDynamicRate() {
@@ -689,31 +796,70 @@ class _BookingDialogState extends State<BookingDialog> {
   Future<void> _handleGigCancellation() async {
     if (!_isEditingMode || widget.editingGig == null) return;
     Gig gigToCancel = widget.editingGig!;
-    bool isRecurringTemplate = gigToCancel.isRecurring;
-    bool isFromRecurringSeries = gigToCancel.isFromRecurring;
-    if (isRecurringTemplate || isFromRecurringSeries) {
-      final RecurringCancelChoice? choice = await showDialog<RecurringCancelChoice>(context: context, builder: (BuildContext dialogContext) {
-        return AlertDialog(title: const Text('Cancel Recurring Gig'), content: Text('This is part of a recurring series. What would you like to do with the gig at "${gigToCancel.venueName}" on ${DateFormat.yMMMEd().format(gigToCancel.dateTime)}?'), actions: <Widget>[TextButton(child: const Text('CANCEL THIS EVENT ONLY'), onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.thisInstanceOnly)), TextButton(child: Text('CANCEL ALL FUTURE EVENTS', style: TextStyle(color: Theme.of(context).colorScheme.error)), onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.allFutureInstances)), const SizedBox(height: 10), TextButton(child: const Text('NEVERMIND'), onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.doNothing))]);
-      });
-      if (choice == null || choice == RecurringCancelChoice.doNothing) {
-        return;
-      }
-      if (choice == RecurringCancelChoice.thisInstanceOnly) {
-        await _cancelGigNotifications(gigToCancel);
-      }
+
+    // 1. Handle Recurring Gigs
+    if (gigToCancel.isRecurring || gigToCancel.isFromRecurring) {
+      final RecurringCancelChoice? choice = await showDialog<RecurringCancelChoice>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+                title: const Text('Cancel Recurring Gig'),
+                content: Text('This is part of a recurring series. What would you like to do?'),
+                actions: <Widget>[
+                  TextButton(
+                      child: const Text('CANCEL THIS EVENT ONLY'),
+                      onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.thisInstanceOnly)
+                  ),
+                  TextButton(
+                      child: Text('CANCEL ALL FUTURE EVENTS', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                      onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.allFutureInstances)
+                  ),
+                  TextButton(
+                      child: const Text('NEVERMIND'),
+                      onPressed: () => Navigator.of(dialogContext).pop(RecurringCancelChoice.doNothing)
+                  )
+                ]
+            );
+          }
+      );
+
+      if (choice == null || choice == RecurringCancelChoice.doNothing) return;
+
       if (mounted) setState(() => _isProcessing = true);
-      Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.deleted, gig: gigToCancel, cancelChoice: choice));
+
+      // 🎯 CRITICAL: Pop the choice back to GigsPage
+      Navigator.of(context).pop(GigEditResult(
+          action: GigEditResultAction.deleted,
+          gig: gigToCancel,
+          cancelChoice: choice
+      ));
       return;
     }
-    if(mounted) setState(() => _isProcessing = true);
-    final bool confirmCancel = await showDialog<bool>(context: context, barrierDismissible: false, builder: (BuildContext dialogContext) {
-      return AlertDialog(title: const Text('Confirm Gig Cancellation'), content: Text('Are you sure you want to cancel the gig at "${widget.editingGig!.venueName}" on ${DateFormat.yMMMEd().format(widget.editingGig!.dateTime)}? This cannot be undone.'), actions: <Widget>[TextButton(child: const Text('NO, KEEP GIG'), onPressed: () => Navigator.of(dialogContext).pop(false)), TextButton(child: Text('YES, CANCEL GIG', style: TextStyle(color: Theme.of(context).colorScheme.error)), onPressed: () => Navigator.of(dialogContext).pop(true))]);
-    }) ?? false;
-    if (!mounted) return;
-    setState(() => _isProcessing = false);
-    if (confirmCancel) {
-      await _cancelGigNotifications(widget.editingGig!);
-      Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.deleted, gig: widget.editingGig));
+
+    // 2. Handle Single Gigs
+    final bool confirmCancel = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+              title: const Text('Confirm Gig Cancellation'),
+              content: const Text('Are you sure you want to cancel this gig?'),
+              actions: <Widget>[
+                TextButton(child: const Text('NO'), onPressed: () => Navigator.of(dialogContext).pop(false)),
+                TextButton(
+                    child: const Text('YES, CANCEL GIG'),
+                    onPressed: () => Navigator.of(dialogContext).pop(true)
+                ),
+              ]
+          );
+        }
+    ) ?? false;
+
+    if (confirmCancel && mounted) {
+      // 🎯 CRITICAL: Pop the deletion result back to GigsPage
+      Navigator.of(context).pop(GigEditResult(
+          action: GigEditResultAction.deleted,
+          gig: gigToCancel
+      ));
     }
   }
 
@@ -798,7 +944,49 @@ class _BookingDialogState extends State<BookingDialog> {
                           DriveTimeDisplay(isFetching: _isFetchingDriveTime, duration: _isAddNewVenue ? _manualDriveDurationString : _selectedVenue?.driveDuration, distance: _isAddNewVenue ? _manualDriveDistance : _selectedVenue?.driveDistance, userProfileAddress: _userProfileAddressForDisplay),
                         ],
                       ),
-                      const SizedBox(height: 4),
+
+                      // --- START: NEW BAND SELECTION FIELD ---
+                      const Divider(height: 32),
+                      Text("Band / Project:", style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: _isAddNewBand ? _addNewBandPlaceholder : _selectedBand,
+                        decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            hintText: "Select Band (Optional)"
+                        ),
+                        items: [
+                          const DropdownMenuItem<String>(value: null, child: Text("None / Solo")),
+                          ..._allKnownBands.map((band) => DropdownMenuItem(value: band, child: Text(band))),
+                          const DropdownMenuItem<String>(
+                              value: _addNewBandPlaceholder,
+                              child: Text(_addNewBandPlaceholder, style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))
+                          ),
+                        ],
+                        onChanged: (val) {
+                          setState(() {
+                            if (val == _addNewBandPlaceholder) {
+                              _isAddNewBand = true;
+                              _selectedBand = null;
+                            } else {
+                              _isAddNewBand = false;
+                              _selectedBand = val;
+                            }
+                          });
+                        },
+                      ),
+                      if (_isAddNewBand) ...[
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _newBandNameController,
+                          decoration: const InputDecoration(labelText: 'New Band Name*', border: OutlineInputBorder()),
+                          validator: (value) => (_isAddNewBand && (value == null || value.trim().isEmpty)) ? 'Band name required' : null,
+                        ),
+                      ],
+                      // --- END: NEW BAND SELECTION FIELD ---
+
+                      const SizedBox(height: 16),
                       if (_isEditingMode)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4.0),

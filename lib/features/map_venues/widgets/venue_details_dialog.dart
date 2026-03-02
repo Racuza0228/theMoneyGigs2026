@@ -76,7 +76,13 @@ class _VenueDetailsDialogState extends State<VenueDetailsDialog> {
     _initializeDialog();
 
     // We now use the post frame callback to MANUALLY INSERT the overlay
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      // 1. Wait for the Dialog entry animation to complete (usually 200-300ms)
+      // and for the first set of Firestore data to potentially trigger a rebuild.
+      await Future.delayed(const Duration(milliseconds: 300));
+
       if (!mounted) return;
 
       final demoProvider = Provider.of<DemoProvider>(context, listen: false);

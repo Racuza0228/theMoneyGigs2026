@@ -106,43 +106,66 @@ class GigListTile extends StatelessWidget {
   }
 
   Widget _buildTitle(BuildContext context) {
+    print("Building Title: Band Name: ${gig.bandName}");
+
     if (style == GigTileStyle.calendarView) {
       // Calendar view: simple title
       return Text(
-        gig.venueName,
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: _isPast ? Colors.grey.shade600 : Colors.white,
-        ),
+        '${gig.venueName} - ${gig.bandName}'
+        ,        style: TextStyle(
+        fontWeight: FontWeight.bold,
+        color: _isPast ? Colors.grey.shade600 : Colors.white,
+      ),
       );
     }
 
-    // List view: title with recurring indicator
-    return Row(
+    // List view: Venue Name with Band Name underneath
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Text(
-            gig.venueName,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: _isPast
-                  ? Colors.grey.shade700
-                  : (_isJam
-                  ? Theme.of(context).colorScheme.onSecondaryContainer
-                  : Theme.of(context).textTheme.titleLarge?.color),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                gig.venueName,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18, // Slightly larger for the venue
+                  color: _isPast
+                      ? Colors.grey.shade700
+                      : (_isJam
+                      ? Theme.of(context).colorScheme.onSecondaryContainer
+                      : Theme.of(context).textTheme.titleLarge?.color),
+                ),
+              ),
             ),
-          ),
+            if (_isRecurring && !_isJam)
+              Padding(
+                padding: const EdgeInsets.only(left: 8.0),
+                child: Icon(
+                  Icons.event_repeat,
+                  size: 16,
+                  color: _isPast
+                      ? Colors.grey.shade600
+                      : Theme.of(context).colorScheme.secondary,
+                  semanticLabel: "Recurring Gig",
+                ),
+              ),
+          ],
         ),
-        if (_isRecurring && !_isJam)
+
+        if (gig.bandName != null && gig.bandName!.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(left: 8.0),
-            child: Icon(
-              Icons.event_repeat,
-              size: 16,
-              color: _isPast
-                  ? Colors.grey.shade600
-                  : Theme.of(context).colorScheme.secondary,
-              semanticLabel: "Recurring Gig",
+            padding: const EdgeInsets.only(top: 2.0),
+            child: Text(
+              gig.bandName!,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: _isPast
+                    ? Colors.grey.shade500
+                    : Theme.of(context).colorScheme.primary, // Highlights the band in theme color
+              ),
             ),
           ),
       ],

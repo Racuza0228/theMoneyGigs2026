@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 
 class FinancialInputsView extends StatelessWidget {
-  // 1. Add the keys as optional parameters
   final Key? payKey;
   final Key? gigLengthKey;
   final Key? driveSetupKey;
   final Key? rehearsalKey;
-  final Key? otherExpensesKey; // 🎯 ADD THIS KEY
+  final Key? otherExpensesKey;
   final Key? rateDisplayKey;
   final FocusNode? payFocusNode;
 
@@ -21,7 +20,6 @@ class FinancialInputsView extends StatelessWidget {
 
   const FinancialInputsView({
     super.key,
-    // 2. Add them to the constructor
     this.payKey,
     this.gigLengthKey,
     this.driveSetupKey,
@@ -39,58 +37,77 @@ class FinancialInputsView extends StatelessWidget {
     required this.dynamicRateResultColor,
   });
 
+  // Helper to create a consistent small decoration
+  InputDecoration _getSmallDecoration(String label, {String? hint}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      isDense: true, // 🎯 Reduces height of the box
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), // 🎯 Reduces internal padding
+      labelStyle: const TextStyle(fontSize: 14), // 🎯 Smaller label font
+      border: const OutlineInputBorder(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // This Column structure places each input on its own line.
+    const double spacing = 6.0; // 🎯 Reduced from 8.0
+    const TextStyle inputStyle = TextStyle(fontSize: 14); // 🎯 Smaller input font
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextFormField(
-          key: payKey, // Assign the key
+          key: payKey,
           focusNode: payFocusNode,
           controller: payController,
-          decoration: const InputDecoration(labelText: 'Total Pay (\$)*', border: OutlineInputBorder()),
+          style: inputStyle,
+          decoration: _getSmallDecoration('Total Pay (\$)*'),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           validator: (value) => (value == null || value.trim().isEmpty || double.tryParse(value) == null) ? 'Required' : null,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: spacing),
         TextFormField(
-          key: gigLengthKey, // Assign the key
+          key: gigLengthKey,
           controller: gigLengthController,
-          decoration: const InputDecoration(labelText: 'Gig Length (hours)*', border: OutlineInputBorder()),
+          style: inputStyle,
+          decoration: _getSmallDecoration('Gig Length (hours)*'),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           validator: (value) => (value == null || value.trim().isEmpty || double.tryParse(value) == null) ? 'Required' : null,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: spacing),
         TextFormField(
-          key: driveSetupKey, // Assign the key
+          key: driveSetupKey,
           controller: driveSetupController,
-          decoration: const InputDecoration(labelText: 'Drive/Setup (hours)', border: OutlineInputBorder()),
+          style: inputStyle,
+          decoration: _getSmallDecoration('Drive/Setup (hours)'),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: spacing),
         TextFormField(
-          key: rehearsalKey, // Assign the key
+          key: rehearsalKey,
           controller: rehearsalController,
-          decoration: const InputDecoration(labelText: 'Rehearsal (hours)', border: OutlineInputBorder()),
+          style: inputStyle,
+          decoration: _getSmallDecoration('Rehearsal (hours)'),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: spacing),
         TextFormField(
-          key: otherExpensesKey, // 🎯 ASSIGN THE KEY HERE
+          key: otherExpensesKey,
           controller: otherExpensesController,
-          decoration: const InputDecoration(labelText: 'Other Expenses (\$)', hintText: 'e.g., Gas, parking, strings', border: OutlineInputBorder()),
+          style: inputStyle,
+          decoration: _getSmallDecoration('Other Expenses (\$)', hint: 'e.g., Gas, parking'),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
         ),
         if (showDynamicRate)
           Padding(
             key: rateDisplayKey,
-            padding: const EdgeInsets.only(top: 12.0),
+            padding: const EdgeInsets.only(top: 8.0), // 🎯 Reduced from 12.0
             child: Center(
               child: Text(
                 dynamicRateString,
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 14, // 🎯 Reduced from 16
                   fontWeight: FontWeight.bold,
                   color: dynamicRateResultColor,
                 ),

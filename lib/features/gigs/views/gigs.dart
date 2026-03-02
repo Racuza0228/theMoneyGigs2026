@@ -343,6 +343,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       );
 
       String processedVenueName = gig.venueName;
+      String? processedBandName = gig.bandName;
+
       if (sourceVenue.isPrivate && !gig.venueName.startsWith('[PRIVATE]')) {
         processedVenueName = '[PRIVATE] $processedVenueName';
       }
@@ -353,7 +355,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           processedVenueName += " (${gig.notes})";
         }
       }
-      return gig.copyWith(venueName: processedVenueName);
+      return gig.copyWith(
+        venueName: processedVenueName,
+        bandName: processedBandName, // <--- CRITICAL: Pass the band name here
+      );
     }).toList();
 
     final Map<String, Gig> uniqueGigs = {};
@@ -844,27 +849,40 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   Future<void> _updateGig(Gig updatedGig) async {
     try {
-      // Find the index of the old gig in your master list
-      final index = _allGigs.indexWhere((g) => g.id == updatedGig.id);
+      // 1. Get the Base ID (to find the template, not just the specific occurrence)
+      final String baseId = updatedGig.getBaseId();
+      final index = _allGigs.indexWhere((g) => g.id == baseId);
+
+      print("--- [GigsPage] _updateGig ---");
+      print("Updating Base ID: $baseId");
+      print("New Band Name: ${updatedGig.bandName}");
+
       if (index != -1) {
-        // Replace the old gig with the updated one
-        _allGigs[index] = updatedGig;
+        setState(() {
+          // 2. Replace the master template in memory
+          // We use copyWith(id: baseId) to ensure we don't accidentally
+          // save an occurrence ID (with a date suffix) into the master list
+          _allGigs[index] = updatedGig.copyWith(id: baseId);
+        });
 
-        // Save the entire updated list back to SharedPreferences
+        // 3. Persist the entire list to SharedPreferences
         final prefs = await SharedPreferences.getInstance();
-        // NOTE: Make sure _keyGigsList is the correct key you use elsewhere for the gigs list.
-        await prefs.setString('gigs_list', Gig.encode(_allGigs));
+        await prefs.setString(_keyGigsList, Gig.encode(_allGigs));
 
-        // Now that the data is saved, notify the app to reload everything.
+        // 4. CRITICAL: Regenerate the concrete instances for the ListView
+        _generateAndSetDisplayedGigs();
+
+        // 5. Notify system to reload
         globalRefreshNotifier.notify();
-        print("Gig updated and saved successfully.");
+        print("✅ Gig updated and saved successfully to disk.");
       } else {
-        print("Error: Could not find gig with ID ${updatedGig.id} to update.");
+        print("❌ Error: Could not find gig with ID $baseId to update.");
       }
     } catch (e) {
+      print("❌ Error in _updateGig: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error processing gig update: ${e.toString()}'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error updating gig: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -890,24 +908,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-  Future<void> _setVenueMutedState(StoredLocation venue, bool isMuted) async {
-    final int index = _allKnownVenues.indexWhere((v) => v.placeId == venue.placeId);
-    if (index != -1) {
-      _allKnownVenues[index] = _allKnownVenues[index].copyWith(isMuted: isMuted);
-      final prefs = await SharedPreferences.getInstance();
-      final List<String> updatedVenuesJson = _allKnownVenues.map((v) => jsonEncode(v.toJson())).toList();
-      await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
-      globalRefreshNotifier.notify();
-      if(mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isMuted ? 'Jam sessions for ${venue.name} will be hidden from the gigs list.' : 'Jam sessions for ${venue.name} will now be shown in the gigs list.'),
-            backgroundColor: Colors.blueAccent,
-          ),
-        );
-      }
-    }
-  }
+
 
   Future<void> _archiveVenue(StoredLocation venueToArchive) async {
     if (!mounted) return;

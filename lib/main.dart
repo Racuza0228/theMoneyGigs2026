@@ -386,7 +386,8 @@ class _MainPageState extends State<MainPage> {
       const String googleApiKey = String.fromEnvironment('GOOGLE_API_KEY');
 
       if (mounted) {
-        await showDialog(
+        // 1. Capture the result from the dialog
+        final GigEditResult? result = await showDialog<GigEditResult>(
           context: context,
           builder: (context) {
             return BookingDialog(
@@ -395,6 +396,24 @@ class _MainPageState extends State<MainPage> {
             );
           },
         );
+
+        // 2. Handle the result and save to SharedPreferences
+        if (result != null && result.action == GigEditResultAction.updated && result.gig != null) {
+          // Add the new gig to the list
+          existingGigs.add(result.gig!);
+
+          // Save the updated list back to SharedPreferences
+          await prefs.setString('gigs_list', Gig.encode(existingGigs));
+
+          // 3. Notify the app to refresh UI (My Gigs tab, etc.)
+          globalRefreshNotifier.notify();
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Gig booked successfully!'), backgroundColor: Colors.green),
+            );
+          }
+        }
       }
     } catch (e) {
       print('Error opening Add Gig dialog: $e');

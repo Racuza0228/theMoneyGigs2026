@@ -65,16 +65,22 @@ class _CoachingDemoFlowState extends State<CoachingDemoFlow> {
       'icon': Icons.music_note,
     },
     'intermediate': {
-      'title': 'Regular Performer',
-      'description': 'I play 4-8 gigs a month',
+      'title': 'Hobbyist',
+      'description': 'I play 1-2 gigs a month',
       'suggestedRate': 25,
       'icon': Icons.star,
     },
+    'semi-professional': {
+      'title': 'Semi-Pro Musician',
+      'description': 'I play 4-8 gigs a month',
+      'suggestedRate': 35,
+      'icon': Icons.stars,
+    },
     'professional': {
       'title': 'Professional Musician',
-      'description': 'Music is my primary income',
-      'suggestedRate': 40,
-      'icon': Icons.stars,
+      'description': 'I play over 8 gigs a month.  Music is my primary income',
+      'suggestedRate': 45,
+      'icon': Icons.stars_outlined,
     },
   };
 

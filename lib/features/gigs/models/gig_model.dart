@@ -6,6 +6,7 @@ import 'package:the_money_gigs/features/gigs/models/gig_rating.dart';
 class Gig {
   String id;
   String venueName;
+  String? bandName;
   double latitude;
   double longitude;
   String address;
@@ -35,6 +36,7 @@ class Gig {
   Gig({
     required this.id,
     required this.venueName,
+    this.bandName,
     required this.latitude,
     required this.longitude,
     required this.address,
@@ -63,6 +65,7 @@ class Gig {
   Gig copyWith({
     String? id,
     String? venueName,
+    String? bandName,
     double? latitude,
     double? longitude,
     String? address,
@@ -90,6 +93,7 @@ class Gig {
     return Gig(
       id: id ?? this.id,
       venueName: venueName ?? this.venueName,
+      bandName: bandName ?? this.bandName,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       address: address ?? this.address,
@@ -187,6 +191,7 @@ class Gig {
     return {
       'id': id,
       'venueName': venueName,
+      'bandName': bandName,
       'latitude': latitude,
       'longitude': longitude,
       'address': address,
@@ -244,6 +249,7 @@ class Gig {
     return Gig(
       id: json['id'] as String,
       venueName: json['venueName'] as String,
+      bandName: json['bandName'] as String?,
       latitude: (json['latitude'] as num).toDouble(),
       longitude: (json['longitude'] as num).toDouble(),
       address: json['address'] as String,
