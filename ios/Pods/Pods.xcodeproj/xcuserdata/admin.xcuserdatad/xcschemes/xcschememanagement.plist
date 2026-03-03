@@ -249,6 +249,16 @@
 			<key>isShown</key>
 			<false/>
 		</dict>
+		<key>connectivity_plus-connectivity_plus_privacy.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
+		<key>connectivity_plus.xcscheme</key>
+		<dict>
+			<key>isShown</key>
+			<false/>
+		</dict>
 		<key>firebase_auth.xcscheme</key>
 		<dict>
 			<key>isShown</key>
