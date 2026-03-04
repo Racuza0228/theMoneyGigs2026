@@ -28,6 +28,7 @@ import 'features/gigs/services/gig_retrospective_service.dart';
 import 'features/gigs/widgets/retrospective_notification_banner.dart';
 
 import 'package:the_money_gigs/features/app_demo/widgets/email_capture_screen.dart';
+import 'package:the_money_gigs/features/app_demo/services/demo_tracking_service.dart'; // 🎯 Import the service
 
 bool _areNetworkServicesInitialized = false;
 
@@ -81,6 +82,9 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   print('✅ Firebase Initialized');
+
+  // Run the sync in the background
+  DemoTrackingService().syncPendingData();
 
   // 2. Check if the user has EVER connected to the network
   final prefs = await SharedPreferences.getInstance();

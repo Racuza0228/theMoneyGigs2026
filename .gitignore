@@ -28,10 +28,15 @@ migrate_working_dir/
 **/ios/Flutter/.last_build_id
 .dart_tool/
 .flutter-plugins
-.flutter-plugins-dependencies
+.flutter-plugins-dependencies*
+.packages
 .pub-cache/
 .pub/
 /build/
+/macOS/Pods/
+/ios/Pods
+**/ios/.symlinks/
+**/macos/.symlinks/
 
 # Symbolication related
 app.*.symbols
@@ -39,19 +44,6 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-.DS_Store
-/.symlinks
-/build/
-/.dart_tool/
-/ios/.generated_files
-/ios/Flutter/.ios_tags
-/ios/Flutter/.last_build_id
-/ios/Flutter/.last_build_id.json
-/ios/Pods/
-/ios/Runner.xcworkspace/xcuserdata/
-/ios/Runner.xcworkspace/xcshareddata/
-/macos/Podfile.lock
+*.zip
+*.pdf
+output.txt

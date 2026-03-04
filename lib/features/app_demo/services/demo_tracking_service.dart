@@ -1,11 +1,50 @@
+// lib/features/app_demo/services/demo_tracking_service.dart
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../providers/demo_provider.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class DemoTrackingService {
   static const String _demoSessionIdKey = 'demo_session_id';
+  static const String _needsSyncKey = 'demo_needs_sync';
+  static const String _cachedStepKey = 'demo_cached_step';
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  /// Helper to check if we are truly offline
+  Future<bool> _isOffline() async {
+    final results = await (Connectivity().checkConnectivity());
+    // Connectivity 6.0 returns a List, older versions return a single enum.
+    // This handles both cases.
+    if (results is List) {
+      return results.contains(ConnectivityResult.none) || results.isEmpty;
+    }
+    return results == ConnectivityResult.none;
+  }
+
+  Future<void> syncPendingData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final needsSync = prefs.getBool(_needsSyncKey) ?? false;
+
+    if (!needsSync) return;
+
+    if (await _isOffline()) return;
+
+    print('📡 Internet detected, syncing pending demo data...');
+
+    final cachedStepString = prefs.getString(_cachedStepKey);
+    if (cachedStepString != null) {
+      final step = DemoStep.values.firstWhere(
+            (e) => e.toString() == cachedStepString,
+        orElse: () => DemoStep.coachingIntro,
+      );
+
+      // This now works because we added the parameter below
+      await updateDemoStep(step, isSyncing: true);
+    }
+  }
 
   Future<String> _getOrCreateSessionId() async {
     final prefs = await SharedPreferences.getInstance();
@@ -17,10 +56,15 @@ class DemoTrackingService {
     return sessionId;
   }
 
-  // Called when the demo first starts
   Future<void> startDemoSession() async {
     try {
       final sessionId = await _getOrCreateSessionId();
+
+      if (await _isOffline()) {
+        print('📴 Offline: Session started locally, will sync on first step update.');
+        return;
+      }
+
       await _firestore.collection('demoSessions').doc(sessionId).set(
         {
           'sessionId': sessionId,
@@ -28,7 +72,7 @@ class DemoTrackingService {
           'lastUpdatedAt': FieldValue.serverTimestamp(),
           'lastStepViewed': DemoStep.coachingIntro.toString(),
           'isCompleted': false,
-          'onboardingExited': false, // Initialize new field
+          'onboardingExited': false,
         },
         SetOptions(merge: true),
       );
@@ -38,9 +82,21 @@ class DemoTrackingService {
     }
   }
 
-  // Called every time the step advances
-  Future<void> updateDemoStep(DemoStep step) async {
+  /// ✅ ADDED: {bool isSyncing = false} named parameter
+  Future<void> updateDemoStep(DemoStep step, {bool isSyncing = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+
     try {
+      // 1. Always save to local storage first as a "Backup"
+      await prefs.setString(_cachedStepKey, step.toString());
+      await prefs.setBool(_needsSyncKey, true);
+
+      // 2. Check connectivity before trying Firebase
+      if (await _isOffline()) {
+        print('📴 Offline: Step ${step.toString()} saved locally for later sync.');
+        return;
+      }
+
       final sessionId = await _getOrCreateSessionId();
       final isCompleted = (step == DemoStep.complete);
 
@@ -48,42 +104,49 @@ class DemoTrackingService {
         'lastUpdatedAt': FieldValue.serverTimestamp(),
         'lastStepViewed': step.toString(),
         'isCompleted': isCompleted,
-      });
-      print('✅ Demo step updated: ${step.toString()}');
+      }).timeout(const Duration(seconds: 5));
+
+      // 3. If successful, clear the "Needs Sync" flag
+      await prefs.setBool(_needsSyncKey, false);
+      print('✅ Demo step synced to Firebase: ${step.toString()}');
+
     } catch (e) {
-      print('❌ Error updating demo step: $e');
+      print('⚠️ Firebase update failed (will retry later): $e');
     }
   }
 
-  // 🎯 CALLED ONLY when a user manually exits (e.g., clicks an "Exit" button)
   Future<void> exitDemoSession(DemoStep lastStep) async {
     try {
-      final sessionId = await _getOrCreateSessionId();
-      await _firestore.collection('demoSessions').doc(sessionId).update({
-        'lastUpdatedAt': FieldValue.serverTimestamp(),
-        'lastStepViewed': lastStep.toString(), // Keep the last actual step
-        'onboardingExited': true, // Set the exit flag
-        'isCompleted': false, // It was not completed
-      });
-      print('✅ Demo session exited at step: ${lastStep.toString()}');
+      if (await _isOffline()) {
+        // Just clear locally if offline; syncPendingData will pick up the last step later
+        print('📴 Offline: Exiting demo, cleanup handled locally.');
+      } else {
+        final sessionId = await _getOrCreateSessionId();
+        await _firestore.collection('demoSessions').doc(sessionId).update({
+          'lastUpdatedAt': FieldValue.serverTimestamp(),
+          'lastStepViewed': lastStep.toString(),
+          'onboardingExited': true,
+          'isCompleted': false,
+        });
+        print('✅ Demo session exited at step: ${lastStep.toString()}');
+      }
     } catch (e) {
       print('❌ Error marking demo as exited: $e');
     } finally {
-      await clearLocalSession(); // Clear session ID regardless
+      await clearLocalSession();
     }
   }
 
-  // 🎯 CALLED ONLY when the demo finishes naturally
   Future<void> completeDemoSession() async {
-    // This method's only job is to clean up the local session ID.
-    // The `updateDemoStep(DemoStep.complete)` call already marked it in Firestore.
     await clearLocalSession();
     print('✅ Local demo session cleared after completion.');
   }
 
-  // 🎯 RENAMED and made public to be accessible from multiple methods
   Future<void> clearLocalSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_demoSessionIdKey);
+    // Also clear sync flags once the session is officially finished/exited
+    await prefs.remove(_needsSyncKey);
+    await prefs.remove(_cachedStepKey);
   }
 }
