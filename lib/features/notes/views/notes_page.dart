@@ -55,6 +55,11 @@ class _NotesPageState extends State<NotesPage> {
   List<GigRating> _currentRatings = [];
   List<GigRating>? _initialRatings;
 
+  // Tips are tracked separately from star ratings — stored as a dollar amount
+  // on the Gig model rather than as a GigRating dimension.
+  double? _currentTipsAmount;
+  double? _initialTipsAmount;
+
   bool get _isEditingGig => widget.editingGigId != null;
 
   /// Returns true if this gig has ended and can be reviewed
@@ -104,6 +109,8 @@ class _NotesPageState extends State<NotesPage> {
     final prefs = await SharedPreferences.getInstance();
     final gigsJsonString = prefs.getString('gigs_list') ?? '[]';
     final List<Gig> allGigs = Gig.decode(gigsJsonString);
+
+    // 1. Try to find the specific record (standalone or previously materialized)
     final gigIndex = allGigs.indexWhere((g) => g.id == widget.editingGigId);
 
     if (gigIndex != -1) {
@@ -113,12 +120,59 @@ class _NotesPageState extends State<NotesPage> {
       _displaySubtext = DateFormat.yMMMEd().add_jm().format(gig.dateTime);
       _initialNotes = gig.notes;
       _initialUrl = gig.notesUrl;
-
-      // Load existing ratings
       _initialRatings = gig.gigRatings != null ? List.from(gig.gigRatings!) : null;
       _currentRatings = gig.gigRatings != null ? List.from(gig.gigRatings!) : [];
+      _initialTipsAmount = gig.tipsAmount;
+      _currentTipsAmount = gig.tipsAmount;
     } else {
-      throw Exception("Gig not found.");
+      // MATERIALIZATION: Instance not found. Reconstruct from template.
+      // Robust Base ID parsing (removes the _YYYYMMDD suffix)
+      String baseId = widget.editingGigId!;
+      if (widget.editingGigId!.contains('_')) {
+        final parts = widget.editingGigId!.split('_');
+        baseId = parts.sublist(0, parts.length - 1).join('_');
+      }
+
+      final template = allGigs.firstWhere(
+            (g) => g.id == baseId,
+        orElse: () => throw Exception("Template Gig not found for ID: $baseId"),
+      );
+
+      // --- FIX: RECONSTRUCT DATE WHILE PRESERVING TEMPLATE TIME ---
+      DateTime instanceDate = template.dateTime;
+      if (widget.editingGigId!.contains('_')) {
+        final datePart = widget.editingGigId!.split('_').last; // e.g. "20260402"
+        if (datePart.length == 8) {
+          try {
+            final int year = int.parse(datePart.substring(0, 4));
+            final int month = int.parse(datePart.substring(4, 6));
+            final int day = int.parse(datePart.substring(6, 8));
+
+            // Combine Parsed Date with Template Time to avoid 12:00 AM bug
+            instanceDate = DateTime(
+              year, month, day,
+              template.dateTime.hour,
+              template.dateTime.minute,
+            );
+          } catch (e) {
+            debugPrint("Error parsing instance date: $e");
+          }
+        }
+      }
+
+      _currentGig = template.copyWith(
+        id: widget.editingGigId,
+        dateTime: instanceDate,
+        isRecurring: false,      // prevent this instance from being treated as a new template
+        isFromRecurring: true,
+      );
+      _displayName = template.venueName;
+      _displaySubtext = DateFormat.yMMMEd().add_jm().format(instanceDate);
+
+      _initialNotes = null;
+      _initialUrl = null;
+      _initialRatings = null;
+      _currentRatings = [];
     }
   }
 
@@ -167,12 +221,18 @@ class _NotesPageState extends State<NotesPage> {
     _checkForChanges();
   }
 
+  void _onTipsChanged(double? amount) {
+    _currentTipsAmount = amount;
+    _checkForChanges();
+  }
+
   void _checkForChanges() {
     final bool notesChanged = _notesController.text.trim() != (_initialNotes ?? '');
     final bool urlChanged = _urlController.text.trim() != (_initialUrl ?? '');
     final bool ratingsChanged = _hasRatingsChanged();
+    final bool tipsChanged = _currentTipsAmount != _initialTipsAmount;
 
-    final hasChanges = notesChanged || urlChanged || ratingsChanged;
+    final hasChanges = notesChanged || urlChanged || ratingsChanged || tipsChanged;
 
     if (mounted && hasChanges != _hasChanges) {
       setState(() {
@@ -235,29 +295,51 @@ class _NotesPageState extends State<NotesPage> {
     final prefs = await SharedPreferences.getInstance();
     final String gigsJsonString = prefs.getString('gigs_list') ?? '[]';
     List<Gig> currentGigs = Gig.decode(gigsJsonString);
+
     final gigIndex = currentGigs.indexWhere((g) => g.id == widget.editingGigId);
+    final newNotes = _notesController.text.trim();
+    final newUrl = _urlController.text.trim();
+    final bool retrospectiveCompleted =
+        _currentRatings.isNotEmpty || _currentTipsAmount != null;
 
+    // Don't materialize a virtual instance if nothing meaningful was recorded
+    if (gigIndex == -1 &&
+        newNotes.isEmpty &&
+        newUrl.isEmpty &&
+        _currentRatings.isEmpty &&
+        _currentTipsAmount == null) {
+      return _currentGig;
+    }
+
+    Gig updatedGig;
     if (gigIndex != -1) {
-      final newNotes = _notesController.text.trim();
-      final newUrl = _urlController.text.trim();
-
-      // Determine if retrospective is now complete
-      final bool retrospectiveCompleted = _currentRatings.isNotEmpty;
-
-      final updatedGig = currentGigs[gigIndex].copyWith(
+      // Update existing record
+      updatedGig = currentGigs[gigIndex].copyWith(
         notes: newNotes.isEmpty ? null : newNotes,
         notesUrl: newUrl.isEmpty ? null : newUrl,
         gigRatings: _currentRatings.isEmpty ? null : _currentRatings,
+        tipsAmount: _currentTipsAmount,
         retrospectiveCompleted: retrospectiveCompleted,
       );
       currentGigs[gigIndex] = updatedGig;
-
-      await prefs.setString('gigs_list', Gig.encode(currentGigs));
-      globalRefreshNotifier.notify();
-      return updatedGig;
     } else {
-      throw Exception("Could not find gig to update.");
+      // Create new standalone record (Materialize)
+      updatedGig = _currentGig!.copyWith(
+        id: widget.editingGigId,
+        notes: newNotes.isEmpty ? null : newNotes,
+        notesUrl: newUrl.isEmpty ? null : newUrl,
+        gigRatings: _currentRatings.isEmpty ? null : _currentRatings,
+        tipsAmount: _currentTipsAmount,
+        retrospectiveCompleted: retrospectiveCompleted,
+        isRecurring: false,
+        isFromRecurring: true,
+      );
+      currentGigs.add(updatedGig);
     }
+
+    await prefs.setString('gigs_list', Gig.encode(currentGigs));
+    globalRefreshNotifier.notify();
+    return updatedGig;
   }
 
   Future<void> _saveVenueNotes() async {
@@ -335,7 +417,7 @@ class _NotesPageState extends State<NotesPage> {
         centerTitle: true,
         leading: BackButton(
           onPressed: () {
-            Navigator.of(context).pop(_currentGig);
+            Navigator.of(context).pop(_hasChanges ? _currentGig : null);
           },
         ),
       ),
@@ -399,8 +481,9 @@ class _NotesPageState extends State<NotesPage> {
               GigRetrospectiveWidget(
                 existingRatings: _currentGig?.gigRatings,
                 venueName: _displayName,
-                gig: _currentGig,  // Add this line
+                gig: _currentGig,
                 onRatingsChanged: _onRatingsChanged,
+                onTipsChanged: _onTipsChanged,
               ),
             ],
 
@@ -520,7 +603,7 @@ class _NotesPageState extends State<NotesPage> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton(
-                onPressed: _isSaving ? null : () => Navigator.of(context).pop(_currentGig),
+                onPressed: _isSaving ? null : () => Navigator.of(context).pop(_hasChanges ? _currentGig : null),
                 child: const Text('CANCEL'),
               ),
               const SizedBox(width: 12),

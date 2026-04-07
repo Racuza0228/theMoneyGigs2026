@@ -9,37 +9,28 @@ import 'package:the_money_gigs/features/gigs/models/gig_rating.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:share_plus/share_plus.dart';
 
-/// A widget that allows users to rate various dimensions of a completed gig.
-///
-/// This widget displays a list of dimensions (Energy, Tips, Creative Fulfillment, etc.)
-/// with star rating bars. Users can rate each dimension and add custom dimensions.
-///
-/// Usage:
-/// ```dart
-/// GigRetrospectiveWidget(
-///   existingRatings: gig.gigRatings,
-///   onRatingsChanged: (ratings) {
-///     // Update gig with new ratings
-///   },
-/// )
-/// ```
 class GigRetrospectiveWidget extends StatefulWidget {
-  /// Existing ratings to pre-populate (if editing a previously rated gig)
+  /// Existing star ratings to pre-populate (if editing a previously rated gig)
   final List<GigRating>? existingRatings;
 
-  /// Callback fired whenever ratings change
+  /// Callback fired whenever star ratings change
   final Function(List<GigRating>) onRatingsChanged;
+
+  /// Callback fired whenever the tips dollar amount changes.
+  /// null = field cleared, 0.0 = explicitly "no tips", >0 = amount entered.
+  final Function(double?)? onTipsChanged;
 
   /// Optional: venue name for context in the header
   final String? venueName;
 
-  /// Optional: the gig being reviewed (needed for export)
+  /// Optional: the gig being reviewed (needed for export and tips pre-fill)
   final Gig? gig;
 
   const GigRetrospectiveWidget({
     super.key,
     this.existingRatings,
     required this.onRatingsChanged,
+    this.onTipsChanged,
     this.venueName,
     this.gig,
   });
@@ -49,14 +40,14 @@ class GigRetrospectiveWidget extends StatefulWidget {
 }
 
 class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
-  // SharedPreferences key for user's active dimensions
   static const String _keyActiveDimensions = 'retrospective_active_dimensions';
 
-  // Map of dimension name to current rating (null = not yet rated)
   final Map<String, double?> _ratings = {};
-
-  // List of all dimensions to display (user's active list)
   List<String> _allDimensions = [];
+
+  // Tips dollar amount — separate from star ratings
+  final TextEditingController _tipsController = TextEditingController();
+  double? _tipsAmount;
 
   bool _isLoading = true;
   bool _isExpanded = true;
@@ -67,53 +58,70 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
     _loadDimensions();
   }
 
+  @override
+  void dispose() {
+    _tipsController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadDimensions() async {
     final prefs = await SharedPreferences.getInstance();
     final savedDimensions = prefs.getStringList(_keyActiveDimensions);
 
-    // If user has saved dimensions, use those; otherwise use defaults
     if (savedDimensions != null && savedDimensions.isNotEmpty) {
-      _allDimensions = savedDimensions;
+      // Silently filter out 'Tips' (and any other reserved fields) from old
+      // saved lists so existing users don't see a duplicate tips entry.
+      _allDimensions = savedDimensions
+          .where((d) => !DefaultGigDimensions.reservedAsFields.contains(d))
+          .toList();
     } else {
-      // First time - use all default dimensions
       _allDimensions = List.from(DefaultGigDimensions.all);
       await _saveDimensions();
     }
 
-    // Pre-populate ratings from existing data
+    // Pre-populate star ratings from existing data
     if (widget.existingRatings != null) {
       for (final rating in widget.existingRatings!) {
+        // Skip any legacy 'Tips' star rating — it's now a dollar field
+        if (DefaultGigDimensions.reservedAsFields.contains(rating.dimension)) {
+          continue;
+        }
         _ratings[rating.dimension] = rating.rating;
-        // If this dimension isn't in our list, add it
         if (!_allDimensions.contains(rating.dimension)) {
           _allDimensions.add(rating.dimension);
         }
       }
     }
 
+    // Pre-populate tips from gig model
+    if (widget.gig?.tipsAmount != null) {
+      _tipsAmount = widget.gig!.tipsAmount;
+      _tipsController.text = widget.gig!.tipsAmount!.toStringAsFixed(2);
+    }
+
     if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> _saveDimensions() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_keyActiveDimensions, _allDimensions);
+    // Persist without reserved fields so the migration sticks
+    await prefs.setStringList(
+      _keyActiveDimensions,
+      _allDimensions
+          .where((d) => !DefaultGigDimensions.reservedAsFields.contains(d))
+          .toList(),
+    );
   }
 
   void _updateRating(String dimension, double rating) {
-    setState(() {
-      _ratings[dimension] = rating;
-    });
+    setState(() => _ratings[dimension] = rating);
     _notifyRatingsChanged();
   }
 
   void _clearRating(String dimension) {
-    setState(() {
-      _ratings.remove(dimension);
-    });
+    setState(() => _ratings.remove(dimension));
     _notifyRatingsChanged();
   }
 
@@ -129,6 +137,12 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
       }
     }
     widget.onRatingsChanged(ratings);
+  }
+
+  void _onTipsChanged(String value) {
+    final parsed = double.tryParse(value);
+    setState(() => _tipsAmount = parsed);
+    widget.onTipsChanged?.call(parsed);
   }
 
   Future<void> _showAddDimensionDialog() async {
@@ -164,7 +178,8 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
                     borderSide: BorderSide(color: Colors.grey.shade600),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
+                    borderSide: BorderSide(
+                        color: Theme.of(context).colorScheme.primary),
                   ),
                 ),
                 onSubmitted: (value) {
@@ -202,10 +217,11 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
       },
     );
 
-    if (result != null && result.isNotEmpty && !_allDimensions.contains(result)) {
-      setState(() {
-        _allDimensions.add(result);
-      });
+    if (result != null &&
+        result.isNotEmpty &&
+        !_allDimensions.contains(result) &&
+        !DefaultGigDimensions.reservedAsFields.contains(result)) {
+      setState(() => _allDimensions.add(result));
       await _saveDimensions();
     }
   }
@@ -215,7 +231,8 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF2c2c2e),
-        title: const Text('Remove Dimension?', style: TextStyle(color: Colors.white)),
+        title: const Text('Remove Dimension?',
+            style: TextStyle(color: Colors.white)),
         content: Text(
           'Remove "$dimension" from your tracking dimensions?\n\nThis won\'t affect ratings already saved to past gigs.',
           style: TextStyle(color: Colors.grey.shade300),
@@ -226,7 +243,9 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
             onPressed: () => Navigator.of(context).pop(false),
           ),
           TextButton(
-            child: Text('Remove', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            child: Text('Remove',
+                style:
+                TextStyle(color: Theme.of(context).colorScheme.error)),
             onPressed: () => Navigator.of(context).pop(true),
           ),
         ],
@@ -244,51 +263,40 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
   }
 
   Future<void> _exportReview() async {
-    if (widget.gig == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot export: gig information not available'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
+    final gig = widget.gig;
     final dateFormat = DateFormat('MMMM d, yyyy \'at\' h:mm a');
-    final avgRating = _ratings.values.where((r) => r != null).isEmpty
-        ? 0.0
-        : _ratings.values.whereType<double>().reduce((a, b) => a + b) /
-        _ratings.values.whereType<double>().length;
 
     final buffer = StringBuffer();
-    buffer.writeln('🎸 GIG REVIEW: ${widget.gig!.venueName}');
+    buffer.writeln('🎸 GIG REVIEW: ${widget.venueName ?? gig?.venueName ?? 'Unknown Venue'}');
     buffer.writeln('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     buffer.writeln('');
-    buffer.writeln('📅 Date: ${dateFormat.format(widget.gig!.dateTime)}');
-    buffer.writeln('📍 Venue: ${widget.gig!.venueName}');
-    buffer.writeln('💰 Pay: \$${widget.gig!.pay.toStringAsFixed(2)}');
-    buffer.writeln('⏱️  Duration: ${widget.gig!.gigLengthHours.toStringAsFixed(1)} hours');
+    if (gig != null) {
+      buffer.writeln('📅 Date: ${dateFormat.format(gig.dateTime)}');
+      buffer.writeln('📍 Venue: ${gig.venueName}');
+      buffer.writeln('💰 Pay: \$${gig.pay.toStringAsFixed(2)}');
+      if (_tipsAmount != null) {
+        buffer.writeln('💵 Tips: \$${_tipsAmount!.toStringAsFixed(2)}');
+      }
+      buffer.writeln('⏱️  Duration: ${gig.gigLengthHours.toStringAsFixed(1)} hours');
+    }
     buffer.writeln('');
 
-    if (_ratings.values.whereType<double>().isNotEmpty) {
+    if (_ratings.isNotEmpty) {
+      final avgRating = _ratings.values
+          .whereType<double>()
+          .fold<double>(0, (a, b) => a + b) /
+          _ratings.values.whereType<double>().length;
       buffer.writeln('⭐ OVERALL RATING: ${avgRating.toStringAsFixed(1)}/5.0');
       buffer.writeln('');
       buffer.writeln('📊 DIMENSION RATINGS:');
       buffer.writeln('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
       for (final entry in _ratings.entries) {
-        if (entry.value != null) {
-          final stars = '★' * entry.value!.round() + '☆' * (5 - entry.value!.round());
-          buffer.writeln('• ${entry.key}: ${entry.value!.toStringAsFixed(1)}/5.0 $stars');
-        }
+        if (entry.value == null) continue;
+        final stars =
+            '★' * entry.value!.round() + '☆' * (5 - entry.value!.round());
+        buffer.writeln(
+            '• ${entry.key}: ${entry.value!.toStringAsFixed(1)}/5.0 $stars');
       }
-    }
-
-    if (widget.gig!.notes != null && widget.gig!.notes!.isNotEmpty) {
-      buffer.writeln('');
-      buffer.writeln('📝 NOTES:');
-      buffer.writeln('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      buffer.writeln(widget.gig!.notes!);
     }
 
     buffer.writeln('');
@@ -298,10 +306,10 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
     try {
       await Share.share(
         buffer.toString(),
-        subject: 'Gig Review: ${widget.gig!.venueName}',
+        subject:
+        'Gig Review: ${widget.venueName ?? gig?.venueName ?? 'Unknown Venue'}',
       );
     } catch (e) {
-      // Fallback: copy to clipboard
       await Clipboard.setData(ClipboardData(text: buffer.toString()));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -314,6 +322,68 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
     }
   }
 
+  // ── TIPS ROW ─────────────────────────────────────────────────────────────
+
+  Widget _buildTipsRow() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.attach_money,
+                  size: 16, color: Colors.greenAccent.shade400),
+              const SizedBox(width: 6),
+              Text(
+                'Tips collected',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                ),
+              ),
+              const Spacer(),
+              SizedBox(
+                width: 110,
+                child: TextField(
+                  controller: _tipsController,
+                  keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  textAlign: TextAlign.right,
+                  decoration: InputDecoration(
+                    prefixText: '\$ ',
+                    prefixStyle: TextStyle(color: Colors.greenAccent.shade400),
+                    hintText: '0.00',
+                    hintStyle: TextStyle(color: Colors.grey.shade700),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 8),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.grey.shade700),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide:
+                      BorderSide(color: Colors.greenAccent.shade400),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onChanged: _onTipsChanged,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Divider(color: Colors.grey.shade800, height: 1),
+        ],
+      ),
+    );
+  }
+
+  // ── STAR DIMENSION ROW ───────────────────────────────────────────────────
+
   Widget _buildDimensionRow(String dimension) {
     final rating = _ratings[dimension];
     final category = DefaultGigDimensions.getCategoryFor(dimension);
@@ -322,7 +392,6 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          // Dimension label
           Expanded(
             flex: 2,
             child: GestureDetector(
@@ -353,7 +422,6 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
               ),
             ),
           ),
-          // Rating bar
           Expanded(
             flex: 3,
             child: Row(
@@ -361,7 +429,8 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
               children: [
                 if (rating != null)
                   IconButton(
-                    icon: Icon(Icons.clear, size: 18, color: Colors.grey.shade500),
+                    icon:
+                    Icon(Icons.clear, size: 18, color: Colors.grey.shade500),
                     onPressed: () => _clearRating(dimension),
                     tooltip: 'Clear rating',
                     padding: EdgeInsets.zero,
@@ -376,11 +445,10 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
                   itemCount: 5,
                   itemSize: 24,
                   unratedColor: Colors.grey.shade700,
-                  itemBuilder: (context, _) => const Icon(
-                    Icons.star,
-                    color: Colors.amber,
-                  ),
-                  onRatingUpdate: (newRating) => _updateRating(dimension, newRating),
+                  itemBuilder: (context, _) =>
+                  const Icon(Icons.star, color: Colors.amber),
+                  onRatingUpdate: (newRating) =>
+                      _updateRating(dimension, newRating),
                 ),
               ],
             ),
@@ -407,12 +475,11 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
 
     final ratedCount = _ratings.values.where((r) => r != null).length;
     final totalCount = _allDimensions.length;
+    final tipsEntered = _tipsAmount != null;
 
     return Container(
       decoration: BoxDecoration(
@@ -422,7 +489,7 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header (tappable to expand/collapse)
+          // ── Header ────────────────────────────────────────────────────────
           InkWell(
             onTap: () => setState(() => _isExpanded = !_isExpanded),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(8.0)),
@@ -432,7 +499,8 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
                 color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.vertical(
                   top: const Radius.circular(8.0),
-                  bottom: _isExpanded ? Radius.zero : const Radius.circular(8.0),
+                  bottom:
+                  _isExpanded ? Radius.zero : const Radius.circular(8.0),
                 ),
               ),
               child: Row(
@@ -455,9 +523,15 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
                             fontSize: 16,
                           ),
                         ),
-                        if (ratedCount > 0)
+                        // Show tips and star rating progress in subtitle
+                        if (tipsEntered || ratedCount > 0)
                           Text(
-                            '$ratedCount of $totalCount rated',
+                            [
+                              if (tipsEntered)
+                                '\$${_tipsAmount!.toStringAsFixed(2)} tips',
+                              if (ratedCount > 0)
+                                '$ratedCount of $totalCount rated',
+                            ].join(' · '),
                             style: TextStyle(
                               color: Colors.grey.shade400,
                               fontSize: 12,
@@ -475,7 +549,7 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
             ),
           ),
 
-          // Expandable content
+          // ── Expandable content ────────────────────────────────────────────
           if (_isExpanded) ...[
             const Divider(height: 1, color: Colors.grey),
             Padding(
@@ -483,12 +557,15 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Dimension rows
+                  // Tips dollar input — always first
+                  _buildTipsRow(),
+
+                  // Star rating dimensions
                   ..._allDimensions.map(_buildDimensionRow),
 
                   const SizedBox(height: 8),
 
-                  // Add custom dimension button
+                  // Add custom dimension
                   Center(
                     child: TextButton.icon(
                       onPressed: _showAddDimensionDialog,
@@ -504,15 +581,13 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
                     ),
                   ),
 
-                  // Export button (if there are ratings)
-                  if (_ratings.values.whereType<double>().isNotEmpty)
+                  // Export (only if there's something to export)
+                  if (_ratings.values.whereType<double>().isNotEmpty ||
+                      tipsEntered)
                     Center(
                       child: TextButton.icon(
                         onPressed: _exportReview,
-                        icon: const Icon(
-                          Icons.share,
-                          size: 18,
-                        ),
+                        icon: const Icon(Icons.share, size: 18),
                         label: const Text('Export Review'),
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.grey.shade400,
@@ -520,7 +595,6 @@ class _GigRetrospectiveWidgetState extends State<GigRetrospectiveWidget> {
                       ),
                     ),
 
-                  // Hint text
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0),
                     child: Text(

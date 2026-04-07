@@ -28,7 +28,8 @@ import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.
 import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
 // <<< --- REFACTORING: ADD IMPORT FOR THE NEW VENUES TAB WIDGET --- >>>
 import 'package:the_money_gigs/features/venues/views/venues_list_tab.dart';
-
+import 'package:the_money_gigs/features/gigs/widgets/gig_export_dialog.dart';
+import 'package:the_money_gigs/features/gigs/widgets/gig_insights_dialog.dart';
 
 import '../../app_demo/providers/demo_provider.dart';
 import 'package:the_money_gigs/features/app_demo/widgets/simple_demo_overlay.dart';
@@ -328,14 +329,26 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     DateTime now = DateTime.now();
     DateTime todayStart = DateTime(now.year, now.month, now.day);
 
-    allOccurrences.addAll(_allGigs);
+    // 1. Process all gigs from storage
+    for (var gig in _allGigs) {
+      if (!gig.isRecurring) {
+        // One-off gigs or already "materialized" instances
+        allOccurrences.add(gig);
+      } else {
+        // RECURRING TEMPLATE:
+        // Instead of adding the template raw, we generate its
+        // first instance so the ID matches the 'baseId_date' format.
+        _addOccurrenceIfApplicable(allOccurrences, gig, gig.dateTime);
 
-    for (var baseGig in _allGigs.where((g) => g.isRecurring)) {
-      allOccurrences.addAll(_generateOccurrencesForGig(baseGig, _gigListEndDate));
+        // Generate future instances
+        allOccurrences.addAll(_generateOccurrencesForGig(gig, _gigListEndDate));
+      }
     }
 
+    // 2. Add Jam/Open Mic sessions
     allOccurrences.addAll(_generateJamOpenMicGigs(_gigListEndDate));
 
+    // 3. Map and process display logic (Venue names, Band names)
     List<Gig> processedGigs = allOccurrences.map((gig) {
       final sourceVenue = _allKnownVenues.firstWhere(
             (v) => v.placeId == gig.placeId,
@@ -343,30 +356,32 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       );
 
       String processedVenueName = gig.venueName;
-      String? processedBandName = gig.bandName;
-
       if (sourceVenue.isPrivate && !gig.venueName.startsWith('[PRIVATE]')) {
         processedVenueName = '[PRIVATE] $processedVenueName';
       }
-
       if (gig.isJamOpenMic && !gig.venueName.contains('[JAM]')) {
         processedVenueName = '[JAM] $processedVenueName';
-        if(gig.notes != null && gig.notes!.isNotEmpty){
-          processedVenueName += " (${gig.notes})";
-        }
+        if(gig.notes != null && gig.notes!.isNotEmpty) processedVenueName += " (${gig.notes})";
       }
-      return gig.copyWith(
-        venueName: processedVenueName,
-        bandName: processedBandName, // <--- CRITICAL: Pass the band name here
-      );
+
+      return gig.copyWith(venueName: processedVenueName);
     }).toList();
 
+    // 4. De-duplicate based on ID
+    // CRITICAL: Standalone/Materialized instances in _allGigs will have
+    // the same ID format as virtual ones (baseId_YYYYMMDD).
+    // We want the PHYSICAL ones (the ones in the list first) to "win"
+    // over the VIRTUAL generated ones.
     final Map<String, Gig> uniqueGigs = {};
     for (var gig in processedGigs) {
-      uniqueGigs[gig.id] = gig;
+      // If we already have a record for this ID, only overwrite if the
+      // new one is "materialized" (has ratings or notes) or if the existing one is virtual.
+      if (!uniqueGigs.containsKey(gig.id) || (gig.retrospectiveCompleted == true || (gig.notes?.isNotEmpty ?? false))) {
+        uniqueGigs[gig.id] = gig;
+      }
     }
 
-    // 6. Filter out gigs that have already ended and then sort the remaining ones.
+    // 5. Filter for Upcoming list (Gigs that haven't ended yet)
     List<Gig> sortedGigs = uniqueGigs.values.where((gig) {
       DateTime gigEndTime = gig.dateTime.add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
       return !gigEndTime.isBefore(todayStart);
@@ -378,7 +393,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       setState(() {
         _displayedGigs = sortedGigs;
       });
-
       _prepareCalendarEvents();
       _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
     }
@@ -519,14 +533,11 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   void _addOccurrenceIfApplicable(List<Gig> occurrences, Gig baseGig, DateTime dateOfOccurrence) {
-    // --- FINALIZED EXCEPTION LOGIC ---
-    // Check if the specific date of this potential occurrence is in the base gig's exception list.
+    // Check exceptions...
     if (baseGig.recurrenceExceptions != null &&
         baseGig.recurrenceExceptions!.any((exceptionDate) => isSameDay(exceptionDate, dateOfOccurrence))) {
-      //print("  - 🚫 SKIPPING OCCURRENCE on ${DateFormat('yyyy-MM-dd').format(dateOfOccurrence)} due to exception.");
-      return; // Do not generate this gig instance.
+      return;
     }
-    // --- END OF EXCEPTION LOGIC ---
 
     DateTime gigDateTime = DateTime(
       dateOfOccurrence.year,
@@ -536,24 +547,19 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       baseGig.dateTime.minute,
     );
 
-    DateTime now = DateTime.now();
-    DateTime todayStart = DateTime(now.year, now.month, now.day);
-    if (dateOfOccurrence.isBefore(todayStart)) {
-      return; // Do not generate occurrences for days before today.
-    }
+    // REMOVED the "dateOfOccurrence.isBefore(todayStart)" check here.
+    // We want to generate the occurrence; the calling method (List vs Calendar)
+    // will decide whether to filter it out based on time.
 
-    // Create a unique ID for this specific occurrence to avoid collisions
     final String uniqueId = '${baseGig.id}_${DateFormat('yyyyMMdd').format(gigDateTime)}';
-
-    //print("     ✅ ADDING OCCURRENCE for ${DateFormat('yyyy-MM-dd').format(gigDateTime)}");
 
     occurrences.add(
       baseGig.copyWith(
         id: uniqueId,
         dateTime: gigDateTime,
-        isRecurring: false, // This instance is a concrete event, not a template
-        isFromRecurring: true, // This flag identifies it as generated from a series
-        recurrenceExceptions: [], // Clear exceptions for the instance itself
+        isRecurring: false,
+        isFromRecurring: true,
+        recurrenceExceptions: [],
       ),
     );
   }
@@ -566,17 +572,24 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     DateTime calendarRangeEnd = DateTime(today.year + 5, today.month, today.day);
 
     List<Gig> allCalendarGigs = [];
-    // --- START OF FIX ---
-    // Add original recurring gigs to the calendar as well
-    allCalendarGigs.addAll(_allGigs);
-    // --- END OF FIX ---
-
-    for (var baseGig in _allGigs.where((g) => g.isRecurring)) {
-      allCalendarGigs.addAll(_generateOccurrencesForGig(baseGig, calendarRangeEnd));
+    for (var gig in _allGigs) {
+      if (!gig.isRecurring) {
+        allCalendarGigs.add(gig);
+      } else {
+        // Virtualize the base date for the calendar
+        _addOccurrenceIfApplicable(allCalendarGigs, gig, gig.dateTime);
+        allCalendarGigs.addAll(_generateOccurrencesForGig(gig, calendarRangeEnd));
+      }
     }
     allCalendarGigs.addAll(_generateJamOpenMicGigs(calendarRangeEnd));
 
-    final uniqueGigs = { for (var g in allCalendarGigs) g.id : g };
+    // De-duplicate
+    final Map<String, Gig> uniqueGigs = {};
+    for (var gig in allCalendarGigs) {
+      if (!uniqueGigs.containsKey(gig.id) || (gig.retrospectiveCompleted == true || (gig.notes?.isNotEmpty ?? false))) {
+        uniqueGigs[gig.id] = gig;
+      }
+    }
 
     for (var gig in uniqueGigs.values) {
       final date = DateTime.utc(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day);
@@ -669,16 +682,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   Future<void> _launchNotesPageForGig(Gig gig) async {
     if (gig.isJamOpenMic) return;
 
-    // --- START DEBUGGING ---
-    //print("--- [GigsPage] Debugging _launchNotesPageForGig ---");
-    //print("1. Gig Tapped: '${gig.venueName}' (ID: ${gig.id})");
-    //print("2. Is it from a recurring series? ${gig.isFromRecurring}");
-
-    final String gigIdForNotes = gig.getBaseId();
-
-    //print("3. Calculated Base ID to pass: $gigIdForNotes");
-    //print("----------------------------------------------------");
-    // --- END DEBUGGING ---
+    // 1. Pass the unique instance ID, not the Base ID
+    final String gigIdForNotes = gig.id;
 
     final result = await Navigator.of(context).push<Gig>(
       MaterialPageRoute(
@@ -691,9 +696,22 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         final index = _allGigs.indexWhere((g) => g.id == result.id);
         if (index != -1) {
           _allGigs[index] = result;
-          _generateAndSetDisplayedGigs();
+        } else {
+          // Only materialize into _allGigs if actual data was saved
+          final bool hasActualData = (result.notes?.isNotEmpty ?? false) ||
+              (result.notesUrl?.isNotEmpty ?? false) ||
+              (result.gigRatings?.isNotEmpty ?? false) ||
+              (result.retrospectiveCompleted ?? false);
+          if (!hasActualData) return; // nothing was saved; skip write
+          _allGigs.add(result);
         }
+        _generateAndSetDisplayedGigs();
       });
+
+      // 3. Persist the change to disk immediately
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyGigsList, Gig.encode(_allGigs));
+      globalRefreshNotifier.notify();
     }
   }
 
@@ -1272,23 +1290,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     if (_isLoadingGigs && _displayedGigs.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (!_isLoadingGigs && _displayedGigs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Wrap(
-                spacing: 8.0, runSpacing: 8.0, alignment: WrapAlignment.center,
-                children: [ _buildGigsViewToggle(), ],
-              ),
-            ),
-            const Expanded(child: Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text('No upcoming gigs or jam nights scheduled.\nBook a gig or set up a jam night for a venue!', textAlign: TextAlign.center)))),
-          ],
-        ),
-      );
-    }
+
+    // --- REMOVED: The old "if (!_isLoadingGigs && _displayedGigs.isEmpty)" block that returned a full-screen empty state ---
+
     return Column(
       children: [
         Padding(
@@ -1300,21 +1304,47 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _buildGigsViewToggle(),
-              if (hasUpcomingGigs)
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.code, size: 18),
-                  label: const Text('Export Gigs'),
-                  onPressed: _showEmbedCodeDialog,
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Theme.of(context).colorScheme.primary),
-                  ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.insights, size: 18),
+                label: const Text('Insights'),
+                onPressed: _allGigs.isEmpty
+                    ? null
+                    : () => showGigInsightsDialog(
+                  context: context,
+                  allGigs: _allGigs,
                 ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Theme.of(context).colorScheme.primary),
+                ),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.upload_file, size: 18),
+                label: const Text('Export'),
+                onPressed: () => showGigExportDialog(
+                  context: context,
+                  allGigs: _allGigs,
+                  allKnownVenues: _allKnownVenues,
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Theme.of(context).colorScheme.primary),
+                ),
+              ),
             ],
           ),
         ),
         if (_isLoadingGigs && _displayedGigs.isNotEmpty)
-          const Padding(padding: EdgeInsets.all(8.0), child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)))),
-        Expanded(child: _gigsViewType == GigsViewType.list ? _buildGigsListView() : _buildGigsCalendarView()),
+          const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)))
+          ),
+
+        // This is now always accessible
+        Expanded(
+            child: _gigsViewType == GigsViewType.list
+                ? _buildGigsListView()
+                : _buildGigsCalendarView()
+        ),
+
         if (_isMoreGigsLoading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16.0),
@@ -1338,9 +1368,18 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   // lib/features/gigs/views/gigs.dart -> inside _GigsPageState
 
   Widget _buildGigsListView() {
+    // Move the empty state logic here
     if (_displayedGigs.isEmpty) {
       return const Center(
-          child: Text('No gigs or jam nights to display.', textAlign: TextAlign.center));
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: Text(
+            'No upcoming gigs or jam nights scheduled.\nBook a gig or set up a jam night to see it here!',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey, fontSize: 16),
+          ),
+        ),
+      );
     }
 
     // Use a LinkedHashMap to group gigs by the first day of their month.

@@ -49,11 +49,14 @@ class _GigCalculatorState extends State<GigCalculator>
   final _formKey = GlobalKey<FormState>();
 
   bool _showTakeGigButton = false;
+  bool _isDoorGig = false;
   double _currentPay = 0.0;
   double _currentGigLengthHours = 0.0;
   double _currentDriveSetupHours = 0.0;
   double _currentRehearsalHours = 0.0;
   String _currentHourlyRateString = "";
+  bool _showStageRateNotice = false;
+  double _stageRate = 0.0;
 
   double? _userMinHourlyRate;
   Color _rateResultColor = Colors.greenAccent.shade400;
@@ -94,59 +97,6 @@ class _GigCalculatorState extends State<GigCalculator>
     _gigTimeController.addListener(_calculateSuggestedPay);
     _driveSetupTimeController.addListener(_calculateSuggestedPay);
     _rehearsalTimeController.addListener(_calculateSuggestedPay);
-
-    _demoScript = [
-      // Steps 1-5 are unchanged
-      _DemoStep(
-        key: _payKey,
-        text:
-        'Hey there! Welcome!\n Let\'s cover some basics. First, we enter the total pay for the gig. For this demo, we\'ll use \$250.',
-        alignment: Alignment.center,
-        onBefore: () {
-          _payController.text = '250';
-          _gigTimeController.text = '3';
-          _driveSetupTimeController.text = '2.5';
-          _rehearsalTimeController.text = '2';
-        },
-      ),
-      _DemoStep(
-        key: _gigTimeKey,
-        text:
-        'Next, input the actual length of the performance in hours. Let\'s say it\'s a 3-hour gig.',
-        alignment: Alignment.bottomCenter,
-      ),
-      _DemoStep(
-        key: _driveTimeKey,
-        text:
-        'This is for all the unpaid time spent driving, loading in, setting up, and sound check. We\'ll estimate 2.5 hours.',
-        alignment: Alignment.bottomCenter,
-      ),
-      _DemoStep(
-        key: _rehearsalTimeKey,
-        text:
-        'Finally, add any unpaid rehearsal time for this specific gig. Let\'s add 2 hours.',
-        alignment: Alignment.bottomCenter,
-      ),
-      _DemoStep(
-        key: _calculateBtnKey,
-        text: 'Now, click that Calculate button.',
-        alignment: Alignment.topCenter,
-        hideNextButton: true,
-      ),
-      _DemoStep(
-        key: _rateResultKey,
-        text:
-        'There it is! Your rate isn\'t what you get for playing; it\'s what you earn for all the work involved. Your time is valuable! You can use this to negotiate.',
-        alignment: Alignment.topCenter,
-      ),
-      // <<< 2. ADD STEP 7 FOR "TAKE THIS GIG" BUTTON >>>
-      _DemoStep(
-        key: _takeGigBtnKey,
-        text: 'Now, let\'s book this gig! Tap here to open the booking dialog.',
-        alignment: Alignment.center,
-        hideNextButton: true, // User must click the real button
-      ),
-    ];
 
     if (_googleApiKey.isEmpty) {
       print(
@@ -206,34 +156,34 @@ class _GigCalculatorState extends State<GigCalculator>
 
   // <<< ADDED >>> New function to calculate suggested pay and show/hide the notice
   void _calculateSuggestedPay() {
-    // We must have a minimum rate from the user's profile
-    if (_userMinHourlyRate == null || _userMinHourlyRate! <= 0) {
-      if (_showSuggestedPayNotice) {
-        setState(() => _showSuggestedPayNotice = false);
-      }
-      return;
-    }
-
+    final pay = double.tryParse(_payController.text) ?? 0;
     final gigTime = double.tryParse(_gigTimeController.text) ?? 0;
     final driveTime = double.tryParse(_driveSetupTimeController.text) ?? 0;
     final rehearsalTime = double.tryParse(_rehearsalTimeController.text) ?? 0;
 
-    // Condition: Gig Time > 0 AND (Drive Time > 0 OR Rehearsal Time > 0)
-    final bool shouldShow = gigTime > 0 && (driveTime > 0 || rehearsalTime > 0);
-
-    if (shouldShow) {
-      final totalHours = gigTime + driveTime + rehearsalTime;
-      final newSuggestedPay = totalHours * _userMinHourlyRate!;
-      setState(() {
-        _suggestedPay = newSuggestedPay;
-        _showSuggestedPayNotice = true;
-      });
-    } else {
-      // If conditions are not met, ensure the notice is hidden
-      if (_showSuggestedPayNotice) {
-        setState(() => _showSuggestedPayNotice = false);
+    setState(() {
+      // 1. Logic for Stage Rate (Pay / Gig Time)
+      if (pay > 0 && gigTime > 0) {
+        _stageRate = pay / gigTime;
+        _showStageRateNotice = true;
+      } else {
+        _showStageRateNotice = false;
       }
-    }
+
+      // 2. Logic for Suggested Pay Notice (User's Min Rate * Total Hours)
+      if (_userMinHourlyRate != null && _userMinHourlyRate! > 0) {
+        final bool shouldShowSuggested = gigTime > 0 && (driveTime > 0 || rehearsalTime > 0);
+        if (shouldShowSuggested) {
+          final totalHours = gigTime + driveTime + rehearsalTime;
+          _suggestedPay = totalHours * _userMinHourlyRate!;
+          _showSuggestedPayNotice = true;
+        } else {
+          _showSuggestedPayNotice = false;
+        }
+      } else {
+        _showSuggestedPayNotice = false;
+      }
+    });
   }
 
   void _clearAllInputFields() {
@@ -244,9 +194,11 @@ class _GigCalculatorState extends State<GigCalculator>
     _rehearsalTimeController.clear();
     if (mounted) {
       setState(() {
+        _isDoorGig = false;
         _hourlyRateResult = "";
         _showTakeGigButton = false;
-        _showSuggestedPayNotice = false; // <<< MODIFIED >>> Hide notice on clear
+        _showSuggestedPayNotice = false;
+        _showStageRateNotice = false; // <<< Reset this
       });
     }
   }
@@ -276,38 +228,43 @@ class _GigCalculatorState extends State<GigCalculator>
       final double totalHoursForRateCalc =
           gigTime + driveSetupTime + rehearsalTime;
 
-      if (totalHoursForRateCalc > 0 && pay > 0) {
-        final double calculatedRate = pay / totalHoursForRateCalc;
-        final String rateString =
-            '\$${calculatedRate.toStringAsFixed(2)} per hour';
+      if (totalHoursForRateCalc > 0) {
+        if (pay > 0) {
+          final double calculatedRate = pay / totalHoursForRateCalc;
+          final String rateString =
+              '\$${calculatedRate.toStringAsFixed(2)} per hour';
 
-        newHourlyRateResult = rateString;
-        newCurrentHourlyRateString = rateString;
-        newRateResultColor =
-        (_userMinHourlyRate != null && calculatedRate < _userMinHourlyRate!)
-            ? Colors.redAccent.shade200
-            : Colors.greenAccent.shade400;
-        newShowTakeGigButton = true;
-        newCurrentPay = pay;
+          newHourlyRateResult = rateString;
+          newCurrentHourlyRateString = rateString;
+          newRateResultColor =
+          (_userMinHourlyRate != null && calculatedRate < _userMinHourlyRate!)
+              ? Colors.redAccent.shade200
+              : Colors.greenAccent.shade400;
+          newShowTakeGigButton = true;
+          newCurrentPay = pay;
+        } else if (_isDoorGig) {
+          // Logic for Door Gig with no estimated pay entered
+          newHourlyRateResult = "Door Gig - Pay TBD";
+          newCurrentHourlyRateString = "Door Gig";
+          newRateResultColor = Colors.orangeAccent;
+          newShowTakeGigButton = true;
+          newCurrentPay = 0.0;
+        } else {
+          newHourlyRateResult = 'Please provide the Pay for the Gig.';
+          newRateResultColor = Colors.lightBlue.shade200;
+          newShowTakeGigButton = false;
+        }
+
         newCurrentGigLengthHours = gigTime;
         newCurrentDriveSetupHours = driveSetupTime;
         newCurrentRehearsalHours = rehearsalTime;
       } else {
-        String errorMessage = "";
-        if (pay <= 0 && totalHoursForRateCalc > 0) {
-          errorMessage = 'Please provide the Pay for the Gig.';
-        } else if (pay > 0 && totalHoursForRateCalc <= 0) {
-          errorMessage =
-          'We need some hours to divide the pay to get your rate.';
-        } else {
-          errorMessage = 'Enter the pay and time(s) for the rate calculation.';
-        }
-        newHourlyRateResult = errorMessage;
+        newHourlyRateResult = 'Enter the time(s) for the rate calculation.';
         newRateResultColor = Colors.lightBlue.shade200;
         newShowTakeGigButton = false;
       }
     } else {
-      newHourlyRateResult = 'Please provide the Pay for the Gig.';
+      newHourlyRateResult = 'Please check the fields above.';
       newRateResultColor = Colors.lightBlue.shade200;
       newShowTakeGigButton = false;
     }
@@ -367,18 +324,19 @@ class _GigCalculatorState extends State<GigCalculator>
   Future<void> _showBookingDialog() async {
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
 
-    // If in demo mode and on the correct step, advance the demo.
     if (demoProvider.isDemoModeActive && demoProvider.currentStep == 7) {
-      demoProvider.nextStep(); // Advance to step 8, which the dialog will handle
+      demoProvider.nextStep();
     }
 
+    // Modified condition: allow booking if it's a door gig even if pay is 0
     if (!_showTakeGigButton ||
         _currentHourlyRateString.isEmpty ||
-        _currentPay <= 0) {
+        (!_isDoorGig && _currentPay <= 0)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Please calculate valid gig details first.')));
       return;
     }
+
     if (_googleApiKey.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('API Key Missing. Booking new venues may fail.'),
@@ -407,7 +365,6 @@ class _GigCalculatorState extends State<GigCalculator>
 
     if (!mounted) return;
 
-    // Handle the result - works for both normal gigs and demo gigs
     if (result != null && result.action == GigEditResultAction.updated && result.gig != null) {
       final bookedGig = result.gig!;
       await _saveBookedGigToList(bookedGig);
@@ -417,26 +374,21 @@ class _GigCalculatorState extends State<GigCalculator>
             backgroundColor: Colors.green),
       );
       _clearAllInputFields();
-
-      // CRITICAL: Do NOT end demo here!
-      // The demo needs to continue to steps 12 (Venues tab), 13 (My Gigs tab), and 14 (final message)
-      // The demo will end naturally at step 14 when the user clicks FINISH in main.dart
-
     } else {
-      // User cancelled the dialog
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Booking cancelled.')),
       );
 
-      // Only end the demo if the user explicitly cancels
       if (demoProvider.isDemoModeActive) {
-        print('🎬 Calculator: User cancelled during demo, ending demo');
         demoProvider.endDemo();
       }
     }
   }
 
   String? _validatePay(String? value) {
+    // If it is a Door Gig, we don't require a value in this field.
+    if (_isDoorGig) return null;
+
     if (value == null || value.isEmpty) return 'Please enter pay amount';
     final number = double.tryParse(value);
     if (number == null) return 'Please enter a valid number';
@@ -587,7 +539,7 @@ class _GigCalculatorState extends State<GigCalculator>
                     focusNode: _payFocusNode,
                     style: TextStyle(color: formTextColor, fontSize: 16),
                     decoration: formInputDecoration(
-                        labelText: 'Pay',
+                        labelText: _isDoorGig ? 'Estimated Pay' : 'Total Pay', // <<< Changed label
                         hintText: 'Ask: What\'s your budget?',
                         icon: Icons.attach_money),
                     keyboardType:
@@ -596,6 +548,25 @@ class _GigCalculatorState extends State<GigCalculator>
                     textInputAction: TextInputAction.next,
                     onFieldSubmitted: (_) =>
                         FocusScope.of(context).requestFocus(_gigTimeFocusNode),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4.0),
+                  child: Row(
+                    children: [
+                      const Text("Door Gig", style: TextStyle(color: Colors.white70)),
+                      Switch(
+                        value: _isDoorGig,
+                        activeColor: Colors.orangeAccent,
+                        onChanged: (bool value) {
+                          setState(() {
+                            _isDoorGig = value;
+                            // Clear validation error when toggled
+                            _formKey.currentState?.validate();
+                          });
+                        },
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 16.0),
@@ -643,6 +614,32 @@ class _GigCalculatorState extends State<GigCalculator>
                     onFieldSubmitted: (_) => FocusScope.of(context)
                         .requestFocus(_driveSetupTimeFocusNode),
                   ),
+                ),
+                AnimatedOpacity(
+                  opacity: _showStageRateNotice ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 400),
+                  child: _showStageRateNotice
+                      ? Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12.0, vertical: 8.0),
+                    decoration: BoxDecoration(
+                      color: Colors.blueGrey.shade900.withAlpha(150),
+                      borderRadius: BorderRadius.circular(8.0),
+                      border: Border.all(color: Colors.blueGrey.shade700),
+                    ),
+                    child: Text(
+                      "Stage Rate: ${NumberFormat.currency(locale: 'en_US', symbol: '\$').format(_stageRate)} / hr",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.orangeAccent.shade100,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  )
+                      : const SizedBox.shrink(),
                 ),
                 const SizedBox(height: 16.0),
                 Container(

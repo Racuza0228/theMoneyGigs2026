@@ -144,6 +144,13 @@ class _BookingDialogState extends State<BookingDialog> {
   void initState() {
     super.initState();
     _initializeDialogState();
+
+    _scrollController.addListener(() {
+      if (_showDemoOverlay) {
+        setState(() {}); // Triggers a rebuild of the Stack, forcing painter to update
+      }
+    });
+
     _newVenueAddressFocusNode.addListener(_onAddressFocusChange);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -183,15 +190,17 @@ class _BookingDialogState extends State<BookingDialog> {
     FocusScope.of(context).unfocus();
 
     if (demoStep == DemoStep.bookingFormAction) {
-      final context = _dateButtonKey.currentContext;
-      if (context != null) {
-        Scrollable.ensureVisible(
-          context,
-          duration: const Duration(milliseconds: 300),
-          alignment: 0.5, // Center it in the viewport
-          curve: Curves.easeInOut,
-        );
-      }
+      // 🎯 Scroll to the absolute bottom of the dialog
+      // This ensures the Confirm & Book button is fully visible
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     } else if (demoStep == DemoStep.bookingFormValue) {
       _payFocusNode.requestFocus();
     }
@@ -898,6 +907,8 @@ class _BookingDialogState extends State<BookingDialog> {
                   key: _formKey,
                   child: ListBody(
                     children: <Widget>[
+                      if (_showDemoOverlay && widget.currentDemoStep == DemoStep.bookingFormValue)
+                        const SizedBox(height: 80), // Creates a hole for the top banner
                       if (_isCalculatorMode)
                         CalculatorSummaryView(
                             totalPay: widget.totalPay,
@@ -1008,7 +1019,13 @@ class _BookingDialogState extends State<BookingDialog> {
                           Expanded(
                             child: Padding(
                               padding: const EdgeInsets.only(right: 8.0),
-                              child: ElevatedButton.icon(onPressed: isDialogProcessing ? null : () => _pickDate(context), icon: const Icon(Icons.calendar_today, size: 18), label: Text(_selectedDate == null ? 'Select Date' : DateFormat('M/d/yy').format(_selectedDate!), style: const TextStyle(fontSize: 15)), style: ElevatedButton.styleFrom(backgroundColor: _selectedDate == null ? Colors.orange.shade700 : Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)))),
+                              child: ElevatedButton.icon(
+                                  onPressed: isDialogProcessing ? null : () => _pickDate(context),
+                                  icon: const Icon(Icons.calendar_today, size: 18),
+                                  label: Text(_selectedDate == null ? 'Select Date' : DateFormat('M/d/yy').format(_selectedDate!),
+                                      softWrap: false,
+                                      style: const TextStyle(fontSize: 15)),
+                                  style: ElevatedButton.styleFrom(backgroundColor: _selectedDate == null ? Colors.orange.shade700 : Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)))),
                             ),
                           ),
                           Expanded(

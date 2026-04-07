@@ -5,19 +5,12 @@
 /// Each rating captures how well a particular aspect of the gig went,
 /// on a scale of 0.0 to 5.0 (supporting half-star ratings).
 ///
-/// Examples:
-///   - GigRating(dimension: 'Energy', rating: 4.5)
-///   - GigRating(dimension: 'Tips', rating: 2.0)
-///   - GigRating(dimension: 'Creative Fulfillment', rating: 5.0)
+/// NOTE: Tips are no longer a GigRating dimension. They are stored as
+/// [Gig.tipsAmount] (a dollar amount) so they contribute directly to
+/// the true hourly rate calculation.
 class GigRating {
-  /// The name of the dimension being rated (e.g., 'Energy', 'Tips', 'Sound Quality')
   final String dimension;
-
-  /// The rating value from 0.0 to 5.0 (supports half-stars)
   final double rating;
-
-  /// Optional category for grouping dimensions
-  /// (e.g., 'performance', 'financial', 'logistics', 'personal')
   final String? category;
 
   const GigRating({
@@ -65,19 +58,24 @@ class GigRating {
   int get hashCode => dimension.hashCode;
 
   @override
-  String toString() => 'GigRating(dimension: $dimension, rating: $rating, category: $category)';
+  String toString() =>
+      'GigRating(dimension: $dimension, rating: $rating, category: $category)';
 }
 
 /// Default dimensions available for rating gigs.
 /// Users can add custom dimensions beyond these.
+///
+/// 'Tips' has been removed from this list — it is now tracked as a dollar
+/// amount on the Gig model ([Gig.tipsAmount]) rather than a 1–5 star rating.
+/// Existing saved dimension lists that still contain 'Tips' are silently
+/// filtered out when loaded in the widget and wizard.
 class DefaultGigDimensions {
   static const List<String> performance = [
     'Crowd Size/Energy',
   ];
 
-  static const List<String> financial = [
-    'Tips',
-  ];
+  // Tips removed — now Gig.tipsAmount
+  static const List<String> financial = [];
 
   static const List<String> venue = [
     'Parking',
@@ -98,6 +96,10 @@ class DefaultGigDimensions {
     ...venue,
     ...personal,
   ];
+
+  /// Dimensions that should never appear as star ratings.
+  /// Used to silently migrate old saved dimension lists.
+  static const List<String> reservedAsFields = ['Tips'];
 
   /// Get the category for a given dimension
   static String? getCategoryFor(String dimension) {

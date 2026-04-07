@@ -106,16 +106,19 @@ class GigListTile extends StatelessWidget {
   }
 
   Widget _buildTitle(BuildContext context) {
-    print("Building Title: Band Name: ${gig.bandName}");
+    // 1. Determine if we have a valid band name to show
+    final bool hasBandName = gig.bandName != null && gig.bandName!.trim().isNotEmpty;
 
     if (style == GigTileStyle.calendarView) {
-      // Calendar view: simple title
+      // Calendar view: handle optional band name without showing "null"
       return Text(
-        '${gig.venueName} - ${gig.bandName}'
-        ,        style: TextStyle(
-        fontWeight: FontWeight.bold,
-        color: _isPast ? Colors.grey.shade600 : Colors.white,
-      ),
+        hasBandName
+            ? '${gig.venueName} - ${gig.bandName}'
+            : gig.venueName,
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: _isPast ? Colors.grey.shade600 : Colors.white,
+        ),
       );
     }
 
@@ -130,7 +133,7 @@ class GigListTile extends StatelessWidget {
                 gig.venueName,
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 18, // Slightly larger for the venue
+                  fontSize: 18,
                   color: _isPast
                       ? Colors.grey.shade700
                       : (_isJam
@@ -154,7 +157,8 @@ class GigListTile extends StatelessWidget {
           ],
         ),
 
-        if (gig.bandName != null && gig.bandName!.isNotEmpty)
+        // 2. Only render the band name widget if it actually exists
+        if (hasBandName)
           Padding(
             padding: const EdgeInsets.only(top: 2.0),
             child: Text(
@@ -164,7 +168,7 @@ class GigListTile extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: _isPast
                     ? Colors.grey.shade500
-                    : Theme.of(context).colorScheme.primary, // Highlights the band in theme color
+                    : Theme.of(context).colorScheme.primary,
               ),
             ),
           ),

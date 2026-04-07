@@ -144,31 +144,31 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // We use the Banner style for all steps in this form
-        bool isBannerStep = widget.demoStep == DemoStep.bookingFormValue ||
-            widget.demoStep == DemoStep.bookingFormAction;
+        // 🎯 Check if keyboard is open to adjust banner padding
+        final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
         return Stack(
           children: [
             // 1. VISUAL MASK ONLY
-            // We wrap this in IgnorePointer. It draws the "holes" but
-            // the finger goes straight through them to the TextFields.
+            // IgnorePointer lets touches go through the "holes" to the underlying TextFields.
             if (_isReadyToPaint)
               IgnorePointer(
                 child: CustomPaint(
                   size: Size(constraints.maxWidth, constraints.maxHeight),
                   painter: _MultiHighlightPainter(
-                    highlightKeys: _isReadyToPaint ? _highlightKeys : [],
+                    highlightKeys: _highlightKeys,
                     pageRenderBox: parentRenderBox,
                   ),
                 ),
               ),
 
             // 2. THE INSTRUCTION BANNER
-            // Positioned at the very top, safe from the keyboard.
+            // Positioned at the very top. Safe from the keyboard pushing it off-screen.
             if (_isReadyToPaint && widget.demoStep != null)
               Positioned(
-                top: statusBarHeight,
+                // On iOS/Pixel 7, if keyboard is open, stick strictly to statusBarHeight.
+                // Otherwise, give it a tiny bit of breathing room (4px).
+                top: isKeyboardOpen ? statusBarHeight : statusBarHeight + 4,
                 left: 0,
                 right: 0,
                 child: Material(
@@ -255,6 +255,9 @@ class _MultiHighlightPainter extends CustomPainter {
       return;
     }
 
+    // Find the top-left of the OVERLAY itself in global coordinates
+    final Offset overlayGlobalOffset = pageRenderBox!.localToGlobal(Offset.zero);
+
     for (final key in highlightKeys) {
       try {
         final context = key.currentContext;
@@ -264,14 +267,12 @@ class _MultiHighlightPainter extends CustomPainter {
           continue;
         }
 
-        // 🎯 Final check immediately before math
-        if (!pageRenderBox!.attached) continue;
-
-        final offset = pageRenderBox!.globalToLocal(renderObject.localToGlobal(Offset.zero));
+        final widgetGlobalOffset = renderObject.localToGlobal(Offset.zero);
+        final Offset correctedOffset = widgetGlobalOffset - overlayGlobalOffset;
 
         final highlightRect = Rect.fromLTWH(
-          offset.dx,
-          offset.dy,
+          correctedOffset.dx,
+          correctedOffset.dy,
           renderObject.size.width,
           renderObject.size.height,
         );

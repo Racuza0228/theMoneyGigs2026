@@ -11,9 +11,13 @@ class Gig {
   double longitude;
   String address;
   String? placeId;
-  DateTime dateTime; // For recurring gigs, this will be the START date
+  DateTime dateTime;
   double pay;
   double? otherExpenses;
+  // --- TIPS ---
+  // Stored as a dollar amount rather than a star rating so it contributes
+  // directly to trueHourlyRate. null = not yet recorded, 0.0 = no tips.
+  double? tipsAmount;
   double gigLengthHours;
   double driveSetupTimeHours;
   double rehearsalLengthHours;
@@ -43,7 +47,8 @@ class Gig {
     this.placeId,
     required this.dateTime,
     required this.pay,
-    this.otherExpenses, // Updated constructor
+    this.otherExpenses,
+    this.tipsAmount,
     required this.gigLengthHours,
     required this.driveSetupTimeHours,
     required this.rehearsalLengthHours,
@@ -72,7 +77,8 @@ class Gig {
     String? placeId,
     DateTime? dateTime,
     double? pay,
-    double? otherExpenses, // New field
+    double? otherExpenses,
+    double? tipsAmount,
     double? gigLengthHours,
     double? driveSetupTimeHours,
     double? rehearsalLengthHours,
@@ -100,7 +106,8 @@ class Gig {
       placeId: placeId ?? this.placeId,
       dateTime: dateTime ?? this.dateTime,
       pay: pay ?? this.pay,
-      otherExpenses: otherExpenses ?? this.otherExpenses, // Updated copyWith
+      otherExpenses: otherExpenses ?? this.otherExpenses,
+      tipsAmount: tipsAmount ?? this.tipsAmount,
       gigLengthHours: gigLengthHours ?? this.gigLengthHours,
       driveSetupTimeHours: driveSetupTimeHours ?? this.driveSetupTimeHours,
       rehearsalLengthHours: rehearsalLengthHours ?? this.rehearsalLengthHours,
@@ -121,30 +128,27 @@ class Gig {
   }
 
   double get trueHourlyRate {
-    // Sum up all the hours invested in the gig.
     final double totalHours =
         gigLengthHours + driveSetupTimeHours + rehearsalLengthHours;
 
-    // Calculate the effective pay by subtracting expenses.
-    final double effectivePay = pay - (otherExpenses ?? 0.0);
+    // Tips are real income — they lift the effective pay and therefore the
+    // true rate. tipsAmount == null means not yet recorded (treated as 0),
+    // tipsAmount == 0.0 means explicitly "no tips."
+    final double effectivePay =
+        pay + (tipsAmount ?? 0.0) - (otherExpenses ?? 0.0);
 
-    // To prevent division by zero or if the effective pay is not positive, return 0.
-    if (effectivePay <= 0 || totalHours <= 0) {
-      return 0.0;
-    }
-
-    // Calculate the true rate using the effective pay.
+    if (effectivePay <= 0 || totalHours <= 0) return 0.0;
     return effectivePay / totalHours;
   }
 
   /// Returns true if this gig has ended (based on dateTime + gigLengthHours)
   bool get hasEnded {
-    final endTime = dateTime.add(Duration(minutes: (gigLengthHours * 60).toInt()));
+    final endTime =
+    dateTime.add(Duration(minutes: (gigLengthHours * 60).toInt()));
     return endTime.isBefore(DateTime.now());
   }
 
   /// Returns true if this gig is eligible for retrospective
-  /// (has ended and retrospective not yet completed)
   bool get needsRetrospective {
     return hasEnded && !(retrospectiveCompleted ?? false) && !isJamOpenMic;
   }
@@ -166,24 +170,18 @@ class Gig {
     return total / gigRatings!.length;
   }
 
-  /// Gets the base ID for a gig. For a recurring instance (e.g., 'gig1_20240101'),
-  /// it returns the original ID (e.g., 'gig1'). For regular gigs, it returns its own ID.
   String getBaseId() {
     if (isFromRecurring && id.contains('_')) {
-      // For a standard recurring gig instance like 'baseid_20251108'
       final parts = id.split('_');
       if (parts.length > 1) {
-        // Re-join in case the base ID itself had underscores, though this is unlikely/bad practice.
         return parts.sublist(0, parts.length - 1).join('_');
       }
     } else if (isJamOpenMic && id.startsWith('jam_')) {
-      // For a jam session like 'jam_placeId_sessionId_20251108'
       final parts = id.split('_');
       if (parts.length > 3) {
         return parts.sublist(0, parts.length - 1).join('_');
       }
     }
-    // For a base recurring gig, a non-recurring gig, or if splitting fails
     return id;
   }
 
@@ -198,7 +196,8 @@ class Gig {
       'placeId': placeId,
       'dateTime': dateTime.toIso8601String(),
       'pay': pay,
-      'otherExpenses': otherExpenses, // New field
+      'otherExpenses': otherExpenses,
+      'tipsAmount': tipsAmount,
       'gigLengthHours': gigLengthHours,
       'driveSetupTimeHours': driveSetupTimeHours,
       'rehearsalLengthHours': rehearsalLengthHours,
@@ -211,7 +210,8 @@ class Gig {
       'recurrenceDay': recurrenceDay?.toString(),
       'recurrenceNthValue': recurrenceNthValue,
       'recurrenceEndDate': recurrenceEndDate?.toIso8601String(),
-      'recurrenceExceptions': recurrenceExceptions?.map((date) => date.toIso8601String()).toList(),
+      'recurrenceExceptions':
+      recurrenceExceptions?.map((date) => date.toIso8601String()).toList(),
       'gigRatings': gigRatings?.map((r) => r.toJson()).toList(),
       'retrospectiveCompleted': retrospectiveCompleted,
     };
@@ -256,20 +256,29 @@ class Gig {
       placeId: json['placeId'] as String?,
       dateTime: DateTime.parse(json['dateTime'] as String),
       pay: (json['pay'] as num).toDouble(),
-      otherExpenses: (json['otherExpenses'] as num?)?.toDouble() ?? 0.0, // Backward compatible
+      otherExpenses: (json['otherExpenses'] as num?)?.toDouble() ?? 0.0,
+      // Backward compatible — existing gigs with no tipsAmount stay null
+      tipsAmount: (json['tipsAmount'] as num?)?.toDouble(),
       gigLengthHours: (json['gigLengthHours'] as num).toDouble(),
-      driveSetupTimeHours: (json['driveSetupTimeHours'] as num?)?.toDouble() ?? 0.0,
-      rehearsalLengthHours: (json['rehearsalLengthHours'] as num?)?.toDouble() ?? 0.0,
+      driveSetupTimeHours:
+      (json['driveSetupTimeHours'] as num?)?.toDouble() ?? 0.0,
+      rehearsalLengthHours:
+      (json['rehearsalLengthHours'] as num?)?.toDouble() ?? 0.0,
       isJamOpenMic: json['isJamOpenMic'] as bool? ?? false,
       notes: json['notes'] as String?,
       notesUrl: json['notesUrl'] as String?,
       setlistId: json['setlistId'] as String?,
       isRecurring: json['isRecurring'] as bool? ?? false,
-      recurrenceFrequency: safeParseEnum(JamFrequencyType.values, json['recurrenceFrequency'] as String?),
-      recurrenceDay: safeParseEnum(DayOfWeek.values, json['recurrenceDay'] as String?),
+      recurrenceFrequency: safeParseEnum(
+          JamFrequencyType.values, json['recurrenceFrequency'] as String?),
+      recurrenceDay:
+      safeParseEnum(DayOfWeek.values, json['recurrenceDay'] as String?),
       recurrenceNthValue: json['recurrenceNthValue'] as int?,
-      recurrenceEndDate: json['recurrenceEndDate'] != null ? DateTime.tryParse(json['recurrenceEndDate'] as String) : null,
-      recurrenceExceptions: parseRecurrenceExceptions(json['recurrenceExceptions']),
+      recurrenceEndDate: json['recurrenceEndDate'] != null
+          ? DateTime.tryParse(json['recurrenceEndDate'] as String)
+          : null,
+      recurrenceExceptions:
+      parseRecurrenceExceptions(json['recurrenceExceptions']),
       gigRatings: parseGigRatings(json['gigRatings']),
       retrospectiveCompleted: json['retrospectiveCompleted'] as bool?,
     );
@@ -282,20 +291,21 @@ class Gig {
   static List<Gig> decode(String gigsString) {
     if (gigsString.isEmpty) return [];
     try {
-      final List<dynamic> decodedJson = json.decode(gigsString) as List<dynamic>;
+      final List<dynamic> decodedJson =
+      json.decode(gigsString) as List<dynamic>;
       return decodedJson
           .map<Gig?>((item) {
         try {
           return Gig.fromJson(item as Map<String, dynamic>);
         } catch (e) {
-          print("Error decoding a single gig: $item. Error: $e");
+          print('Error decoding a single gig: $item. Error: $e');
           return null;
         }
       })
           .whereType<Gig>()
           .toList();
     } catch (e) {
-      print("Error decoding gigs list: $gigsString. Error: $e");
+      print('Error decoding gigs list: $gigsString. Error: $e');
       return [];
     }
   }
