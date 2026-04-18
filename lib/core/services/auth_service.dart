@@ -45,10 +45,18 @@ class AuthService {
 
       print("✅ Signed in to Firebase: ${userCredential.user?.email}");
 
-      // ✨ NEW: Identify user to RevenueCat
+      // Identify user to RevenueCat — wrapped in its own try-catch because
+      // RevenueCat may not be initialized yet (standalone users). A failure
+      // here must NOT cancel a successful Firebase sign-in.
       if (userCredential.user != null) {
-        await Purchases.logIn(userCredential.user!.uid);
-        print('✅ User identified to RevenueCat: ${userCredential.user!.uid}');
+        try {
+          await Purchases.logIn(userCredential.user!.uid);
+          print('✅ User identified to RevenueCat: ${userCredential.user!.uid}');
+        } catch (e) {
+          // RevenueCat not configured yet — harmless. initializeNetworkServices()
+          // will be called before any subscription check is needed.
+          print('⚠️ RevenueCat logIn skipped (not yet configured): $e');
+        }
       }
 
       return userCredential;

@@ -11,6 +11,8 @@ import 'package:table_calendar/table_calendar.dart'; // Import TableCalendar
 import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the notifier
 import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHARED ENUMS
 
+import 'package:the_money_gigs/core/services/notification_service.dart';
+
 // Import your models
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/gigs/models/monthly_separator.dart';
@@ -892,6 +894,12 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
         // 5. Notify system to reload
         globalRefreshNotifier.notify();
+
+        // Reschedule notifications with updated gig date/time
+        final notificationService = NotificationService();
+        await notificationService.init();
+        await notificationService.updateAllGigNotifications();
+
         print("✅ Gig updated and saved successfully to disk.");
       } else {
         print("❌ Error: Could not find gig with ID $baseId to update.");
@@ -907,16 +915,19 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   Future<void> _deleteGig(Gig gigToDelete) async {
-    // This function now primarily handles deletion of SINGLE, NON-RECURRING gigs.
-    // The logic for recurring gigs is handled by _handleRecurringGigDeletion.
     try {
-      final prefs = await SharedPreferences.getInstance();
-      // We need to operate on the master list, _allGigs
-      _allGigs.removeWhere((g) => g.id == gigToDelete.getBaseId());
+      // Cancel all notifications for this gig
+      final notificationService = NotificationService();
+      await notificationService.init();
+      final int base = gigToDelete.getBaseId().hashCode;
+      await notificationService.cancelNotification(base);
+      await notificationService.cancelNotification(base + 1);
+      await notificationService.cancelNotification(base + 2);
 
+      final prefs = await SharedPreferences.getInstance();
+      _allGigs.removeWhere((g) => g.id == gigToDelete.getBaseId());
       await prefs.setString(_keyGigsList, Gig.encode(_allGigs));
       globalRefreshNotifier.notify();
-
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

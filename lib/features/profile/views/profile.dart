@@ -1,5 +1,6 @@
 // lib/features/profile/views/profile.dart
 
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,7 @@ import 'widgets/address_form_fields.dart';
 import 'package:the_money_gigs/features/profile/views/widgets/connect_widget.dart';
 import 'package:the_money_gigs/features/profile/views/widgets/tags_widget.dart'; // <<< 1. ADD THIS IMPORT
 import 'widgets/notification_settings_dialog.dart';
+import 'widgets/notification_permission_tile.dart';
 import 'widgets/rate_display.dart';
 import 'widgets/rate_form_field.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
@@ -159,6 +161,8 @@ class _ProfilePageState extends State<ProfilePage> {
           _isEditingAddress = false;
           _isEditingRate = false;
         });
+        // Notify the map to re-center on the new address
+        globalRefreshNotifier.notify();
       }
     } else {
       if (mounted) {
@@ -402,18 +406,7 @@ class _ProfilePageState extends State<ProfilePage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: _showNotificationSettings,
-                    icon: const Icon(Icons.notifications_outlined),
-                    label: const Text('Notifications'),
-                    style: TextButton.styleFrom(
-                        foregroundColor: Colors.orangeAccent.shade100),
-                  ),
-                ),
-
-                // <<< 4. ATTACH THE KEY TO THE WIDGET
+                // ── Community Edition connect ─────────────────────────────
                 Container(
                   child: ConnectWidget(
                     // ADD THIS property to pass the key down
@@ -421,15 +414,27 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
 
-                // ... The rest of your form and widgets
-                _buildSectionTitle(
-                  'Musician Profile',
+                // ── Notifications ─────────────────────────────────────────
+                // Permission tile: lets the user enable OS-level notifications.
+                // The timing button below opens the scheduling preferences.
+                _buildSectionTitle('Notifications'),
+                const NotificationPermissionTile(),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _showNotificationSettings,
+                    icon: const Icon(Icons.tune_outlined, size: 18),
+                    label: const Text('Reminder Timing'),
+                    style: TextButton.styleFrom(
+                        foregroundColor: Colors.orangeAccent.shade100),
+                  ),
                 ),
+                // ── Musician Profile ──────────────────────────────────────
+                _buildSectionTitle('Musician Profile'),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 8.0),
                   child: TagsWidget(),
                 ),
-                // ... (rest of the file is unchanged)
                 _buildSectionTitle(
                   'Background Settings',
                   showSettingsIcon: true,

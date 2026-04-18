@@ -1,10 +1,22 @@
+// lib/core/services/notification_service.dart
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:flutter_timezone/flutter_timezone.dart'; // <-- ADD this import
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:intl/intl.dart';
+
+// ── Top-level background tap handler ─────────────────────────────────────────
+// Must be top-level (not a class method) and annotated for the VM.
+// Called when a notification action button is tapped while the app is killed.
+// For plain notification taps, Android's launch intent opens the app instead.
+@pragma('vm:entry-point')
+void onBackgroundNotificationResponse(NotificationResponse response) {
+  // No-op for now. The OS launch intent handles bringing the app to the
+  // foreground. Add deep-link routing here if needed in the future.
+}
 
 class NotificationService {
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -12,7 +24,7 @@ class NotificationService {
 
   Future<void> init() async {
     const AndroidInitializationSettings initializationSettingsAndroid =
-    AndroidInitializationSettings('app_icon'); // Use the icon name from Step 2
+    AndroidInitializationSettings('app_icon');
 
     const DarwinInitializationSettings initializationSettingsIOS =
     DarwinInitializationSettings();
@@ -22,23 +34,31 @@ class NotificationService {
       iOS: initializationSettingsIOS,
     );
 
-    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+    await flutterLocalNotificationsPlugin.initialize(
+      initializationSettings,
+      // Fires when a notification is tapped while the app is in the foreground.
+      // When the app is in the background or killed, Android's launch intent
+      // handles bringing it to the front automatically.
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        print('🔔 Notification tapped (foreground): '
+            'id=${response.id}, payload=${response.payload}');
+        // Future: use payload to navigate to the right screen
+        // e.g. 'retrospective:gig_id' → open retrospective flow
+      },
+      onDidReceiveBackgroundNotificationResponse: onBackgroundNotificationResponse,
+    );
 
-    // --- CORRECTED BASED ON THE EXAMPLE ---
-    tz.initializeTimeZones(); // Initialize the timezone data
-
-    // 1. Await the result, which is a TimezoneInfo object.
+    tz.initializeTimeZones();
     final String currentTimeZone = await FlutterTimezone.getLocalTimezone();
     tz.setLocalLocation(tz.getLocation(currentTimeZone));
-
-
   }
 
+  /// Reschedules notifications for every non-jam gig based on current settings.
+  /// Call this when notification settings change.
   Future<void> updateAllGigNotifications() async {
     print("--- 🔄 Starting batch update of all gig notifications ---");
     final prefs = await SharedPreferences.getInstance();
 
-    // 1. Load all raw gig data
     final String? gigsJson = prefs.getString('gigs_list');
     if (gigsJson == null || gigsJson.isEmpty) {
       print("--- No gigs found. Aborting notification update. ---");
@@ -46,88 +66,92 @@ class NotificationService {
     }
     final List<Gig> allGigs = Gig.decode(gigsJson);
 
-    // 2. Load current notification settings
-    final bool shouldNotifyOnDay = prefs.getBool('notify_on_day_of_gig') ?? false;
-    final int? daysBefore = prefs.getInt('notify_days_before');
+    final bool shouldNotifyOnDay  = prefs.getBool('notify_on_day_of_gig') ?? false;
+    final bool shouldNotifyAfter  = prefs.getBool('notify_after_gig') ?? true;
+    final int? daysBefore         = prefs.getInt('notify_days_before');
 
-    // It's inefficient to generate occurrences one by one.
-    // Let's generate all of them up to a reasonable future date.
-    DateTime futureRange = DateTime.now().add(const Duration(days: 365 * 2)); // 2 years
-    List<Gig> allOccurrences = [];
-
-    for (final baseGig in allGigs) {
-      if (baseGig.isRecurring) {
-        // This is a simplified occurrence generator. You must use the one from gigs.dart.
-        // For this example, I'll just add the base gig.
-        // IN YOUR REAL CODE: You would call a utility function that contains
-        // the logic from _generateOccurrencesForGig in gigs.dart.
-        allOccurrences.add(baseGig); // Placeholder
-      } else {
-        allOccurrences.add(baseGig);
-      }
-    }
-
-    // In a real implementation, you'd generate all recurrences here.
-    // For now, let's just work with the raw list, which covers non-recurring gigs.
-
+    final now = DateTime.now();
     int scheduledCount = 0;
     int cancelledCount = 0;
 
-    // 3. Loop through every gig
     for (final gig in allGigs.where((g) => !g.isJamOpenMic)) {
-      // We only care about gigs in the future
-      if (gig.dateTime.isBefore(DateTime.now())) continue;
+      if (gig.isRecurring) continue;
+      final int base = gig.id.hashCode;
+      final gigTime = DateFormat.jm().format(gig.dateTime);
+      final gigDay = DateTime(
+          gig.dateTime.year, gig.dateTime.month, gig.dateTime.day);
 
-      // --- Handle "Day Of Gig" Notification ---
-      final int dayOfGigId = gig.id.hashCode;
-      final DateTime dayOfGigScheduleTime = DateTime(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day, 9, 0);
-
-      if (shouldNotifyOnDay && dayOfGigScheduleTime.isAfter(DateTime.now())) {
+      // ── Day-of (9am on gig day) ──────────────────────────────────────────
+      final DateTime dayOfTime =
+      DateTime(gigDay.year, gigDay.month, gigDay.day, 9, 0);
+      if (shouldNotifyOnDay && dayOfTime.isAfter(now)) {
         await scheduleNotification(
-          id: dayOfGigId,
-          title: 'Gig Reminder: Today!',
-          body: 'Your gig "${gig.venueName}" is today at ${DateFormat.jm().format(gig.dateTime)}.',
-          scheduledDate: dayOfGigScheduleTime,
+          id: base,
+          title: 'You have a gig today!',
+          body: 'You have a gig today at ${gig.venueName} at $gigTime!',
+          scheduledDate: dayOfTime,
+          payload: 'day_of:${gig.id}',
         );
         scheduledCount++;
       } else {
-        await cancelNotification(dayOfGigId);
+        await cancelNotification(base);
         cancelledCount++;
       }
 
-      // --- Handle "Days Before" Notification ---
-      final int daysBeforeId = dayOfGigId + 1;
+      // ── Days-before (9am N days before gig) ──────────────────────────────
       if (daysBefore != null && daysBefore > 0) {
-        final DateTime daysBeforeScheduleTime = DateTime(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day - daysBefore, 9, 0);
-        if (daysBeforeScheduleTime.isAfter(DateTime.now())) {
+        final DateTime beforeDate =
+        gig.dateTime.subtract(Duration(days: daysBefore));
+        final DateTime beforeTime = DateTime(
+            beforeDate.year, beforeDate.month, beforeDate.day, 9, 0);
+        if (beforeTime.isAfter(now)) {
           await scheduleNotification(
-            id: daysBeforeId,
-            title: 'Gig Reminder: ${daysBefore} Day${daysBefore > 1 ? 's' : ''}',
-            body: 'Your gig "${gig.venueName}" is in $daysBefore day${daysBefore > 1 ? 's' : ''} on ${DateFormat.yMMMEd().format(gig.dateTime)}.',
-            scheduledDate: daysBeforeScheduleTime,
+            id: base + 1,
+            title: 'Upcoming gig reminder',
+            body: 'Your gig at ${gig.venueName} is in '
+                '$daysBefore day${daysBefore > 1 ? 's' : ''} '
+                'on ${DateFormat.yMMMEd().format(gig.dateTime)} at $gigTime.',
+            scheduledDate: beforeTime,
+            payload: 'days_before:${gig.id}',
           );
           scheduledCount++;
         } else {
-          await cancelNotification(daysBeforeId);
+          await cancelNotification(base + 1);
           cancelledCount++;
         }
       } else {
-        await cancelNotification(daysBeforeId);
+        await cancelNotification(base + 1);
+        cancelledCount++;
+      }
+
+      // ── Day-after retrospective (9am the morning after the gig) ──────────
+      final DateTime afterGigDate = gigDay.add(const Duration(days: 1));
+      final DateTime afterTime = DateTime(
+          afterGigDate.year, afterGigDate.month, afterGigDate.day, 9, 0);
+      if (shouldNotifyAfter && afterTime.isAfter(now)) {
+        await scheduleNotification(
+          id: base + 2,
+          title: 'How was the gig?',
+          body: 'How did the gig at ${gig.venueName} go?',
+          scheduledDate: afterTime,
+          payload: 'retrospective:${gig.id}',
+        );
+        scheduledCount++;
+      } else {
+        await cancelNotification(base + 2);
         cancelledCount++;
       }
     }
-    print("--- ✅ Batch update complete. Scheduled: $scheduledCount, Cancelled: $cancelledCount ---");
+
+    print("--- ✅ Batch update complete. "
+        "Scheduled: $scheduledCount, Cancelled: $cancelledCount ---");
   }
 
   Future<void> requestPermissions() async {
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
         IOSFlutterLocalNotificationsPlugin>()
-        ?.requestPermissions(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+        ?.requestPermissions(alert: true, badge: true, sound: true);
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>()
@@ -138,22 +162,20 @@ class NotificationService {
         ?.requestNotificationsPermission();
   }
 
-  // In lib/core/services/notification_service.dart
-
   Future<void> scheduleNotification({
     required int id,
     required String title,
     required String body,
     required DateTime scheduledDate,
+    String? payload, // e.g. 'day_of:gig_id', 'retrospective:gig_id'
   }) async {
     try {
-      print("--- Attempting to schedule notification ---");
-      print("ID: $id, Title: $title");
-      print("Scheduled For (Local Time): $scheduledDate");
+      print("--- Scheduling notification ---");
+      print("  ID: $id | Title: $title");
+      print("  At: $scheduledDate | Payload: $payload");
 
-      final tz.TZDateTime scheduledTZDate = tz.TZDateTime.from(
-          scheduledDate, tz.local);
-      print("Scheduled For (TZDateTime): $scheduledTZDate");
+      final tz.TZDateTime scheduledTZDate =
+      tz.TZDateTime.from(scheduledDate, tz.local);
 
       await flutterLocalNotificationsPlugin.zonedSchedule(
         id,
@@ -169,47 +191,42 @@ class NotificationService {
             priority: Priority.high,
             ticker: 'ticker',
           ),
-          // --- THIS IS THE CORRECTED CODE FOR iOS ---
           iOS: DarwinNotificationDetails(
             presentAlert: true,
             presentBadge: true,
             presentSound: true,
           ),
-          // -----------------------------------------
         ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: AndroidScheduleMode.alarmClock,
         uiLocalNotificationDateInterpretation:
         UILocalNotificationDateInterpretation.absoluteTime,
+        payload: payload,
       );
 
-      print("✅ SUCCESS: zonedSchedule call completed without error.");
+      print("  ✅ Scheduled successfully.");
     } catch (e) {
-      print("❌ ERROR scheduling notification: $e");
+      print("  ❌ Error scheduling notification: $e");
     }
   }
 
   Future<void> cancelNotification(int id) async {
     await flutterLocalNotificationsPlugin.cancel(id);
-    print("🔔 Notification with ID: $id has been cancelled.");
+    print("🔔 Cancelled notification ID: $id");
   }
 
   Future<void> debugPendingNotifications() async {
-    // 1. Get the list of pending notification requests from the plugin
     final List<PendingNotificationRequest> pendingRequests =
     await flutterLocalNotificationsPlugin.pendingNotificationRequests();
 
-    // 2. Check if the list is empty
     if (pendingRequests.isEmpty) {
-      print("--- 🧐 PENDING NOTIFICATIONS DEBUG: None found. ---");
+      print("--- 🧐 PENDING NOTIFICATIONS: None found. ---");
       return;
     }
 
-    // 3. If notifications are found, print their details
-    print("--- 🧐 PENDING NOTIFICATIONS DEBUG (${pendingRequests.length} found) ---");
-    for (PendingNotificationRequest request in pendingRequests) {
-      print(
-          "  - ID: ${request.id}, Title: ${request.title}, Body: ${request.body}, Payload: ${request.payload}");
+    print("--- 🧐 PENDING NOTIFICATIONS (${pendingRequests.length} found) ---");
+    for (final request in pendingRequests) {
+      print("  ID: ${request.id} | ${request.title} | ${request.payload}");
     }
-    print("----------------------------------------------------");
+    print("------------------------------------------------------");
   }
 }

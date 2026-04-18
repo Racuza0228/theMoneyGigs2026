@@ -1,34 +1,12 @@
 // lib/features/gigs/views/gig_calculator_page.dart
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // <<< ADDED for currency formatting
-import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
-
-// Demo-related imports
-import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
-import 'package:the_money_gigs/features/app_demo/widgets/tutorial_overlay.dart';
-
-// Helper class for the demo script
-class _DemoStep {
-  final GlobalKey key;
-  final String text;
-  final Alignment alignment;
-  final VoidCallback? onBefore;
-  final bool hideNextButton;
-
-  _DemoStep({
-    required this.key,
-    required this.text,
-    required this.alignment,
-    this.onBefore,
-    this.hideNextButton = false,
-  });
-}
 
 class GigCalculator extends StatefulWidget {
   const GigCalculator({super.key});
@@ -45,23 +23,22 @@ class _GigCalculatorState extends State<GigCalculator>
   final _gigTimeController = TextEditingController();
   final _driveSetupTimeController = TextEditingController();
   final _rehearsalTimeController = TextEditingController();
-  String _hourlyRateResult = "";
   final _formKey = GlobalKey<FormState>();
 
+  String _hourlyRateResult = '';
   bool _showTakeGigButton = false;
   bool _isDoorGig = false;
   double _currentPay = 0.0;
   double _currentGigLengthHours = 0.0;
   double _currentDriveSetupHours = 0.0;
   double _currentRehearsalHours = 0.0;
-  String _currentHourlyRateString = "";
+  String _currentHourlyRateString = '';
   bool _showStageRateNotice = false;
   double _stageRate = 0.0;
 
   double? _userMinHourlyRate;
   Color _rateResultColor = Colors.greenAccent.shade400;
 
-  // <<< ADDED >>> State for the new suggested pay notice
   bool _showSuggestedPayNotice = false;
   double _suggestedPay = 0.0;
 
@@ -73,34 +50,18 @@ class _GigCalculatorState extends State<GigCalculator>
   final _driveSetupTimeFocusNode = FocusNode();
   final _rehearsalTimeFocusNode = FocusNode();
 
-  // GlobalKeys for each demo step target
-  final GlobalKey _payKey = GlobalKey();
-  final GlobalKey _gigTimeKey = GlobalKey();
-  final GlobalKey _driveTimeKey = GlobalKey();
-  final GlobalKey _rehearsalTimeKey = GlobalKey();
-  final GlobalKey _calculateBtnKey = GlobalKey();
-  final GlobalKey _rateResultKey = GlobalKey();
-  final GlobalKey _takeGigBtnKey =
-  GlobalKey(); // <<< 1. ADD KEY FOR "TAKE GIG" BUTTON
-
-  late final List<_DemoStep> _demoScript;
-
   @override
   void initState() {
     super.initState();
-
     WidgetsBinding.instance.addObserver(this);
-
     _loadUserMinHourlyRate();
 
-    // <<< ADDED >>> Listen to time fields to calculate suggested pay automatically
     _gigTimeController.addListener(_calculateSuggestedPay);
     _driveSetupTimeController.addListener(_calculateSuggestedPay);
     _rehearsalTimeController.addListener(_calculateSuggestedPay);
 
     if (_googleApiKey.isEmpty) {
-      print(
-          "CRITICAL WARNING (GigCalculator): GOOGLE_API_KEY is not defined. Geocoding will fail.");
+      print('WARNING (GigCalculator): GOOGLE_API_KEY not defined.');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -119,26 +80,26 @@ class _GigCalculatorState extends State<GigCalculator>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
 
+    _gigTimeController.removeListener(_calculateSuggestedPay);
+    _driveSetupTimeController.removeListener(_calculateSuggestedPay);
+    _rehearsalTimeController.removeListener(_calculateSuggestedPay);
+
     _payController.dispose();
     _gigTimeController.dispose();
     _driveSetupTimeController.dispose();
     _rehearsalTimeController.dispose();
 
-    // <<< MODIFIED >>> Also remove the new listeners
-    _gigTimeController.removeListener(_calculateSuggestedPay);
-    _driveSetupTimeController.removeListener(_calculateSuggestedPay);
-    _rehearsalTimeController.removeListener(_calculateSuggestedPay);
-
     _payFocusNode.dispose();
     _gigTimeFocusNode.dispose();
     _driveSetupTimeFocusNode.dispose();
     _rehearsalTimeFocusNode.dispose();
+
     super.dispose();
   }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    // When the user returns to the app (or this page), reload the rate.
     if (state == AppLifecycleState.resumed) {
       _loadUserMinHourlyRate();
     }
@@ -149,12 +110,10 @@ class _GigCalculatorState extends State<GigCalculator>
     if (!mounted) return;
     setState(() {
       _userMinHourlyRate = prefs.getInt(_keyMinHourlyRate)?.toDouble();
-      // Recalculate the suggested pay with the potentially new rate
       _calculateSuggestedPay();
     });
   }
 
-  // <<< ADDED >>> New function to calculate suggested pay and show/hide the notice
   void _calculateSuggestedPay() {
     final pay = double.tryParse(_payController.text) ?? 0;
     final gigTime = double.tryParse(_gigTimeController.text) ?? 0;
@@ -162,7 +121,6 @@ class _GigCalculatorState extends State<GigCalculator>
     final rehearsalTime = double.tryParse(_rehearsalTimeController.text) ?? 0;
 
     setState(() {
-      // 1. Logic for Stage Rate (Pay / Gig Time)
       if (pay > 0 && gigTime > 0) {
         _stageRate = pay / gigTime;
         _showStageRateNotice = true;
@@ -170,10 +128,10 @@ class _GigCalculatorState extends State<GigCalculator>
         _showStageRateNotice = false;
       }
 
-      // 2. Logic for Suggested Pay Notice (User's Min Rate * Total Hours)
       if (_userMinHourlyRate != null && _userMinHourlyRate! > 0) {
-        final bool shouldShowSuggested = gigTime > 0 && (driveTime > 0 || rehearsalTime > 0);
-        if (shouldShowSuggested) {
+        final bool shouldShow =
+            gigTime > 0 && (driveTime > 0 || rehearsalTime > 0);
+        if (shouldShow) {
           final totalHours = gigTime + driveTime + rehearsalTime;
           _suggestedPay = totalHours * _userMinHourlyRate!;
           _showSuggestedPayNotice = true;
@@ -195,10 +153,10 @@ class _GigCalculatorState extends State<GigCalculator>
     if (mounted) {
       setState(() {
         _isDoorGig = false;
-        _hourlyRateResult = "";
+        _hourlyRateResult = '';
         _showTakeGigButton = false;
         _showSuggestedPayNotice = false;
-        _showStageRateNotice = false; // <<< Reset this
+        _showStageRateNotice = false;
       });
     }
   }
@@ -206,11 +164,10 @@ class _GigCalculatorState extends State<GigCalculator>
   Future<void> _performCalculation() async {
     FocusScope.of(context).unfocus();
     await _loadUserMinHourlyRate();
-
     if (!mounted) return;
 
-    String newHourlyRateResult = "";
-    String newCurrentHourlyRateString = "";
+    String newHourlyRateResult = '';
+    String newCurrentHourlyRateString = '';
     Color newRateResultColor = Colors.greenAccent.shade400;
     bool newShowTakeGigButton = false;
     double newCurrentPay = 0.0;
@@ -225,15 +182,13 @@ class _GigCalculatorState extends State<GigCalculator>
           double.tryParse(_driveSetupTimeController.text) ?? 0;
       final double rehearsalTime =
           double.tryParse(_rehearsalTimeController.text) ?? 0;
-      final double totalHoursForRateCalc =
-          gigTime + driveSetupTime + rehearsalTime;
+      final double totalHours = gigTime + driveSetupTime + rehearsalTime;
 
-      if (totalHoursForRateCalc > 0) {
+      if (totalHours > 0) {
         if (pay > 0) {
-          final double calculatedRate = pay / totalHoursForRateCalc;
+          final double calculatedRate = pay / totalHours;
           final String rateString =
               '\$${calculatedRate.toStringAsFixed(2)} per hour';
-
           newHourlyRateResult = rateString;
           newCurrentHourlyRateString = rateString;
           newRateResultColor =
@@ -243,30 +198,25 @@ class _GigCalculatorState extends State<GigCalculator>
           newShowTakeGigButton = true;
           newCurrentPay = pay;
         } else if (_isDoorGig) {
-          // Logic for Door Gig with no estimated pay entered
-          newHourlyRateResult = "Door Gig - Pay TBD";
-          newCurrentHourlyRateString = "Door Gig";
+          newHourlyRateResult = 'Door Gig - Pay TBD';
+          newCurrentHourlyRateString = 'Door Gig';
           newRateResultColor = Colors.orangeAccent;
           newShowTakeGigButton = true;
           newCurrentPay = 0.0;
         } else {
           newHourlyRateResult = 'Please provide the Pay for the Gig.';
           newRateResultColor = Colors.lightBlue.shade200;
-          newShowTakeGigButton = false;
         }
-
         newCurrentGigLengthHours = gigTime;
         newCurrentDriveSetupHours = driveSetupTime;
         newCurrentRehearsalHours = rehearsalTime;
       } else {
         newHourlyRateResult = 'Enter the time(s) for the rate calculation.';
         newRateResultColor = Colors.lightBlue.shade200;
-        newShowTakeGigButton = false;
       }
     } else {
       newHourlyRateResult = 'Please check the fields above.';
       newRateResultColor = Colors.lightBlue.shade200;
-      newShowTakeGigButton = false;
     }
 
     setState(() {
@@ -279,13 +229,6 @@ class _GigCalculatorState extends State<GigCalculator>
       _currentDriveSetupHours = newCurrentDriveSetupHours;
       _currentRehearsalHours = newCurrentRehearsalHours;
     });
-
-    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-    if (demoProvider.isDemoModeActive && demoProvider.currentStep == 5) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        demoProvider.nextStep();
-      });
-    }
   }
 
   Future<List<Gig>> _loadAllGigsFromPreferences() async {
@@ -320,15 +263,7 @@ class _GigCalculatorState extends State<GigCalculator>
     globalRefreshNotifier.notify();
   }
 
-  // <<< 3. MODIFY _showBookingDialog TO BE DEMO-AWARE >>>
   Future<void> _showBookingDialog() async {
-    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-
-    if (demoProvider.isDemoModeActive && demoProvider.currentStep == 7) {
-      demoProvider.nextStep();
-    }
-
-    // Modified condition: allow booking if it's a door gig even if pay is 0
     if (!_showTakeGigButton ||
         _currentHourlyRateString.isEmpty ||
         (!_isDoorGig && _currentPay <= 0)) {
@@ -343,7 +278,7 @@ class _GigCalculatorState extends State<GigCalculator>
           backgroundColor: Colors.redAccent));
     }
 
-    List<Gig> allExistingGigs = await _loadAllGigsFromPreferences();
+    final List<Gig> allExistingGigs = await _loadAllGigsFromPreferences();
     if (!mounted) return;
 
     final GigEditResult? result = await showDialog<GigEditResult>(
@@ -357,7 +292,8 @@ class _GigCalculatorState extends State<GigCalculator>
           driveSetupTimeHours: _currentDriveSetupHours,
           rehearsalTimeHours: _currentRehearsalHours,
           googleApiKey: _googleApiKey,
-          existingGigs: allExistingGigs.where((g) => !g.isJamOpenMic).toList(),
+          existingGigs:
+          allExistingGigs.where((g) => !g.isJamOpenMic).toList(),
           onNewVenuePotentiallyAdded: () async {},
         );
       },
@@ -365,7 +301,9 @@ class _GigCalculatorState extends State<GigCalculator>
 
     if (!mounted) return;
 
-    if (result != null && result.action == GigEditResultAction.updated && result.gig != null) {
+    if (result != null &&
+        result.action == GigEditResultAction.updated &&
+        result.gig != null) {
       final bookedGig = result.gig!;
       await _saveBookedGigToList(bookedGig);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -378,17 +316,11 @@ class _GigCalculatorState extends State<GigCalculator>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Booking cancelled.')),
       );
-
-      if (demoProvider.isDemoModeActive) {
-        demoProvider.endDemo();
-      }
     }
   }
 
   String? _validatePay(String? value) {
-    // If it is a Door Gig, we don't require a value in this field.
     if (_isDoorGig) return null;
-
     if (value == null || value.isEmpty) return 'Please enter pay amount';
     final number = double.tryParse(value);
     if (number == null) return 'Please enter a valid number';
@@ -404,55 +336,11 @@ class _GigCalculatorState extends State<GigCalculator>
     return null;
   }
 
-  Widget _buildDemoOverlay(DemoProvider demoProvider) {
-    int currentStepIndex = demoProvider.currentStepNumber - 1;
-
-    // This page only handles steps 1-7.
-    if (currentStepIndex < 0 || currentStepIndex >= 7) {
-      return const SizedBox.shrink();
-    }
-
-    final step = _demoScript[currentStepIndex];
-
-    if (step.onBefore != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        step.onBefore!();
-      });
-    }
-
-    return TutorialOverlay(
-      key: ValueKey('demo_step_$currentStepIndex'),
-      highlightKey: step.key,
-      instructionalText: step.text,
-      textAlignment: step.alignment,
-      hideNextButton: step.hideNextButton,
-      onNext: () {
-        if (currentStepIndex == _demoScript.length - 1) {
-          demoProvider.endDemo();
-        } else {
-          demoProvider.nextStep();
-        }
-      },
-    );
-  }
+  // ── Build ─────────────────────────────────────────────────────────────────
+  // No Consumer/Stack wrapper — direct return fixes the ripple effect.
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<DemoProvider>(
-      builder: (context, demoProvider, child) {
-        return Stack(
-          children: [
-            _buildCalculatorUI(context),
-            if (demoProvider.isDemoModeActive) _buildDemoOverlay(demoProvider),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildCalculatorUI(BuildContext context) {
-    //_loadUserMinHourlyRate();
-
     final formBackgroundColor = Colors.black.withAlpha(128);
     final formTextColor = Colors.white;
     final formHintColor = Colors.white70;
@@ -477,15 +365,18 @@ class _GigCalculatorState extends State<GigCalculator>
           borderRadius: BorderRadius.circular(8.0),
         ),
         focusedBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: focusedInputBorderColor, width: 2.0),
+          borderSide:
+          BorderSide(color: focusedInputBorderColor, width: 2.0),
           borderRadius: BorderRadius.circular(8.0),
         ),
         errorBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.redAccent.shade200, width: 1.5),
+          borderSide:
+          BorderSide(color: Colors.redAccent.shade200, width: 1.5),
           borderRadius: BorderRadius.circular(8.0),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.redAccent.shade200, width: 2.0),
+          borderSide:
+          BorderSide(color: Colors.redAccent.shade200, width: 2.0),
           borderRadius: BorderRadius.circular(8.0),
         ),
       );
@@ -500,7 +391,8 @@ class _GigCalculatorState extends State<GigCalculator>
         }
       },
       child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
         child: Container(
           padding: const EdgeInsets.all(20.0),
           decoration: BoxDecoration(
@@ -524,7 +416,7 @@ class _GigCalculatorState extends State<GigCalculator>
                 const Padding(
                   padding: EdgeInsets.fromLTRB(8.0, 0.0, 8.0, 24.0),
                   child: Text(
-                    "Your pay data is stored on your device only and never shared.",
+                    'Your pay data is stored on your device only and never shared.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 12,
@@ -532,36 +424,38 @@ class _GigCalculatorState extends State<GigCalculator>
                         fontStyle: FontStyle.italic),
                   ),
                 ),
-                Container(
-                  key: _payKey,
-                  child: TextFormField(
-                    controller: _payController,
-                    focusNode: _payFocusNode,
-                    style: TextStyle(color: formTextColor, fontSize: 16),
-                    decoration: formInputDecoration(
-                        labelText: _isDoorGig ? 'Estimated Pay' : 'Total Pay', // <<< Changed label
-                        hintText: 'Ask: What\'s your budget?',
-                        icon: Icons.attach_money),
-                    keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                    validator: _validatePay,
-                    textInputAction: TextInputAction.next,
-                    onFieldSubmitted: (_) =>
-                        FocusScope.of(context).requestFocus(_gigTimeFocusNode),
+
+                // Pay field
+                TextFormField(
+                  controller: _payController,
+                  focusNode: _payFocusNode,
+                  style: TextStyle(color: formTextColor, fontSize: 16),
+                  decoration: formInputDecoration(
+                    labelText: _isDoorGig ? 'Estimated Pay' : 'Total Pay',
+                    hintText: "Ask: What's your budget?",
+                    icon: Icons.attach_money,
                   ),
+                  keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+                  validator: _validatePay,
+                  textInputAction: TextInputAction.next,
+                  onFieldSubmitted: (_) =>
+                      FocusScope.of(context).requestFocus(_gigTimeFocusNode),
                 ),
+
+                // Door gig toggle
                 Padding(
                   padding: const EdgeInsets.only(left: 4.0),
                   child: Row(
                     children: [
-                      const Text("Door Gig", style: TextStyle(color: Colors.white70)),
+                      const Text('Door Gig',
+                          style: TextStyle(color: Colors.white70)),
                       Switch(
                         value: _isDoorGig,
-                        activeColor: Colors.orangeAccent,
+                        activeThumbColor: Colors.orangeAccent,
                         onChanged: (bool value) {
                           setState(() {
                             _isDoorGig = value;
-                            // Clear validation error when toggled
                             _formKey.currentState?.validate();
                           });
                         },
@@ -571,7 +465,7 @@ class _GigCalculatorState extends State<GigCalculator>
                 ),
                 const SizedBox(height: 16.0),
 
-                // <<< ADDED >>> The Suggested Pay Notice Widget
+                // Suggested pay notice
                 AnimatedOpacity(
                   opacity: _showSuggestedPayNotice ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 400),
@@ -597,24 +491,25 @@ class _GigCalculatorState extends State<GigCalculator>
                       : const SizedBox.shrink(),
                 ),
 
-                Container(
-                  key: _gigTimeKey,
-                  child: TextFormField(
-                    controller: _gigTimeController,
-                    focusNode: _gigTimeFocusNode,
-                    style: TextStyle(color: formTextColor, fontSize: 16),
-                    decoration: formInputDecoration(
-                        labelText: 'Gig Time (hours)',
-                        hintText: 'e.g., 3.5',
-                        icon: Icons.timer_outlined),
-                    keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                    validator: (value) => _validateTime(value, 'Gig Time'),
-                    textInputAction: TextInputAction.next,
-                    onFieldSubmitted: (_) => FocusScope.of(context)
-                        .requestFocus(_driveSetupTimeFocusNode),
+                // Gig time field
+                TextFormField(
+                  controller: _gigTimeController,
+                  focusNode: _gigTimeFocusNode,
+                  style: TextStyle(color: formTextColor, fontSize: 16),
+                  decoration: formInputDecoration(
+                    labelText: 'Gig Time (hours)',
+                    hintText: 'e.g., 3.5',
+                    icon: Icons.timer_outlined,
                   ),
+                  keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+                  validator: (value) => _validateTime(value, 'Gig Time'),
+                  textInputAction: TextInputAction.next,
+                  onFieldSubmitted: (_) => FocusScope.of(context)
+                      .requestFocus(_driveSetupTimeFocusNode),
                 ),
+
+                // Stage rate notice
                 AnimatedOpacity(
                   opacity: _showStageRateNotice ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 400),
@@ -625,12 +520,14 @@ class _GigCalculatorState extends State<GigCalculator>
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12.0, vertical: 8.0),
                     decoration: BoxDecoration(
-                      color: Colors.blueGrey.shade900.withAlpha(150),
+                      color:
+                      Colors.blueGrey.shade900.withAlpha(150),
                       borderRadius: BorderRadius.circular(8.0),
-                      border: Border.all(color: Colors.blueGrey.shade700),
+                      border:
+                      Border.all(color: Colors.blueGrey.shade700),
                     ),
                     child: Text(
-                      "Stage Rate: ${NumberFormat.currency(locale: 'en_US', symbol: '\$').format(_stageRate)} / hr",
+                      'Stage Rate: ${NumberFormat.currency(locale: 'en_US', symbol: '\$').format(_stageRate)} / hr',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.orangeAccent.shade100,
@@ -642,54 +539,53 @@ class _GigCalculatorState extends State<GigCalculator>
                       : const SizedBox.shrink(),
                 ),
                 const SizedBox(height: 16.0),
-                Container(
-                  key: _driveTimeKey,
-                  child: TextFormField(
-                    controller: _driveSetupTimeController,
-                    focusNode: _driveSetupTimeFocusNode,
-                    style: TextStyle(color: formTextColor, fontSize: 16),
-                    decoration: formInputDecoration(
-                        labelText: 'Drive & Setup (hours)',
-                        hintText: 'e.g., 1',
-                        icon: Icons.directions_car_outlined),
-                    keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                    validator: (value) =>
-                        _validateTime(value, 'Drive & Setup Time'),
-                    textInputAction: TextInputAction.next,
-                    onFieldSubmitted: (_) => FocusScope.of(context)
-                        .requestFocus(_rehearsalTimeFocusNode),
+
+                // Drive & setup field
+                TextFormField(
+                  controller: _driveSetupTimeController,
+                  focusNode: _driveSetupTimeFocusNode,
+                  style: TextStyle(color: formTextColor, fontSize: 16),
+                  decoration: formInputDecoration(
+                    labelText: 'Drive & Setup (hours)',
+                    hintText: 'e.g., 1',
+                    icon: Icons.directions_car_outlined,
                   ),
+                  keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+                  validator: (value) =>
+                      _validateTime(value, 'Drive & Setup Time'),
+                  textInputAction: TextInputAction.next,
+                  onFieldSubmitted: (_) => FocusScope.of(context)
+                      .requestFocus(_rehearsalTimeFocusNode),
                 ),
                 const SizedBox(height: 16.0),
+
+                // Rehearsal time + Calculate button
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: Container(
-                        key: _rehearsalTimeKey,
-                        child: TextFormField(
-                          controller: _rehearsalTimeController,
-                          focusNode: _rehearsalTimeFocusNode,
-                          style: TextStyle(color: formTextColor, fontSize: 16),
-                          decoration: formInputDecoration(
-                              labelText: 'Rehearsal Time (hours)',
-                              hintText: 'e.g., 2',
-                              icon: Icons.music_note_outlined),
-                          keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                          validator: (value) =>
-                              _validateTime(value, 'Rehearsal Time'),
-                          textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _performCalculation(),
+                      child: TextFormField(
+                        controller: _rehearsalTimeController,
+                        focusNode: _rehearsalTimeFocusNode,
+                        style: TextStyle(color: formTextColor, fontSize: 16),
+                        decoration: formInputDecoration(
+                          labelText: 'Rehearsal Time (hours)',
+                          hintText: 'e.g., 2',
+                          icon: Icons.music_note_outlined,
                         ),
+                        keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                        validator: (value) =>
+                            _validateTime(value, 'Rehearsal Time'),
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _performCalculation(),
                       ),
                     ),
                     const SizedBox(width: 12.0),
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
                       child: ElevatedButton(
-                        key: _calculateBtnKey,
                         onPressed: _performCalculation,
                         style: ElevatedButton.styleFrom(
                           backgroundColor:
@@ -709,9 +605,10 @@ class _GigCalculatorState extends State<GigCalculator>
                   ],
                 ),
                 const SizedBox(height: 24.0),
+
+                // Result display
                 if (_hourlyRateResult.isNotEmpty)
                   Padding(
-                    key: _rateResultKey,
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Center(
                       child: Text(
@@ -732,14 +629,14 @@ class _GigCalculatorState extends State<GigCalculator>
                       ),
                     ),
                   ),
+
+                // Take Gig / Clear buttons
                 if (_showTakeGigButton)
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
                     child: Row(
                       children: [
-                        // <<< 4. ASSIGN THE KEY TO THE "TAKE THIS GIG" BUTTON'S PARENT >>>
                         Expanded(
-                          key: _takeGigBtnKey,
                           child: ElevatedButton.icon(
                             onPressed: _showBookingDialog,
                             icon: const Icon(Icons.check_circle_outline),
@@ -750,10 +647,11 @@ class _GigCalculatorState extends State<GigCalculator>
                                   ? Colors.orange.shade700
                                   : Colors.green.shade600,
                               foregroundColor: Colors.white,
-                              padding:
-                              const EdgeInsets.symmetric(vertical: 16.0),
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 16.0),
                               textStyle: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold),
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12.0)),
                             ),
@@ -767,14 +665,16 @@ class _GigCalculatorState extends State<GigCalculator>
                                 color: Colors.grey.shade300),
                             label: Text(
                               'Clear All',
-                              style: TextStyle(color: Colors.grey.shade300),
+                              style:
+                              TextStyle(color: Colors.grey.shade300),
                             ),
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(color: Colors.grey.shade600),
-                              padding:
-                              const EdgeInsets.symmetric(vertical: 16.0),
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 16.0),
                               textStyle: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold),
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12.0)),
                             ),
@@ -782,7 +682,7 @@ class _GigCalculatorState extends State<GigCalculator>
                         ),
                       ],
                     ),
-                  )
+                  ),
               ],
             ),
           ),

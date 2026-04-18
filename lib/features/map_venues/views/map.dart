@@ -9,7 +9,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'package:permission_handler/permission_handler.dart';
+// permission_handler removed — LocationService owns location permissions
+// via geolocator internally, avoiding the two-system conflict that caused
+// the map to open in California even after the user granted access.
+import 'package:geolocator/geolocator.dart';
 import 'package:the_money_gigs/core/services/location_service.dart';
 
 // --- Project Imports ---
@@ -30,6 +33,7 @@ import 'package:visibility_detector/visibility_detector.dart';
 import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
 import 'package:the_money_gigs/main.dart';
 import 'package:the_money_gigs/features/app_demo/widgets/map_demo_overlay.dart';
+import 'package:the_money_gigs/features/map_venues/widgets/map_tutorial_overlay.dart';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -69,6 +73,7 @@ class _MapPageState extends State<MapPage> {
   // Status flags
   bool _isFullyInitialized = false;
   bool _isLoading = false;
+  bool _showMapTutorial = false;
 
   // Search UI state
   final TextEditingController _searchController = TextEditingController();
@@ -111,6 +116,53 @@ class _MapPageState extends State<MapPage> {
     //_setInitialCameraPosition(); // Start fetching the map center immediately.
   }
 
+  /// Shows a brief explanation dialog the very first time we are about to
+  /// ask for location permission. After dismissal the OS dialog appears with
+  /// context, so users understand exactly why we need it.
+  Future<void> _showLocationRationaleIfNeeded() async {
+    if (!mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyExplained =
+        prefs.getBool('location_rationale_shown') ?? false;
+    if (alreadyExplained) return;
+
+    // If they already have a profile address we don't need GPS at all,
+    // so there's no point showing this dialog.
+    final city = prefs.getString('profile_city') ?? '';
+    final zip  = prefs.getString('profile_zip_code') ?? '';
+    if (city.isNotEmpty || zip.isNotEmpty) return;
+
+    await prefs.setBool('location_rationale_shown', true);
+    if (!mounted) return;
+
+    // Push the dialog below the status bar + AppBar.
+    // extendBodyBehindAppBar is true in main.dart, so without this the
+    // dialog floats up behind the AppBar.
+    final double topClearance =
+        MediaQuery.of(context).padding.top + kToolbarHeight + 8;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        insetPadding: EdgeInsets.fromLTRB(24, topClearance, 24, 24),
+        title: const Text('Finding venues near you'),
+        content: const Text(
+          'MoneyGigs uses your location to center the map on your area '
+              'so you can find nearby venues where musicians play.\n\n'
+              "We'll ask for location access now. You can also set your home "
+              'city in Profile instead if you prefer.',
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _setInitialCameraPosition() async {
     final locationService = LocationService();
     final LatLng center = await locationService.getInitialMapCenter();
@@ -121,14 +173,43 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
+  /// Called after [onMapCreated] so we can animate to the real GPS fix even
+  /// if [_setInitialCameraPosition] settled for the service's fallback coords.
+  /// Uses geolocator (same as LocationService) so there is no two-system conflict.
+  Future<void> _recenterOnActualLocation(GoogleMapController controller) async {
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) return;
+
+      final locationService = LocationService();
+      final LatLng actual = await locationService.getInitialMapCenter();
+
+      if (mounted) {
+        await controller.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: actual, zoom: 12.0),
+          ),
+        );
+      }
+    } catch (e) {
+      // Non-fatal — user can always tap the my-location button.
+      print('⚠️ Could not re-center on actual location: $e');
+    }
+  }
+
   /// This is called by VisibilityDetector when the page becomes visible.
   /// It runs all the async setup and data loading.
   Future<void> _initializeAndLoadData() async {
-    // Prevent re-initialization if already done.
     if (_isFullyInitialized) return;
-    await _setInitialCameraPosition();
 
-    await _checkAndRequestLocationPermission();
+    // Show a one-time explanation before the OS location dialog appears.
+    // This gives users context so the permission request doesn't feel random.
+    await _showLocationRationaleIfNeeded();
+
+    // LocationService.getInitialMapCenter() handles permissions internally
+    // via geolocator (priority: profile address → GPS → Cincinnati default).
+    await _setInitialCameraPosition();
 
     if (!mounted) return;
 
@@ -173,6 +254,13 @@ class _MapPageState extends State<MapPage> {
 
     // Check demo state once everything is ready.
     _onDemoStateChanged();
+
+    // Show the first-time tutorial after a short delay so the map markers
+    // have rendered and the user can see what we're explaining.
+    if (mounted && await MapTutorialOverlay.shouldShow()) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) setState(() => _showMapTutorial = true);
+    }
   }
 
   @override
@@ -193,45 +281,22 @@ class _MapPageState extends State<MapPage> {
     super.dispose();
   }
 
-  // --- PERMISSIONS ---
-
-  Future<void> _checkAndRequestLocationPermission() async {
-    var status = await Permission.location.status;
-    if (status.isGranted) return;
-    if (status.isDenied) {
-      await Permission.location.request();
-    }
-    if (status.isPermanentlyDenied) {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text("Location Permission Required"),
-            content: const Text("This app needs location permission to show your position on the map. Please enable it in the app settings."),
-            actions: [
-              TextButton(child: const Text("Cancel"), onPressed: () => Navigator.of(context).pop()),
-              TextButton(
-                child: const Text("Open Settings"),
-                onPressed: () {
-                  openAppSettings();
-                  Navigator.of(context).pop();
-                },
-              ),
-            ],
-          ),
-        );
-      }
-    }
-  }
-
   // --- DEMO ---
   void _onDemoStateChanged() {
     if (!mounted) return;
 
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-    if (!demoProvider.isDemoModeActive || !mounted) return;
 
-    // Trigger a rebuild and manage UI state for the demo
+    // Onboarding just finished — initialize the map now that the user has
+    // seen the welcome screen and understands what the app does.
+    if (!demoProvider.isDemoModeActive && !_isFullyInitialized) {
+      _initializeAndLoadData();
+      return;
+    }
+
+    if (!demoProvider.isDemoModeActive) return;
+
+    // Manage UI state for any legacy guided tour steps.
     setState(() {
       if (demoProvider.currentStep == DemoStep.mapVenueSearch) {
         _isSearchVisible = true;
@@ -257,6 +322,32 @@ class _MapPageState extends State<MapPage> {
     if (mounted) {
       print("🗺️ MapPage received global refresh signal. Reloading all map data.");
       _loadAllMapData();
+      // Re-center in case the user just saved a new profile address.
+      // This runs in parallel with the data reload — no blocking.
+      _recenterMapFromProfile();
+    }
+  }
+
+  /// Re-reads location priority (profile address → GPS → default) and
+  /// animates the camera to the result. Safe to call at any time.
+  Future<void> _recenterMapFromProfile() async {
+    final locationService = LocationService();
+    final LatLng newCenter = await locationService.getInitialMapCenter();
+    if (!mounted) return;
+
+    // Update the stored position so a hot-reload also gets the right coords.
+    setState(() {
+      _initialCameraPosition = CameraPosition(target: newCenter, zoom: 12.0);
+    });
+
+    // Animate only if the map controller is already ready.
+    if (_controller.isCompleted) {
+      final controller = await _controller.future;
+      await controller.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: newCenter, zoom: 12.0),
+        ),
+      );
     }
   }
 
@@ -838,13 +929,18 @@ class _MapPageState extends State<MapPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Main content is wrapped in VisibilityDetector.
-    // It calls _initializeAndLoadData only when the widget becomes visible.
     return VisibilityDetector(
       key: const Key('map_page_visibility_detector'),
       onVisibilityChanged: (visibilityInfo) {
-        // Trigger initialization only when the page is actually visible.
         if (visibilityInfo.visibleFraction > 0 && !_isFullyInitialized) {
+          // Don't initialize while onboarding is active. The map is tab 0
+          // so VisibilityDetector fires before the welcome screen appears,
+          // which causes OS location dialogs to show before the user has
+          // seen any context for why we need location access.
+          // _onDemoStateChanged() will trigger initialization once done.
+          final demoProvider =
+          Provider.of<DemoProvider>(context, listen: false);
+          if (demoProvider.isDemoModeActive) return;
           _initializeAndLoadData();
         }
       },
@@ -883,6 +979,11 @@ class _MapPageState extends State<MapPage> {
               onMapCreated: (GoogleMapController controller) {
                 if (!_controller.isCompleted) {
                   _controller.complete(controller);
+                  // ✅ FIX: Re-center after the controller is ready.
+                  // This covers the race where _setInitialCameraPosition ran
+                  // before the OS returned the real GPS fix, and ensures the
+                  // user always lands on their actual location.
+                  _recenterOnActualLocation(controller);
                 }
               },
               markers: _markers,
@@ -1048,6 +1149,13 @@ class _MapPageState extends State<MapPage> {
             if (isDemoSearchStep)
               MapDemoOverlay(
                 searchBarKey: _searchBarKey,
+              ),
+
+            // First-time tutorial — shown once after map fully loads
+            if (_showMapTutorial && _isFullyInitialized)
+              MapTutorialOverlay(
+                searchBarKey: _searchBarKey,
+                onDismiss: () => setState(() => _showMapTutorial = false),
               ),
           ],
         );

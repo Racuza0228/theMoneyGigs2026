@@ -247,45 +247,78 @@ class _BookingDialogState extends State<BookingDialog> {
   Future<void> _scheduleGigNotifications(Gig gig) async {
     final prefs = await SharedPreferences.getInstance();
     final notificationService = NotificationService();
-    final int baseNotificationId = gig.id.hashCode;
+    await notificationService.init(); // ensure plugin is initialized on this instance
+    final int base = gig.id.hashCode;
+    final now = DateTime.now();
+    final gigTime = DateFormat.jm().format(gig.dateTime);
+
+    // Day-of notification (9am on gig day)
     final bool notifyOnDayOfGig = prefs.getBool('notify_on_day_of_gig') ?? false;
-    final int dayOfGigNotificationId = baseNotificationId;
-    if (notifyOnDayOfGig) {
-      final DateTime scheduledDate = DateTime(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day, 9, 0);
-      if (scheduledDate.isAfter(DateTime.now())) {
-        await notificationService.scheduleNotification(
-          id: dayOfGigNotificationId,
-          title: 'Gig Reminder: Today!',
-          body: 'Your gig "${gig.venueName}" is today at ${DateFormat.jm().format(gig.dateTime)}.',
-          scheduledDate: scheduledDate,
-        );
-      }
+    final DateTime dayOfTime = DateTime(
+        gig.dateTime.year, gig.dateTime.month, gig.dateTime.day, 9, 0);
+    //final DateTime dayOfTime = DateTime.now().add(const Duration(minutes: 2));
+
+    if (notifyOnDayOfGig && dayOfTime.isAfter(now)) {
+      await notificationService.scheduleNotification(
+        id: base,
+        title: 'You have a gig today!',
+        body: 'You have a gig today at ${gig.venueName} at $gigTime!',
+        scheduledDate: dayOfTime,
+        payload: 'day_of:${gig.id}',
+      );
     } else {
-      await notificationService.cancelNotification(dayOfGigNotificationId);
+      await notificationService.cancelNotification(base);
     }
+
+    // Days-before notification (9am N days before gig)
     final int? daysBefore = prefs.getInt('notify_days_before');
-    final int daysBeforeNotificationId = baseNotificationId + 1;
     if (daysBefore != null && daysBefore > 0) {
-      final DateTime notificationDate = gig.dateTime.subtract(Duration(days: daysBefore));
-      final DateTime scheduledDate = DateTime(notificationDate.year, notificationDate.month, notificationDate.day, 9, 0);
-      if (scheduledDate.isAfter(DateTime.now())) {
+      final DateTime beforeDate = gig.dateTime.subtract(Duration(days: daysBefore));
+      final DateTime beforeTime = DateTime(
+          beforeDate.year, beforeDate.month, beforeDate.day, 9, 0);
+      if (beforeTime.isAfter(now)) {
         await notificationService.scheduleNotification(
-          id: daysBeforeNotificationId,
-          title: 'Upcoming Gig Reminder',
-          body: 'Your gig "${gig.venueName}" is in $daysBefore day(s).',
-          scheduledDate: scheduledDate,
+          id: base + 1,
+          title: 'Upcoming gig reminder',
+          body: 'Your gig at ${gig.venueName} is in '
+              '$daysBefore day${daysBefore > 1 ? "s" : ""} '
+              'on ${DateFormat.yMMMEd().format(gig.dateTime)} at $gigTime.',
+          scheduledDate: beforeTime,
+          payload: 'days_before:${gig.id}',
         );
+      } else {
+        await notificationService.cancelNotification(base + 1);
       }
     } else {
-      await notificationService.cancelNotification(daysBeforeNotificationId);
+      await notificationService.cancelNotification(base + 1);
     }
+
+    // Day-after retrospective (9am the morning after the gig)
+    final bool notifyAfterGig = prefs.getBool('notify_after_gig') ?? true;
+    final DateTime afterGigDate = gig.dateTime.add(const Duration(days: 1));
+    final DateTime afterTime = DateTime(
+        afterGigDate.year, afterGigDate.month, afterGigDate.day, 9, 0);
+    if (notifyAfterGig && afterTime.isAfter(now)) {
+      await notificationService.scheduleNotification(
+        id: base + 2,
+        title: 'How was the gig?',
+        body: 'How did the gig at ${gig.venueName} go?',
+        scheduledDate: afterTime,
+        payload: 'retrospective:${gig.id}',
+      );
+    } else {
+      await notificationService.cancelNotification(base + 2);
+    }
+
+    await notificationService.debugPendingNotifications(); // confirm all 3 are pending
   }
 
   Future<void> _cancelGigNotifications(Gig gig) async {
     final notificationService = NotificationService();
-    final int baseNotificationId = gig.id.hashCode;
-    await notificationService.cancelNotification(baseNotificationId);
-    await notificationService.cancelNotification(baseNotificationId + 1);
+    final int base = gig.id.hashCode;
+    await notificationService.cancelNotification(base);     // day-of
+    await notificationService.cancelNotification(base + 1); // days-before
+    await notificationService.cancelNotification(base + 2); // day-after
   }
 
   Future<void> _loadProfileAddress() async {
@@ -592,8 +625,9 @@ class _BookingDialogState extends State<BookingDialog> {
   Future<bool> _areNotificationsEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     final bool notifyOnDayOfGig = prefs.getBool('notify_on_day_of_gig') ?? false;
+    final bool notifyAfterGig   = prefs.getBool('notify_after_gig') ?? true;
     final int? daysBefore = prefs.getInt('notify_days_before');
-    return notifyOnDayOfGig || (daysBefore != null && daysBefore > 0);
+    return notifyOnDayOfGig || notifyAfterGig || (daysBefore != null && daysBefore > 0);
   }
 
   Future<void> _loadAllKnownVenuesInternal() async {

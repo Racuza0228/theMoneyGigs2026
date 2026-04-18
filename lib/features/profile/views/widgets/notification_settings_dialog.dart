@@ -18,6 +18,7 @@ class _NotificationSettingsDialogState
   final _formKey = GlobalKey<FormState>();
   final _daysBeforeController = TextEditingController();
   bool _notifyOnDayOfGig = false;
+  bool _notifyAfterGig = true; // day-after retrospective, on by default
 
   static const String _keyNotifyOnDayOfGig = 'notify_on_day_of_gig';
   static const String _keyNotifyDaysBefore = 'notify_days_before';
@@ -38,6 +39,7 @@ class _NotificationSettingsDialogState
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _notifyOnDayOfGig = prefs.getBool(_keyNotifyOnDayOfGig) ?? false;
+      _notifyAfterGig   = prefs.getBool('notify_after_gig') ?? true;
       _daysBeforeController.text =
           prefs.getInt(_keyNotifyDaysBefore)?.toString() ?? '';
     });
@@ -54,6 +56,7 @@ class _NotificationSettingsDialogState
 
       // Save new settings
       await prefs.setBool(_keyNotifyOnDayOfGig, _notifyOnDayOfGig);
+      await prefs.setBool('notify_after_gig', _notifyAfterGig);
       final daysBefore = int.tryParse(_daysBeforeController.text);
       if (daysBefore != null) {
         await prefs.setInt(_keyNotifyDaysBefore, daysBefore);
@@ -62,7 +65,7 @@ class _NotificationSettingsDialogState
       }
 
       // ✅ Check if notifications are now enabled
-      final nowEnabled = _notifyOnDayOfGig || daysBefore != null;
+      final nowEnabled = _notifyOnDayOfGig || _notifyAfterGig || daysBefore != null;
 
       // ✅ If enabling notifications for the first time, initialize service
       if (wasDisabled && nowEnabled && mounted) {
@@ -156,10 +159,21 @@ class _NotificationSettingsDialogState
           children: [
             CheckboxListTile(
               title: const Text('Day Of The Gig'),
+              subtitle: const Text('Morning reminder on gig day'),
               value: _notifyOnDayOfGig,
               onChanged: (bool? value) {
                 setState(() {
                   _notifyOnDayOfGig = value ?? true;
+                });
+              },
+            ),
+            CheckboxListTile(
+              title: const Text('Day After The Gig'),
+              subtitle: const Text('Prompt to reflect on how it went'),
+              value: _notifyAfterGig,
+              onChanged: (bool? value) {
+                setState(() {
+                  _notifyAfterGig = value ?? true;
                 });
               },
             ),

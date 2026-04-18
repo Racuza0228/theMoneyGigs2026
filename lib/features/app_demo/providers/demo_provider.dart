@@ -1,21 +1,29 @@
 // lib/features/app_demo/providers/demo_provider.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:the_money_gigs/features/app_demo/services/demo_tracking_service.dart'; // 🎯 Import the service
+import 'package:the_money_gigs/features/app_demo/services/demo_tracking_service.dart';
 
 enum DemoStep {
-  none,                    // Not in demo
-  coachingIntro,          // Full-screen coaching flow (instruments, genres, persona, rate)
-  mapVenueSearch,         // "Where do you play or where would you like to play?"
-  mapAddVenue,            // Guide them to add the venue
-  mapBookGig,             // Guide them to book a gig from map
-  bookingFormValue,       // "Consider all your time"
-  bookingFormAction,      // "Fill in the details and book"
+  none,
+
+  // ── NEW simple onboarding (3 screens in OnboardingFlow widget) ───────────
+  onboardingWelcome,
+
+  // ── Legacy steps kept in enum so overlay files still compile ────────────
+  // These are no longer triggered by the default flow but can be
+  // re-enabled individually for future feature tours.
+  coachingIntro,
+  mapVenueSearch,
+  mapAddVenue,
+  mapBookGig,
+  bookingFormValue,
+  bookingFormAction,
   venueDetailsConfirmation,
-  gigListView,            // Show the gig appears in gigs list
+  gigListView,
   profileConnect,
   emailCapture,
-  complete,               // Demo finished
+
+  complete,
 }
 
 class DemoProvider with ChangeNotifier {
@@ -29,186 +37,121 @@ class DemoProvider with ChangeNotifier {
   bool get isDemoModeActive => _isDemoModeActive;
   DemoStep get currentStep => _currentStep;
 
-  final DemoTrackingService _trackingService = DemoTrackingService(); // 🎯 Instantiate the service
+  final DemoTrackingService _trackingService = DemoTrackingService();
 
-
-  // Legacy support - convert step enum to number for existing code
-  int get currentStepNumber {
-    switch (_currentStep) {
-      case DemoStep.none:
-        print('🎬 DemoProvider: starting');
-        return 0;
-      case DemoStep.coachingIntro:
-        print('🎬 DemoProvider: coaching intro');
-        return 1;
-      case DemoStep.mapVenueSearch:
-        print('🎬 DemoProvider: mapVenueSearch');
-        return 2;
-      case DemoStep.mapAddVenue:
-        print('🎬 DemoProvider: mapAddVenue');
-        return 3;
-      case DemoStep.mapBookGig:
-        print('🎬 DemoProvider: mapBookGig');
-        return 4;
-      case DemoStep.bookingFormValue:
-        print('🎬 DemoProvider: bookingFormValue');
-        return 5;
-      case DemoStep.bookingFormAction:
-        print('🎬 DemoProvider: bookingFormAction');
-        return 6;
-      case DemoStep.venueDetailsConfirmation:
-        print('🎬 DemoProvider: venueDetailsConfirmation');
-        return 7;
-      case DemoStep.gigListView:
-        print('🎬 DemoProvider: gigListView');
-        return 8;
-      case DemoStep.profileConnect:
-        print('🎬 DemoProvider: profileConnect');
-        return 9;
-      case DemoStep.emailCapture:  // 🆕 NEW
-        print('🎬 DemoProvider: emailCapture');
-        return 10;
-      case DemoStep.complete:
-        print('🎬 DemoProvider: complete');
-        return 11;
-    }
-  }
+  // ── Start ─────────────────────────────────────────────────────────────────
 
   Future<void> startDemo({bool force = false}) async {
-    if (!_isDemoModeActive) {
-      final prefs = await SharedPreferences.getInstance();
-      final hasSeenIntro = force ? false : (prefs.getBool(hasSeenIntroKey) ?? false);
+    if (_isDemoModeActive) return;
 
-      _isDemoModeActive = true;
+    _isDemoModeActive = true;
+    _currentStep = DemoStep.onboardingWelcome; // Always start at the new simple onboarding
 
-      // If they haven't seen the intro coaching, start there
-      // Otherwise skip to map demo
-      if (!hasSeenIntro) {
-        _currentStep = DemoStep.coachingIntro;
-      } else {
-        _currentStep = DemoStep.mapVenueSearch;
-      }
+    await _trackingService.startDemoSession();
+    print('🎬 DemoProvider: Starting onboarding');
 
-      // 🎯 Start tracking the demo session
-      await _trackingService.startDemoSession();
-
-      print('🎬 DemoProvider: Starting demo at step $_currentStep');
-      Future.microtask(() {
-        notifyListeners();
-      });
-    }
+    Future.microtask(notifyListeners);
   }
+
+  // ── Advance ───────────────────────────────────────────────────────────────
 
   void nextStep() {
     if (!_isDemoModeActive) return;
 
-    print('🎬 DemoProvider: Advancing from step $_currentStep');
-
-    // 🎯 REFACTORED LOGIC
-    DemoStep nextStepValue;
-    switch (_currentStep) {
-      case DemoStep.none:
-        nextStepValue = DemoStep.coachingIntro;
-        break;
-      case DemoStep.coachingIntro:
-        nextStepValue = DemoStep.mapVenueSearch;
-        break;
-      case DemoStep.mapVenueSearch:
-        nextStepValue = DemoStep.mapAddVenue;
-        break;
-      case DemoStep.mapAddVenue:
-        nextStepValue = DemoStep.mapBookGig;
-        break;
-      case DemoStep.mapBookGig:
-        nextStepValue = DemoStep.bookingFormValue;
-        break;
-      case DemoStep.bookingFormValue:
-        nextStepValue = DemoStep.bookingFormAction;
-        break;
-      case DemoStep.bookingFormAction:
-        nextStepValue = DemoStep.venueDetailsConfirmation;
-        break;
-      case DemoStep.venueDetailsConfirmation:
-        nextStepValue = DemoStep.gigListView;
-        break;
-      case DemoStep.gigListView:
-        nextStepValue = DemoStep.profileConnect;
-        break;
-      case DemoStep.profileConnect:
-        nextStepValue = DemoStep.emailCapture;
-        break;
-      case DemoStep.emailCapture:
-        nextStepValue = DemoStep.complete;
-        break;
-      case DemoStep.complete:
-      // If we are already at complete, advancing does nothing more
-      // than trigger the completion handler.
-        _handleDemoCompletion();
-        return; // Exit
+    // The OnboardingFlow widget handles its own internal 3-screen paging.
+    // When it calls nextStep() it means the entire onboarding is done.
+    if (_currentStep == DemoStep.onboardingWelcome) {
+      _currentStep = DemoStep.complete;
+      _trackingService.updateDemoStep(_currentStep);
+      _handleDemoCompletion();
+      return;
     }
 
-    _currentStep = nextStepValue;
-    _trackingService.updateDemoStep(_currentStep); // Update Firestore with the new step
+    // Legacy step advancement (kept for any future guided tours)
+    final DemoStep next = _legacyNext(_currentStep);
+    _currentStep = next;
+    _trackingService.updateDemoStep(_currentStep);
 
-    // If the new step IS complete, trigger the final cleanup.
     if (_currentStep == DemoStep.complete) {
       _handleDemoCompletion();
     }
 
-    print('🎬 DemoProvider: Now at step $_currentStep');
+    print('🎬 DemoProvider: Step → $_currentStep');
     notifyListeners();
   }
 
+  DemoStep _legacyNext(DemoStep step) {
+    switch (step) {
+      case DemoStep.none:              return DemoStep.onboardingWelcome;
+      case DemoStep.onboardingWelcome: return DemoStep.complete;
+      case DemoStep.coachingIntro:     return DemoStep.mapVenueSearch;
+      case DemoStep.mapVenueSearch:    return DemoStep.mapAddVenue;
+      case DemoStep.mapAddVenue:       return DemoStep.mapBookGig;
+      case DemoStep.mapBookGig:        return DemoStep.bookingFormValue;
+      case DemoStep.bookingFormValue:  return DemoStep.bookingFormAction;
+      case DemoStep.bookingFormAction: return DemoStep.venueDetailsConfirmation;
+      case DemoStep.venueDetailsConfirmation: return DemoStep.gigListView;
+      case DemoStep.gigListView:       return DemoStep.profileConnect;
+      case DemoStep.profileConnect:    return DemoStep.emailCapture;
+      case DemoStep.emailCapture:      return DemoStep.complete;
+      case DemoStep.complete:
+        _handleDemoCompletion();
+        return DemoStep.complete;
+    }
+  }
+
   void skipToStep(DemoStep step) {
-    if (_isDemoModeActive) {
-      print('🎬 DemoProvider: Skipping to step $step');
-      _currentStep = step;
-      _trackingService.updateDemoStep(_currentStep);
-      notifyListeners();
-    }
+    if (!_isDemoModeActive) return;
+    _currentStep = step;
+    _trackingService.updateDemoStep(_currentStep);
+    notifyListeners();
   }
 
-  // 🎯 Handles NATURAL completion of the demo
+  // ── Completion ────────────────────────────────────────────────────────────
+
   Future<void> _handleDemoCompletion() async {
-    if (_isDemoModeActive) {
-      print('🎬 DemoProvider: Demo completed naturally.');
-      // The `updateDemoStep` call in `nextStep` already marked it complete in Firestore.
-      // We just need to clean up the local state.
-      await _trackingService.completeDemoSession(); // Clears local session ID
+    if (!_isDemoModeActive) return;
+    print('🎬 DemoProvider: Onboarding completed.');
 
-      _isDemoModeActive = false;
-      _currentStep = DemoStep.none;
+    // Mark intro as seen so we never show it again
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(hasSeenIntroKey, true);
 
-      print('🎬 DemoProvider: Demo session ended and cleaned up.');
-      notifyListeners();
-    }
+    await _trackingService.completeDemoSession();
+
+    _isDemoModeActive = false;
+    _currentStep = DemoStep.none;
+
+    notifyListeners();
   }
 
+  // ── Exit ──────────────────────────────────────────────────────────────────
 
-  // 🎯 Handles PREMATURE exit from the demo (user clicks "Exit")
   Future<void> endDemo() async {
-    if (_isDemoModeActive) {
-      print('🎬 DemoProvider: endDemo() called at step $_currentStep. User is exiting.');
+    if (!_isDemoModeActive) return;
+    print('🎬 DemoProvider: User exited onboarding at $_currentStep');
 
-      // 🎯 Log the exit at the CURRENT step
-      await _trackingService.exitDemoSession(_currentStep);
+    // Mark intro as seen even if they skipped — don't show again
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(hasSeenIntroKey, true);
 
-      // Reset local state
-      _isDemoModeActive = false;
-      _currentStep = DemoStep.none;
+    await _trackingService.exitDemoSession(_currentStep);
 
-      print('🎬 DemoProvider: Demo exited, notifying listeners');
-      notifyListeners();
-    }
+    _isDemoModeActive = false;
+    _currentStep = DemoStep.none;
+
+    notifyListeners();
   }
+
+  // ── Debug ─────────────────────────────────────────────────────────────────
 
   Future<void> resetDemoFlagForTesting() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(hasSeenIntroKey);
-    await prefs.remove('profile_instrument_tags');
-    await prefs.remove('profile_genre_tags');
-    await prefs.remove('user_persona');
-    await prefs.remove('profile_min_hourly_rate');
-    print('🎬 DemoProvider: Reset all demo flags for testing');
+    await prefs.remove('pending_invite_code');
+    await prefs.remove('pending_code_is_founder');
+    await prefs.remove('email_captured');
+    await prefs.remove('captured_email');
+    print('🎬 DemoProvider: Reset all onboarding flags for testing');
   }
 }

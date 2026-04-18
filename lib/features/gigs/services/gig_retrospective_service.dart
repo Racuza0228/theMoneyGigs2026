@@ -84,7 +84,7 @@ class GigRetrospectiveService {
       return true;
     } else {
       print("✅ BANNER_DEBUG: Service: It has been < 1 day. Returning false.");
-      return false;
+      return true;
     }
   }
 
