@@ -147,19 +147,30 @@ class NotificationService {
         "Scheduled: $scheduledCount, Cancelled: $cancelledCount ---");
   }
 
-  Future<void> requestPermissions() async {
+  Future<bool> requestPermissions() async {
+    bool allGranted = true;
+
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
         IOSFlutterLocalNotificationsPlugin>()
         ?.requestPermissions(alert: true, badge: true, sound: true);
-    await flutterLocalNotificationsPlugin
+
+    final androidPlugin = flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestExactAlarmsPermission();
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
+        AndroidFlutterLocalNotificationsPlugin>();
+
+    await androidPlugin?.requestNotificationsPermission();
+    await androidPlugin?.requestExactAlarmsPermission();
+
+    final bool? canScheduleExact =
+    await androidPlugin?.canScheduleExactNotifications();
+
+    if (canScheduleExact != true) {
+      print('⚠️ Exact alarm permission not granted after request.');
+      allGranted = false;
+    }
+
+    return allGranted;
   }
 
   Future<void> scheduleNotification({
@@ -170,6 +181,28 @@ class NotificationService {
     String? payload, // e.g. 'day_of:gig_id', 'retrospective:gig_id'
   }) async {
     try {
+      // Check exact alarm permission before attempting to schedule
+      final androidPlugin = flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+
+      if (androidPlugin != null) {
+        final bool? canSchedule =
+        await androidPlugin.canScheduleExactNotifications();
+
+        if (canSchedule != true) {
+          print('  ⚠️ Exact alarms not permitted. Requesting permission...');
+          await androidPlugin.requestExactAlarmsPermission();
+          // Re-check after request
+          final bool? nowCanSchedule =
+          await androidPlugin.canScheduleExactNotifications();
+          if (nowCanSchedule != true) {
+            print('  ❌ Exact alarm permission denied. Skipping notification ID: $id');
+            return; // Exit cleanly, no freeze
+          }
+        }
+      }
+
       print("--- Scheduling notification ---");
       print("  ID: $id | Title: $title");
       print("  At: $scheduledDate | Payload: $payload");

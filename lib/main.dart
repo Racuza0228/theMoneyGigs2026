@@ -451,8 +451,11 @@ class _MainPageState extends State<MainPage> {
                   onDismiss: _skipAndDismissBanner,
                   onComplete: _onRetrospectiveComplete,
                 ),
-              Expanded(
-                child: IndexedStack(
+        Expanded(
+        child: MediaQuery.removePadding(
+        context: context,
+        removeTop: _showRetrospectiveBanner && _gigNeedingReview != null,
+        child: IndexedStack(
                   index: _selectedIndex,
                   children: List.generate(4, (index) {
                     final color = _pageBackgroundColors[index];
@@ -481,6 +484,7 @@ class _MainPageState extends State<MainPage> {
                   }),
                 ),
               ),
+             ),
             ],
           ),
           bottomNavigationBar: BottomNavigationBar(
