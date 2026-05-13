@@ -95,12 +95,15 @@ class RetrospectiveNotificationBanner extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          const Text(
-                            "How'd it go?",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                          Flexible(
+                            child: Text(
+                              "How'd it go?",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           if (totalPendingCount > 1) ...[

@@ -363,19 +363,17 @@ class _MainPageState extends State<MainPage> {
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     if (_isInitializingLocalServices) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    // ✅ UPDATED: Tabs are now 0=Map, 1=Pay, 2=Gigs, 3=Profile
     Widget buildPage(int index) {
       if (_widgetInstances[index] == null) {
         switch (index) {
-          case 0: _widgetInstances[index] = const MapPage(); break;       // ← Venues FIRST
-          case 1: _widgetInstances[index] = const GigCalculator(); break; // ← Pay second
+          case 0: _widgetInstances[index] = const MapPage(); break;
+          case 1: _widgetInstances[index] = const GigCalculator(); break;
           case 2: _widgetInstances[index] = const GigsPage(); break;
           case 3: _widgetInstances[index] = const ProfilePage(); break;
         }
@@ -385,22 +383,19 @@ class _MainPageState extends State<MainPage> {
 
     return Consumer<DemoProvider>(
       builder: (context, demoProvider, child) {
-        // ✅ NEW: Show simplified onboarding instead of the old coaching flow
         if (_showOnboardingFlow &&
             demoProvider.currentStep == DemoStep.onboardingWelcome) {
           return OnboardingFlow(
             onComplete: () {
               print('🎬 Main: Onboarding complete — entering app');
-              demoProvider.nextStep(); // Marks as complete, sets hasSeenIntroKey
+              demoProvider.nextStep();
             },
           );
         }
 
-        // Normal app shell
         return Scaffold(
-          extendBodyBehindAppBar: true,
           appBar: AppBar(
-            backgroundColor: Colors.transparent,
+            backgroundColor: Colors.black87,
             elevation: 0,
             leading: Padding(
               padding: const EdgeInsets.all(8.0),
@@ -408,7 +403,6 @@ class _MainPageState extends State<MainPage> {
             ),
             title: Text(_pageTitles[_selectedIndex]),
             actions: [
-              // Add New Gig Button
               Padding(
                 padding: const EdgeInsets.only(right: 4.0),
                 child: IconButton(
@@ -424,7 +418,6 @@ class _MainPageState extends State<MainPage> {
                   onPressed: _openAddGigDialog,
                 ),
               ),
-              // ✅ NEW: Feedback/Question Button
               Padding(
                 padding: const EdgeInsets.only(right: 8.0),
                 child: IconButton(
@@ -451,11 +444,8 @@ class _MainPageState extends State<MainPage> {
                   onDismiss: _skipAndDismissBanner,
                   onComplete: _onRetrospectiveComplete,
                 ),
-        Expanded(
-        child: MediaQuery.removePadding(
-        context: context,
-        removeTop: _showRetrospectiveBanner && _gigNeedingReview != null,
-        child: IndexedStack(
+              Expanded(
+                child: IndexedStack(
                   index: _selectedIndex,
                   children: List.generate(4, (index) {
                     final color = _pageBackgroundColors[index];
@@ -484,11 +474,9 @@ class _MainPageState extends State<MainPage> {
                   }),
                 ),
               ),
-             ),
             ],
           ),
           bottomNavigationBar: BottomNavigationBar(
-            // ✅ TAB ORDER UPDATED: Map → Pay → Gigs → Profile
             items: const [
               BottomNavigationBarItem(
                 icon: Icon(Icons.map_rounded),

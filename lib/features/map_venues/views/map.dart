@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 import 'package:flutter/services.dart' show rootBundle, Uint8List, ByteData;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -22,10 +23,8 @@ import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
 import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/map_venues/models/place_models.dart';
-import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.dart';
-import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -174,13 +173,15 @@ class _MapPageState extends State<MapPage> {
   }
 
   /// Called after [onMapCreated] so we can animate to the real GPS fix even
-  /// if [_setInitialCameraPosition] settled for the service's fallback coords.
+  /// if [_setInitialCameraPosition] settled for the service's fallback coordinates.
   /// Uses geolocator (same as LocationService) so there is no two-system conflict.
   Future<void> _recenterOnActualLocation(GoogleMapController controller) async {
     try {
       final permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) return;
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
 
       final locationService = LocationService();
       final LatLng actual = await locationService.getInitialMapCenter();
@@ -194,7 +195,7 @@ class _MapPageState extends State<MapPage> {
       }
     } catch (e) {
       // Non-fatal — user can always tap the my-location button.
-      print('⚠️ Could not re-center on actual location: $e');
+      log('⚠️ Could not re-center on actual location: $e');
     }
   }
 
@@ -307,20 +308,35 @@ class _MapPageState extends State<MapPage> {
   // --- MARKERS & DATA LOADING ---
 
   Future<BitmapDescriptor> _loadCustomMarker() async {
-    final Uint8List markerIconBytes = await _getBytesFromAsset('assets/mapmarker.png', 100);
-    return BitmapDescriptor.fromBytes(markerIconBytes);
+    // Use device pixel ratio so the marker renders at the correct
+    // logical size on all screen densities (1x, 2x, 3x).
+    // Without imagePixelRatio, BitmapDescriptor.bytes() treats every
+    // image pixel as a logical pixel — making it 2-3x too large on
+    // high-DPI screens like the iPhone 17 Pro.
+    final double pixelRatio =
+        ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
+    final Uint8List markerIconBytes = await _getBytesFromAsset(
+      'assets/mapmarker.png',
+      (48 * pixelRatio).round(), // 48 logical pixels at device density
+    );
+    return BitmapDescriptor.bytes(markerIconBytes, imagePixelRatio: pixelRatio);
   }
 
   Future<Uint8List> _getBytesFromAsset(String path, int width) async {
     ByteData data = await rootBundle.load(path);
-    ui.Codec codec = await ui.instantiateImageCodec(data.buffer.asUint8List(), targetWidth: width);
+    ui.Codec codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: width,
+    );
     ui.FrameInfo fi = await codec.getNextFrame();
-    return (await fi.image.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
+    return (await fi.image.toByteData(format: ui.ImageByteFormat.png))!
+        .buffer
+        .asUint8List();
   }
 
   void _handleGlobalRefresh() {
     if (mounted) {
-      print("🗺️ MapPage received global refresh signal. Reloading all map data.");
+      log("🗺️ MapPage received global refresh signal. Reloading all map data.");
       _loadAllMapData();
       // Re-center in case the user just saved a new profile address.
       // This runs in parallel with the data reload — no blocking.
@@ -335,7 +351,7 @@ class _MapPageState extends State<MapPage> {
     final LatLng newCenter = await locationService.getInitialMapCenter();
     if (!mounted) return;
 
-    // Update the stored position so a hot-reload also gets the right coords.
+    // Update the stored position so a hot-reload also gets the right coordinates.
     setState(() {
       _initialCameraPosition = CameraPosition(target: newCenter, zoom: 12.0);
     });
@@ -374,7 +390,7 @@ class _MapPageState extends State<MapPage> {
     final bool isConnected = prefs.getBool(_isConnectedKey) ?? false;
 
     if (isConnected) {
-      print("🔌 Network connection detected. Fetching public data to merge...");
+      log("🔌 Network connection detected. Fetching public data to merge...");
       await initializeNetworkServices();
 
       const String userId = 'default_user_id'; // Placeholder for your auth service
@@ -382,7 +398,7 @@ class _MapPageState extends State<MapPage> {
       if (mounted){
         _venueRepository = VenueRepository();
         final publicVenues = await _venueRepository!.getAllPublicVenues(userId);
-        print("✅ Fetched ${publicVenues.length} public venues from Firebase.");
+        log("✅ Fetched ${publicVenues.length} public venues from Firebase.");
 
         for (var publicVenue in publicVenues) {
           if (finalVenuesMap.containsKey(publicVenue.placeId)) {
@@ -395,6 +411,9 @@ class _MapPageState extends State<MapPage> {
               averageRating: publicVenue.averageRating,
               totalRatings: publicVenue.totalRatings,
               jamSessions: mergedVenue.jamSessions,
+              // Prefer local contact — may have just been saved before Firebase propagates
+              contact: localVenue.contact ?? publicVenue.contact,
+              bookingInfo: localVenue.bookingInfo ?? publicVenue.bookingInfo,
             );
           } else {
             finalVenuesMap[publicVenue.placeId] = publicVenue;
@@ -402,7 +421,7 @@ class _MapPageState extends State<MapPage> {
         }
       }
     } else {
-      print("🚫 No network. Using local SharedPreferences data only.");
+      log("🚫 No network. Using local SharedPreferences data only.");
       for (var entry in finalVenuesMap.entries) {
         finalVenuesMap[entry.key] = entry.value.copyWith(isPublic: false);
       }
@@ -423,11 +442,11 @@ class _MapPageState extends State<MapPage> {
 
   Future<void> _refreshVenuesFromFirebase() async {
     if (_venueRepository == null) {
-      print("⚠️ Cannot refresh from Firebase, repository not initialized. (User may be offline).");
+      log("⚠️ Cannot refresh from Firebase, repository not initialized. (User may be offline).");
       return;
     }
 
-    print("🔄 Refreshing venues from Firebase...");
+    log("🔄 Refreshing venues from Firebase...");
     try {
       const String userId = 'current_user_id'; // TODO: Get from FirebaseAuth
       final publicVenues = await _venueRepository!.getAllPublicVenues(userId);
@@ -447,9 +466,9 @@ class _MapPageState extends State<MapPage> {
         }
         _updateMarkers();
       });
-      print("✅ Venues refreshed: ${publicVenues.length} public venues updated");
+      log("✅ Venues refreshed: ${publicVenues.length} public venues updated");
     } catch (e) {
-      print("❌ Error refreshing venues: $e");
+      log("❌ Error refreshing venues: $e");
     }
   }
 
@@ -487,7 +506,7 @@ class _MapPageState extends State<MapPage> {
         return locationsJson.map((jsonString) => StoredLocation.fromJson(jsonDecode(jsonString))).toList();
       }
     } catch (e) {
-      print("Error loading saved locations: $e");
+      log("Error loading saved locations: $e");
     }
     return [];
   }
@@ -500,7 +519,7 @@ class _MapPageState extends State<MapPage> {
         return Gig.decode(gigsJsonString);
       }
     } catch (e) {
-      print("Error loading gigs: $e");
+      log("Error loading gigs: $e");
     }
     return [];
   }
@@ -572,7 +591,7 @@ class _MapPageState extends State<MapPage> {
   Future<void> _selectPlaceAndMoveCamera(PlaceAutocompleteResult selectedPlace) async {
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     if (demoProvider.isDemoModeActive && demoProvider.currentStep == DemoStep.mapVenueSearch) {
-      print("🎬 DEMO: Search step complete. Advancing to mapAddVenue.");
+      log("🎬 DEMO: Search step complete. Advancing to mapAddVenue.");
       demoProvider.nextStep();
     }
 
@@ -675,7 +694,7 @@ class _MapPageState extends State<MapPage> {
 
     if (existingLocations.isNotEmpty) {
       if (demoProvider.isDemoModeActive && demoProvider.currentStep == DemoStep.mapAddVenue) {
-        print("🎬 DEMO: Existing venue found. Advancing from 'mapAddVenue' to 'mapBookGig'.");
+        log("🎬 DEMO: Existing venue found. Advancing from 'mapAddVenue' to 'mapBookGig'.");
         demoProvider.nextStep();
       }
       _showLocationDetailsDialog(existingLocations.first);
@@ -693,7 +712,7 @@ class _MapPageState extends State<MapPage> {
                 onPressed: () {
                   Navigator.of(dialogContext).pop();
                   if (demoProvider.isDemoModeActive && demoProvider.currentStep == DemoStep.mapAddVenue) {
-                    print("🎬 DEMO: Advancing from 'mapAddVenue' to 'mapBookGig' BEFORE showing dialog.");
+                    log("🎬 DEMO: Advancing from 'mapAddVenue' to 'mapBookGig' BEFORE showing dialog.");
                     demoProvider.nextStep();
                   }
                   _saveLocation(place);
@@ -708,7 +727,7 @@ class _MapPageState extends State<MapPage> {
 
   Future<void> _updateAndSaveLocationReview(StoredLocation updatedLocation) async {
     try {
-      print('🏷️ MAP: _updateAndSaveLocationReview called');
+      log('🏷️ MAP: _updateAndSaveLocationReview called');
       final prefs = await SharedPreferences.getInstance();
       final List<String>? existingSavedJson = prefs.getStringList(_keySavedLocations);
       List<StoredLocation> userSavedVenues = [];
@@ -852,17 +871,6 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  Future<void> _editVenueContact(StoredLocation venue) async {
-    final updatedContact = await showDialog<VenueContact>(context: context, builder: (_) => VenueContactDialog(venue: venue));
-    if (updatedContact != null && mounted) {
-      final index = _allKnownMapVenues.indexWhere((v) => v.placeId == venue.placeId);
-      if (index != -1) {
-        final updatedVenue = _allKnownMapVenues[index].copyWith(contact: updatedContact);
-        await _updateAndSaveLocationReview(updatedVenue);
-      }
-    }
-  }
-
   Future<void> _updateVenueJamNightSettings(StoredLocation updatedVenue) async {
     await _updateAndSaveLocationReview(updatedVenue);
   }
@@ -895,9 +903,10 @@ class _MapPageState extends State<MapPage> {
             _archiveVenue(location);
           },
           onBook: (venueToSaveAndBook) async {
+            final nav = Navigator.of(dialogContext);
             await _updateAndSaveLocationReview(venueToSaveAndBook);
             final newGig = await _launchBookingDialogForVenue(venueToSaveAndBook);
-            if (mounted) Navigator.of(dialogContext).pop();
+            if (mounted) nav.pop();
             if (newGig != null) {
               await Future.delayed(const Duration(milliseconds: 100));
               _showLocationDetailsDialog(venueToSaveAndBook);
@@ -906,9 +915,15 @@ class _MapPageState extends State<MapPage> {
           onSave: (updatedVenue) {
             _updateAndSaveLocationReview(updatedVenue);
           },
-          onEditContact: () {
-            Navigator.of(dialogContext).pop();
-            _editVenueContact(location);
+          onContactSaved: (contact, bookingInfo) async {
+            final index = _allKnownMapVenues.indexWhere((v) => v.placeId == location.placeId);
+            if (index != -1) {
+              final updatedVenue = _allKnownMapVenues[index].copyWith(
+                contact: contact,
+                bookingInfo: bookingInfo,
+              );
+              await _updateAndSaveLocationReview(updatedVenue);
+            }
           },
           onEditJamSettings: () async {
             Navigator.of(dialogContext).pop();

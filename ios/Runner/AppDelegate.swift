@@ -20,7 +20,7 @@ import GoogleMaps
     }
 
     if #available(iOS 10.0, *) {
-      UNUserNotificationCenter.current().delegate = self as? UNUserNotificationCenterDelegate
+      UNUserNotificationCenter.current().delegate = self
     }
     // Provide the API key to Google Maps Services
     GMSServices.provideAPIKey(googleApiKey)

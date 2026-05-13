@@ -8,6 +8,9 @@ import 'package:flutter/foundation.dart';
 import '../../app_demo/providers/demo_provider.dart';
 import '../../app_demo/widgets/simple_demo_overlay.dart';
 
+import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
+import 'package:the_money_gigs/core/services/notification_service.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -526,6 +529,28 @@ class _ProfilePageState extends State<ProfilePage> {
 
                 // TEST BUTTONS (only visible in debug mode)
                 if (kDebugMode) ...[
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                    onPressed: () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      final gigsJson = prefs.getString('gigs_list');
+                      if (gigsJson == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('No gigs found. Book one first.')),
+                        );
+                        return;
+                      }
+                      final gigs = Gig.decode(gigsJson);
+                      if (gigs.isEmpty) return;
+                      final service = NotificationService();
+                      await service.init();
+                      await service.debugScheduleTestNotifications(gigs.first);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Test notifications scheduled. Background the app!')),
+                      );
+                    },
+                    child: const Text('🧪 TEST NOTIFICATIONS (5/10/15s)'),
+                  ),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.login),
                     label: const Text('Test Google Sign-In'),

@@ -2,25 +2,24 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import '../models/venue_contact.dart';
 import '../models/venue_model.dart';
 
 class VenueRepository {
   FirebaseFirestore? _firestore;
 
-  // Lazy getter - only initializes when actually needed
   FirebaseFirestore get _firestoreInstance {
     if (_firestore != null) return _firestore!;
-
-    // Check if Firebase is initialized
     if (Firebase.apps.isEmpty) {
-      throw Exception('Firebase not initialized. VenueRepository requires network mode.');
+      throw Exception(
+          'Firebase not initialized. VenueRepository requires network mode.');
     }
-
     _firestore = FirebaseFirestore.instance;
     return _firestore!;
   }
 
-  /// Fetch all public venue IDs
+  // ── Public venues ─────────────────────────────────────────────────────────
+
   Future<List<String>> getAllPublicVenueIds() async {
     try {
       final snapshot = await _firestoreInstance.collection('venues').get();
@@ -31,77 +30,233 @@ class VenueRepository {
     }
   }
 
-  /// Fetches all public venues and merges them with user's ratings
   Future<List<StoredLocation>> getAllPublicVenues(String userId) async {
     try {
-      // 1. Fetch all public venue documents
-      final venuesSnapshot = await _firestoreInstance.collection('venues').get();
+      final venuesSnapshot =
+      await _firestoreInstance.collection('venues').get();
       if (venuesSnapshot.docs.isEmpty) return [];
 
-      // 2. Fetch all ratings submitted by the current user
       final ratingsSnapshot = await _firestoreInstance
           .collection('venueRatings')
           .where('userId', isEqualTo: userId)
           .get();
 
-      // 3. Create a quick-lookup map of placeId -> rating data
       final userRatingsMap = {
         for (var doc in ratingsSnapshot.docs)
           doc.data()['placeId'] as String: doc.data()
       };
 
-      // 4. Map venue documents to StoredLocation objects
       return venuesSnapshot.docs.map((venueDoc) {
         final venueData = venueDoc.data();
         final placeId = venueData['placeId'] as String;
         final ratingData = userRatingsMap[placeId];
-
-        return _venueFromFirestore(
-          venueDoc,
-          rating: ratingData?['rating'] as double?,
-          comment: ratingData?['comment'] as String?,
-        );
+        return _venueFromFirestore(venueDoc,
+            rating: ratingData?['rating'] as double?,
+            comment: ratingData?['comment'] as String?);
       }).toList();
-
     } catch (e) {
-      print('❌ Error fetching full public venues: $e');
+      print('❌ Error fetching public venues: $e');
       return [];
     }
   }
 
-  /// Saves or updates a venue's core data including jam sessions
+  // ── Venue core ────────────────────────────────────────────────────────────
+
   Future<void> saveVenue(StoredLocation venue, String userId) async {
-    final venueRef = _firestoreInstance.collection('venues').doc(venue.placeId);
+    final venueRef =
+    _firestoreInstance.collection('venues').doc(venue.placeId);
 
     final Map<String, dynamic> venueData = {
       'name': venue.name,
       'address': venue.address,
-      'coordinates': GeoPoint(venue.coordinates.latitude, venue.coordinates.longitude),
+      'coordinates':
+      GeoPoint(venue.coordinates.latitude, venue.coordinates.longitude),
       'placeId': venue.placeId,
-      'jamSessions': venue.jamSessions.map((js) => js.toJson()).toList(), // ✅ Include jam sessions
+      'jamSessions': venue.jamSessions.map((js) => js.toJson()).toList(),
     };
 
     final doc = await venueRef.get();
     if (doc.exists) {
-      // Venue exists - update jam sessions and timestamp
       await venueRef.update({
         'jamSessions': venueData['jamSessions'],
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      print('✅ Updated jam sessions for existing venue: ${venue.name}');
     } else {
-      // New venue - add with initial rating fields
       venueData['createdAt'] = FieldValue.serverTimestamp();
       venueData['createdBy'] = userId;
       venueData['updatedAt'] = FieldValue.serverTimestamp();
       venueData['averageRating'] = 0.0;
       venueData['totalRatings'] = 0;
       await venueRef.set(venueData);
-      print('✅ Created new venue with jam sessions: ${venue.name}');
     }
   }
 
-  /// Save or update user's rating - NOW UPDATES VENUE'S AVERAGE!
+  // ── Contact ───────────────────────────────────────────────────────────────
+
+  /// Saves the venue contact and optional booking info to Firestore.
+  ///
+  /// Firebase schema:
+  ///   venues/{placeId}.contact = { name, phone, email, preferredMethod, notes,
+  ///     isSharedWithNetwork, sharedBy, lastConfirmed (serverTimestamp),
+  ///     lastConfirmedBy, confirmationCount }
+  ///
+  ///   venues/{placeId}.bookingInfo = { leadsOutWeeks, dealType, notes }
+  ///     — present only when isSharedWithNetwork == true
+  ///
+  /// Security rule: only the user whose userId matches sharedBy may flip
+  /// isSharedWithNetwork back to false.
+  Future<void> saveVenueContact({
+    required String placeId,
+    required String userId,
+    required VenueContact contact,
+    BookingInfo? bookingInfo,
+  }) async {
+    final venueRef = _firestoreInstance.collection('venues').doc(placeId);
+
+    // Preserve original sharedBy; stamp with userId on first share.
+    String? resolvedSharedBy;
+    if (contact.isSharedWithNetwork) {
+      final existingDoc = await venueRef.get();
+      final existingSharedBy =
+      (existingDoc.data()?['contact']?['sharedBy']) as String?;
+      resolvedSharedBy = existingSharedBy ?? userId;
+    }
+
+    final contactData = <String, dynamic>{
+      'name': contact.name,
+      'phone': contact.phone,
+      'email': contact.email,
+      'preferredMethod': contact.preferredMethod,
+      'notes': contact.notes,
+      'isSharedWithNetwork': contact.isSharedWithNetwork,
+      'sharedBy': resolvedSharedBy,
+      'lastConfirmed': FieldValue.serverTimestamp(),
+      'lastConfirmedBy': userId,
+      'confirmationCount': contact.confirmationCount,
+    };
+
+    final updates = <String, dynamic>{
+      'contact': contactData,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    if (bookingInfo != null && contact.isSharedWithNetwork) {
+      updates['bookingInfo'] = bookingInfo.toJson();
+    } else if (!contact.isSharedWithNetwork) {
+      updates['bookingInfo'] = FieldValue.delete();
+    }
+
+    await venueRef.set(updates, SetOptions(merge: true));
+    print(
+        '✅ Saved contact for $placeId (shared: ${contact.isSharedWithNetwork})');
+  }
+
+  // ── Contact confirmations ─────────────────────────────────────────────────
+  //
+  // Firestore layout (mirrors the tag-voting subcollection pattern):
+  //
+  //   venues/{placeId}/contactConfirmations/{userId} = { confirmedAt: timestamp }
+  //   venues/{placeId}.contact.confirmationCount  (aggregated integer)
+  //
+  // The subcollection lets us check whether a specific user has confirmed
+  // without loading all confirmer IDs into the contact document.
+
+  /// Returns `{ count: int, userConfirmed: bool }` for the given venue + user.
+  Future<Map<String, dynamic>> getContactConfirmationState({
+    required String placeId,
+    required String userId,
+  }) async {
+    try {
+      final venueRef = _firestoreInstance.collection('venues').doc(placeId);
+      final confRef =
+      venueRef.collection('contactConfirmations').doc(userId);
+
+      final results = await Future.wait([
+        venueRef.get(),
+        confRef.get(),
+      ]);
+
+      final venueDoc = results[0] as DocumentSnapshot;
+      final userConfDoc = results[1] as DocumentSnapshot;
+
+      final venueData = venueDoc.data() as Map<String, dynamic>?;
+      final count =
+          (venueData?['contact']?['confirmationCount'] as int?) ?? 0;
+
+      return {
+        'count': count,
+        'userConfirmed': userConfDoc.exists,
+      };
+    } catch (e) {
+      print('❌ Error fetching confirmation state: $e');
+      return {'count': 0, 'userConfirmed': false};
+    }
+  }
+
+  /// Adds the current user's confirmation. Idempotent — safe to call twice.
+  Future<void> confirmVenueContact({
+    required String placeId,
+    required String userId,
+  }) async {
+    final venueRef = _firestoreInstance.collection('venues').doc(placeId);
+    final confRef = venueRef.collection('contactConfirmations').doc(userId);
+
+    await _firestoreInstance.runTransaction((tx) async {
+      final confDoc = await tx.get(confRef);
+
+      if (confDoc.exists) {
+        // Already confirmed — no-op (idempotent)
+        return;
+      }
+
+      // Write the user's confirmation record
+      tx.set(confRef, {'confirmedAt': FieldValue.serverTimestamp()});
+
+      // Increment the aggregate count and refresh lastConfirmed
+      tx.update(venueRef, {
+        'contact.confirmationCount': FieldValue.increment(1),
+        'contact.lastConfirmed': FieldValue.serverTimestamp(),
+        'contact.lastConfirmedBy': userId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+
+    print('✅ Contact confirmed for $placeId by $userId');
+  }
+
+  /// Removes the current user's confirmation (undo / toggle off).
+  Future<void> removeContactConfirmation({
+    required String placeId,
+    required String userId,
+  }) async {
+    final venueRef = _firestoreInstance.collection('venues').doc(placeId);
+    final confRef = venueRef.collection('contactConfirmations').doc(userId);
+
+    await _firestoreInstance.runTransaction((tx) async {
+      final confDoc = await tx.get(confRef);
+
+      if (!confDoc.exists) return; // Nothing to remove
+
+      tx.delete(confRef);
+
+      // Decrement — floor at 0 to guard against any data inconsistency
+      final venueDoc = await tx.get(venueRef);
+      final existingData = venueDoc.data();
+      final currentCount =
+          (existingData?['contact']?['confirmationCount'] as int?) ?? 0;
+
+      tx.update(venueRef, {
+        'contact.confirmationCount':
+        currentCount > 0 ? FieldValue.increment(-1) : 0,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+
+    print('✅ Contact confirmation removed for $placeId by $userId');
+  }
+
+  // ── Ratings ───────────────────────────────────────────────────────────────
+
   Future<bool> saveVenueRating({
     required String userId,
     required String placeId,
@@ -111,32 +266,23 @@ class VenueRepository {
     final docId = '${placeId}_$userId';
 
     try {
-      print("--- 🔵 DEBUG [Repository]: Attempting to save rating ---");
-      print("   - Document ID: $docId");
-
-      // Start a batch write to update both collections atomically
       final batch = _firestoreInstance.batch();
 
-      // 1. Get the current rating (if it exists)
-      final ratingRef = _firestoreInstance.collection('venueRatings').doc(docId);
+      final ratingRef =
+      _firestoreInstance.collection('venueRatings').doc(docId);
       final existingRatingDoc = await ratingRef.get();
       final oldRating = existingRatingDoc.exists
           ? (existingRatingDoc.data()!['rating'] as num).toDouble()
           : null;
 
-      // 2. Save/update the rating
-      final Map<String, dynamic> dataToSave = {
+      batch.set(ratingRef, {
         'placeId': placeId,
         'userId': userId,
         'rating': rating,
         'comment': comment,
         'updatedAt': FieldValue.serverTimestamp(),
-      };
+      }, SetOptions(merge: true));
 
-      batch.set(ratingRef, dataToSave, SetOptions(merge: true));
-      print("   - Rating data prepared for save");
-
-      // 3. Update the venue's aggregate rating
       final venueRef = _firestoreInstance.collection('venues').doc(placeId);
       final venueDoc = await venueRef.get();
 
@@ -146,113 +292,50 @@ class VenueRepository {
       }
 
       final venueData = venueDoc.data()!;
-
-      // ← FIX: Handle NaN and missing fields!
-      var currentAverage = (venueData['averageRating'] as num?)?.toDouble() ?? 0.0;
+      var currentAverage =
+          (venueData['averageRating'] as num?)?.toDouble() ?? 0.0;
       var currentTotal = venueData['totalRatings'] as int? ?? 0;
 
-      // If averageRating is NaN, reset to 0
       if (currentAverage.isNaN) {
-        print("   - ⚠️ Found NaN averageRating, resetting to 0");
         currentAverage = 0.0;
-        currentTotal = 0; // Also reset total
+        currentTotal = 0;
       }
 
       double newAverage;
       int newTotal;
 
       if (oldRating != null && currentTotal > 0) {
-        // User is UPDATING their rating
-        final sum = currentAverage * currentTotal;
-        newAverage = (sum - oldRating + rating) / currentTotal;
-        newTotal = currentTotal; // Total stays the same
-        print("   - Updating existing rating: $oldRating → $rating");
+        newAverage =
+            (currentAverage * currentTotal - oldRating + rating) / currentTotal;
+        newTotal = currentTotal;
       } else {
-        // User is ADDING a new rating (or fixing corrupt data)
-        final sum = currentAverage * currentTotal;
         newTotal = currentTotal + 1;
-        newAverage = (sum + rating) / newTotal;
-        print("   - Adding new rating: $rating");
+        newAverage = (currentAverage * currentTotal + rating) / newTotal;
       }
 
-      // Update venue's aggregated rating
       batch.update(venueRef, {
         'averageRating': newAverage,
         'totalRatings': newTotal,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // 4. Commit the batch
       await batch.commit();
-      print("   - ✅ Batch committed successfully");
-      print("   - New average: ${newAverage.toStringAsFixed(2)} ($newTotal ratings)");
 
-      // 5. Verify the save
-      final docSnapshot = await ratingRef.get();
-      if (docSnapshot.exists) {
-        print("   - ✅ VERIFIED: Rating saved successfully");
-        return true;
-      } else {
-        print("   - 🔥 VERIFICATION FAILED: Document doesn't exist after save");
-        return false;
-      }
-
+      final verified = await ratingRef.get();
+      return verified.exists;
     } catch (e) {
-      print("❌ DEBUG [Repository]: Error during save: $e");
+      print('❌ Error saving rating: $e');
       return false;
     }
   }
 
-  /// Helper to convert Firestore document to StoredLocation
-  StoredLocation _venueFromFirestore(
-      DocumentSnapshot doc,
-      {double? rating, String? comment}
-      ) {
-    final data = doc.data() as Map<String, dynamic>;
-    final geoPoint = data['coordinates'] as GeoPoint;
+  // ── Tag voting ────────────────────────────────────────────────────────────
 
-    // Convert GeoPoint to LatLng
-    data['latitude'] = geoPoint.latitude;
-    data['longitude'] = geoPoint.longitude;
-
-    // Create the venue object from JSON
-    final venue = StoredLocation.fromJson(data);
-
-    // Return with user-specific rating data merged in
-    return venue.copyWith(
-      isPublic: true,
-      rating: rating ?? venue.rating,      // User's personal rating
-      comment: comment ?? venue.comment,   // User's personal comment
-    );
-  }
-
-  // Helper methods
-  bool _isWithinRadius(double lat1, double lon1, double lat2, double lon2, double radiusMiles) {
-    const double earthRadius = 3959; // miles
-    final dLat = _toRadians(lat2 - lat1);
-    final dLon = _toRadians(lon2 - lon1);
-    final a = (sin(dLat / 2) * sin(dLat / 2)) +
-        cos(_toRadians(lat1)) * cos(_toRadians(lat2)) *
-            sin(dLon / 2) * sin(dLon / 2);
-    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    final distance = earthRadius * c;
-    return distance <= radiusMiles;
-  }
-
-  double _toRadians(double degrees) => degrees * pi / 180;
-
-
-  // ========================================
-  // TAG VOTING SYSTEM
-  // ========================================
-
-  /// Vote for a tag (genre or instrument)
-  /// Returns true if successful, false otherwise
   Future<bool> voteForTag({
     required String placeId,
     required String userId,
     required String tagName,
-    required bool isGenre, // true for genre, false for instrument
+    required bool isGenre,
   }) async {
     try {
       final tagType = isGenre ? 'genres' : 'instruments';
@@ -264,35 +347,25 @@ class VenueRepository {
           .collection('items')
           .doc(tagName);
 
-      await _firestoreInstance.runTransaction((transaction) async {
-        final tagDoc = await transaction.get(tagRef);
-
+      await _firestoreInstance.runTransaction((tx) async {
+        final tagDoc = await tx.get(tagRef);
         if (tagDoc.exists) {
-          // Tag exists - check if user already voted
-          final voters = List<String>.from(tagDoc.data()?['voters'] ?? []);
-
-          if (voters.contains(userId)) {
-            print('⚠️ User $userId already voted for $tagName');
-            return; // User already voted, no-op
-          }
-
-          // Add user's vote
+          final voters =
+          List<String>.from(tagDoc.data()?['voters'] ?? []);
+          if (voters.contains(userId)) return;
           voters.add(userId);
-          transaction.update(tagRef, {
+          tx.update(tagRef, {
             'count': FieldValue.increment(1),
             'voters': voters,
             'updatedAt': FieldValue.serverTimestamp(),
           });
-          print('✅ Incremented vote for $tagName (new count: ${voters.length})');
         } else {
-          // Tag doesn't exist - create it with first vote
-          transaction.set(tagRef, {
+          tx.set(tagRef, {
             'count': 1,
             'voters': [userId],
             'createdAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
           });
-          print('✅ Created new tag $tagName with first vote');
         }
       });
 
@@ -303,8 +376,6 @@ class VenueRepository {
     }
   }
 
-  /// Remove vote for a tag
-  /// Returns true if successful, false otherwise
   Future<bool> removeVoteForTag({
     required String placeId,
     required String userId,
@@ -321,48 +392,33 @@ class VenueRepository {
           .collection('items')
           .doc(tagName);
 
-      await _firestoreInstance.runTransaction((transaction) async {
-        final tagDoc = await transaction.get(tagRef);
+      await _firestoreInstance.runTransaction((tx) async {
+        final tagDoc = await tx.get(tagRef);
+        if (!tagDoc.exists) return;
 
-        if (!tagDoc.exists) {
-          print('⚠️ Tag $tagName does not exist');
-          return;
-        }
-
-        final voters = List<String>.from(tagDoc.data()?['voters'] ?? []);
-
-        if (!voters.contains(userId)) {
-          print('⚠️ User $userId has not voted for $tagName');
-          return; // User hasn't voted, no-op
-        }
-
-        // Remove user's vote
+        final voters =
+        List<String>.from(tagDoc.data()?['voters'] ?? []);
+        if (!voters.contains(userId)) return;
         voters.remove(userId);
 
         if (voters.isEmpty) {
-          // No votes left - delete the tag
-          transaction.delete(tagRef);
-          print('✅ Deleted tag $tagName (no votes remaining)');
+          tx.delete(tagRef);
         } else {
-          // Update with decremented count
-          transaction.update(tagRef, {
+          tx.update(tagRef, {
             'count': FieldValue.increment(-1),
             'voters': voters,
             'updatedAt': FieldValue.serverTimestamp(),
           });
-          print('✅ Decremented vote for $tagName (new count: ${voters.length})');
         }
       });
 
       return true;
     } catch (e) {
-      print('❌ Error removing vote: $e');
+      print('❌ Error removing tag vote: $e');
       return false;
     }
   }
 
-  /// Fetch all tags for a venue with their counts and user's votes
-  /// Returns a map with structure: { tagName: { count: int, userVoted: bool } }
   Future<Map<String, Map<String, dynamic>>> getVenueTags({
     required String placeId,
     required String userId,
@@ -379,18 +435,14 @@ class VenueRepository {
           .get();
 
       final Map<String, Map<String, dynamic>> tags = {};
-
       for (var doc in snapshot.docs) {
         final data = doc.data();
         final voters = List<String>.from(data['voters'] ?? []);
-
         tags[doc.id] = {
           'count': data['count'] as int,
           'userVoted': voters.contains(userId),
         };
       }
-
-      print('📊 Loaded ${tags.length} ${isGenre ? 'genre' : 'instrument'} tags for venue $placeId');
       return tags;
     } catch (e) {
       print('❌ Error fetching tags: $e');
@@ -398,7 +450,6 @@ class VenueRepository {
     }
   }
 
-  /// Sync local tags to Firebase (called during reconciliation)
   Future<void> syncLocalTagsToFirebase({
     required String placeId,
     required String userId,
@@ -406,95 +457,90 @@ class VenueRepository {
     required List<String> instrumentTags,
   }) async {
     try {
-      print('🔄 Syncing local tags to Firebase for venue $placeId');
-
-      // Vote for each genre tag
       for (final genre in genreTags) {
         await voteForTag(
-          placeId: placeId,
-          userId: userId,
-          tagName: genre,
-          isGenre: true,
-        );
+            placeId: placeId, userId: userId, tagName: genre, isGenre: true);
       }
-
-      // Vote for each instrument tag
       for (final instrument in instrumentTags) {
         await voteForTag(
-          placeId: placeId,
-          userId: userId,
-          tagName: instrument,
-          isGenre: false,
-        );
+            placeId: placeId,
+            userId: userId,
+            tagName: instrument,
+            isGenre: false);
       }
-
-      print('✅ Successfully synced all tags to Firebase');
     } catch (e) {
       print('❌ Error syncing tags: $e');
     }
   }
 
+  // ── Comments ──────────────────────────────────────────────────────────────
 
-  /// Fetch recent comments for a venue
   Future<List<Map<String, dynamic>>> getRecentComments({
     required String placeId,
     int limit = 3,
   }) async {
     try {
-      print('🔍 Fetching comments for venue: $placeId');
-
-      // Get ALL ratings for this venue (Firestore limitation workaround)
       final snapshot = await _firestoreInstance
           .collection('venueRatings')
           .where('placeId', isEqualTo: placeId)
           .get();
 
-      print('   Found ${snapshot.docs.length} total ratings');
-
-      // Filter and sort in Dart
-      final commentsWithData = snapshot.docs
+      final withText = snapshot.docs
           .where((doc) {
-        final comment = doc.data()['comment'];
-        return comment != null && comment.toString().trim().isNotEmpty;
+        final c = doc.data()['comment'];
+        return c != null && c.toString().trim().isNotEmpty;
       })
-          .map((doc) {
-        final data = doc.data();
-        return {
-          'comment': data['comment'] as String,
-          'rating': (data['rating'] as num).toDouble(),
-          'updatedAt': data['updatedAt'] as Timestamp?,
-          'doc': doc, // Keep doc for sorting
-        };
+          .map((doc) => {
+        'comment': doc.data()['comment'] as String,
+        'rating': (doc.data()['rating'] as num).toDouble(),
+        'updatedAt': doc.data()['updatedAt'] as Timestamp?,
       })
           .toList();
 
-      // Sort by timestamp (most recent first)
-      commentsWithData.sort((a, b) {
+      withText.sort((a, b) {
         final aTime = a['updatedAt'] as Timestamp?;
         final bTime = b['updatedAt'] as Timestamp?;
-
         if (aTime == null && bTime == null) return 0;
         if (aTime == null) return 1;
         if (bTime == null) return -1;
-
-        return bTime.compareTo(aTime); // Descending (newest first)
+        return bTime.compareTo(aTime);
       });
 
-      // Take only the limit we need
-      final result = commentsWithData
-          .take(limit)
-          .map((item) => {
-        'comment': item['comment'] as String,
-        'rating': item['rating'] as double,
-        'updatedAt': item['updatedAt'] as Timestamp?,
-      })
-          .toList();
-
-      print('   📝 Returning ${result.length} comments with text');
-      return result;
+      return withText.take(limit).toList();
     } catch (e) {
-      print('   ❌ Error fetching recent comments: $e');
+      print('❌ Error fetching comments: $e');
       return [];
     }
   }
+
+  // ── Firestore helpers ─────────────────────────────────────────────────────
+
+  StoredLocation _venueFromFirestore(DocumentSnapshot doc,
+      {double? rating, String? comment}) {
+    final data = doc.data() as Map<String, dynamic>;
+    final geoPoint = data['coordinates'] as GeoPoint;
+    data['latitude'] = geoPoint.latitude;
+    data['longitude'] = geoPoint.longitude;
+    final venue = StoredLocation.fromJson(data);
+    return venue.copyWith(
+      isPublic: true,
+      rating: rating ?? venue.rating,
+      comment: comment ?? venue.comment,
+    );
+  }
+
+  bool _isWithinRadius(
+      double lat1, double lon1, double lat2, double lon2, double radiusMiles) {
+    const double earthRadius = 3959;
+    final dLat = _toRadians(lat2 - lat1);
+    final dLon = _toRadians(lon2 - lon1);
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_toRadians(lat1)) *
+            cos(_toRadians(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    return earthRadius * 2 * atan2(sqrt(a), sqrt(1 - a)) <= radiusMiles;
+  }
+
+  double _toRadians(double degrees) => degrees * pi / 180;
 }

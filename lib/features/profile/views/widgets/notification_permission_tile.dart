@@ -34,6 +34,10 @@ class _NotificationPermissionTileState
       _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
 
+  IOSFlutterLocalNotificationsPlugin? get _iOSPlugin =>
+      _plugin.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
+
   @override
   void initState() {
     super.initState();
@@ -54,21 +58,59 @@ class _NotificationPermissionTileState
   }
 
   Future<void> _checkStatus() async {
-    final status = await Permission.notification.status;
+    bool granted = false;
+    bool permanentlyDenied = false;
 
-    bool canScheduleExact = true;
-    if (Platform.isAndroid) {
-      canScheduleExact =
+    if (Platform.isIOS) {
+      final settings = await _iOSPlugin?.checkPermissions();
+      granted = settings?.isEnabled ?? false;
+      // iOS doesn't reliably surface permanentlyDenied;
+      // openAppSettings handles the blocked case gracefully.
+      permanentlyDenied = false;
+    } else if (Platform.isAndroid) {
+      final status = await Permission.notification.status;
+      final canScheduleExact =
           await _androidPlugin?.canScheduleExactNotifications() ?? true;
+      granted = status.isGranted && canScheduleExact;
+      permanentlyDenied = status.isPermanentlyDenied;
     }
 
     if (!mounted) return;
     setState(() {
-      _isGranted = status.isGranted && canScheduleExact;
-      _isPermanentlyDenied = status.isPermanentlyDenied;
+      _isGranted = granted;
+      _isPermanentlyDenied = permanentlyDenied;
     });
-    print('🔔 iOS status: isGranted=$_isGranted, isPermanentlyDenied=$_isPermanentlyDenied, isRequesting=$_isRequesting');
+    print('🔔 Status check: isGranted=$_isGranted, '
+        'isPermanentlyDenied=$_isPermanentlyDenied, '
+        'platform=${Platform.isIOS ? "iOS" : "Android"}');
+  }
 
+  /// Shows an explanation dialog before redirecting to OS Settings.
+  /// Returns true if the user chose to open Settings, false if they dismissed.
+  Future<bool> _openSettingsWithExplanation(String reason) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Open Settings?'),
+        content: Text(reason),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('NOT NOW'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('OPEN SETTINGS'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await openAppSettings();
+      await _checkStatus();
+      return true;
+    }
+    return false;
   }
 
   Future<void> _requestPermission() async {
@@ -76,24 +118,49 @@ class _NotificationPermissionTileState
 
     try {
       if (_isPermanentlyDenied) {
-        // OS won't show a dialog — send them to app settings
-        await openAppSettings();
+        // OS won't show a dialog — explain and send them to Settings
+        await _openSettingsWithExplanation(
+          'Notifications are blocked. To enable gig reminders, open Settings '
+              'and turn on notifications for MoneyGigs.',
+        );
       } else if (Platform.isIOS) {
-        try {
-          await Permission.notification.request()
-              .timeout(const Duration(seconds: 5));
-        } catch (_) {
-          // Timed out or failed — proceed anyway
+        final granted = await _iOSPlugin?.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+        if (granted == true) {
+          if (mounted) {
+            setState(() {
+              _isGranted = true;
+              _isPermanentlyDenied = false;
+            });
+          }
+          final notificationService = NotificationService();
+          await notificationService.init();
+          await notificationService.updateAllGigNotifications();
+        } else {
+          // iOS won't re-show the permission dialog after the user
+          // has denied via Settings — explain and send them there.
+          await _openSettingsWithExplanation(
+            'iOS requires you to enable notifications for MoneyGigs in Settings. '
+                'Tap Open Settings, then turn on Allow Notifications.',
+          );
         }
-        await _checkStatus();
       } else if (Platform.isAndroid) {
         await _androidPlugin?.requestNotificationsPermission();
         await _androidPlugin?.requestExactAlarmsPermission();
-        final batteryStatus = await Permission.ignoreBatteryOptimizations.status;
+        final batteryStatus =
+        await Permission.ignoreBatteryOptimizations.status;
         if (!batteryStatus.isGranted) {
           await Permission.ignoreBatteryOptimizations.request();
         }
         await _checkStatus();
+        if (_isGranted == true) {
+          final notificationService = NotificationService();
+          await notificationService.init();
+          await notificationService.updateAllGigNotifications();
+        }
       }
     } finally {
       if (mounted) setState(() => _isRequesting = false);
@@ -125,45 +192,50 @@ class _NotificationPermissionTileState
             _isGranted!
                 ? Icons.notifications_active
                 : Icons.notifications_off_outlined,
-            color:
-            _isGranted! ? theme.colorScheme.primary : Colors.grey.shade500,
+            color: _isGranted!
+                ? theme.colorScheme.primary
+                : Colors.grey.shade500,
           ),
           title: const Text('Gig Reminders'),
           subtitle: Text(_subtitle),
           value: _isGranted!,
-          // Toggling OFF isn't possible programmatically on iOS/Android —
-          // direct the user to Settings instead.
-          onChanged: _isRequesting ? null : (bool value) async {
+          onChanged: _isRequesting
+              ? null
+              : (bool value) async {
             if (_isGranted == true && !value) {
+              // Turning OFF — cancel scheduled notifications then
+              // explain that the OS setting must be changed manually.
               final bool? confirm = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text('Turn off reminders?'),
                   content: const Text(
-                      'This will cancel all upcoming gig reminders and open your device settings to disable notifications.'),
+                    'This will cancel all upcoming gig reminders. '
+                        'You\'ll also need to turn off notifications for '
+                        'MoneyGigs in your device Settings.',
+                  ),
                   actions: [
                     TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('CANCEL')),
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('CANCEL'),
+                    ),
                     TextButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('TURN OFF')),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('TURN OFF'),
+                    ),
                   ],
                 ),
               );
               if (confirm == true) {
                 await _plugin.cancelAll();
-                await openAppSettings();
-                await _checkStatus();
+                await _openSettingsWithExplanation(
+                  'To fully disable notifications, turn off '
+                      'Allow Notifications for MoneyGigs in Settings.',
+                );
               }
             } else {
-              // Toggling ON — request permissions then reschedule all gigs
+              // Turning ON
               await _requestPermission();
-              if (_isGranted == true) {
-                final notificationService = NotificationService();
-                await notificationService.init();
-                await notificationService.updateAllGigNotifications();
-              }
             }
           },
         ),
@@ -179,8 +251,8 @@ class _NotificationPermissionTileState
                 Expanded(
                   child: Text(
                     'Notifications are blocked. Tap above to open Settings.',
-                    style:
-                    TextStyle(fontSize: 12, color: Colors.orange.shade300),
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.orange.shade300),
                   ),
                 ),
               ],
@@ -191,7 +263,8 @@ class _NotificationPermissionTileState
           Padding(
             padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
             child: Text(
-              'You\'ll be notified before upcoming gigs. Manage timing in the reminders section below.',
+              'You\'ll be notified before upcoming gigs. '
+                  'Manage timing in the reminders section below.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
             ),
           ),

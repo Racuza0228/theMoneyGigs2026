@@ -1006,29 +1006,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-  Future<void> _editVenueContact(StoredLocation venue) async {
-    final updatedContact = await showDialog<VenueContact>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => VenueContactDialog(venue: venue),
-    );
-    if (updatedContact != null && mounted) {
-      final int index = _allKnownVenues.indexWhere((v) => v.placeId == venue.placeId);
-      if (index != -1) {
-        _allKnownVenues[index] = _allKnownVenues[index].copyWith(contact: updatedContact);
-        final prefs = await SharedPreferences.getInstance();
-        final List<String> updatedVenuesJson = _allKnownVenues.map((v) => jsonEncode(v.toJson())).toList();
-        await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
-        globalRefreshNotifier.notify();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Contact updated for ${venue.name}.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    }
-  }
+
 
   Future<void> _updateVenueJamNightSettings(StoredLocation updatedVenue) async {
     final prefs = await SharedPreferences.getInstance();
@@ -1104,9 +1082,26 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             onSave: (updatedVenue) {
               _updateAndSaveLocationReview(updatedVenue);
             },
-            onEditContact: () {
-              Navigator.of(dialogContext).pop();
-              _editVenueContact(venue);
+            onContactSaved: (contact, bookingInfo) async {
+              final int index = _allKnownVenues.indexWhere((v) => v.placeId == venue.placeId);
+              if (index != -1) {
+                _allKnownVenues[index] = _allKnownVenues[index].copyWith(
+                  contact: contact,
+                  bookingInfo: bookingInfo,
+                );
+                final prefs = await SharedPreferences.getInstance();
+                final List<String> updatedVenuesJson = _allKnownVenues.map((v) => jsonEncode(v.toJson())).toList();
+                await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
+                globalRefreshNotifier.notify();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Contact updated for ${venue.name}.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              }
             },
             onEditJamSettings: () async {
               Navigator.of(dialogContext).pop();

@@ -246,17 +246,20 @@ class _BookingDialogState extends State<BookingDialog> {
 
   Future<void> _scheduleGigNotifications(Gig gig) async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Singleton: NotificationService() always returns the same instance.
+    // init() is a no-op if already initialized, so calling it here is safe.
     final notificationService = NotificationService();
-    await notificationService.init(); // ensure plugin is initialized on this instance
+    await notificationService.init();
+
     final int base = gig.id.hashCode;
     final now = DateTime.now();
     final gigTime = DateFormat.jm().format(gig.dateTime);
 
-    // Day-of notification (9am on gig day)
+    // ── Day-of (9am on gig day) ──────────────────────────────────────────────
     final bool notifyOnDayOfGig = prefs.getBool('notify_on_day_of_gig') ?? false;
     final DateTime dayOfTime = DateTime(
         gig.dateTime.year, gig.dateTime.month, gig.dateTime.day, 9, 0);
-    //final DateTime dayOfTime = DateTime.now().add(const Duration(minutes: 2));
 
     if (notifyOnDayOfGig && dayOfTime.isAfter(now)) {
       await notificationService.scheduleNotification(
@@ -270,10 +273,11 @@ class _BookingDialogState extends State<BookingDialog> {
       await notificationService.cancelNotification(base);
     }
 
-    // Days-before notification (9am N days before gig)
+    // ── Days-before (9am N days before gig) ─────────────────────────────────
     final int? daysBefore = prefs.getInt('notify_days_before');
     if (daysBefore != null && daysBefore > 0) {
-      final DateTime beforeDate = gig.dateTime.subtract(Duration(days: daysBefore));
+      final DateTime beforeDate =
+      gig.dateTime.subtract(Duration(days: daysBefore));
       final DateTime beforeTime = DateTime(
           beforeDate.year, beforeDate.month, beforeDate.day, 9, 0);
       if (beforeTime.isAfter(now)) {
@@ -293,7 +297,7 @@ class _BookingDialogState extends State<BookingDialog> {
       await notificationService.cancelNotification(base + 1);
     }
 
-    // Day-after retrospective (9am the morning after the gig)
+    // ── Day-after retrospective (9am the morning after the gig) ─────────────
     final bool notifyAfterGig = prefs.getBool('notify_after_gig') ?? true;
     final DateTime afterGigDate = gig.dateTime.add(const Duration(days: 1));
     final DateTime afterTime = DateTime(
@@ -310,15 +314,20 @@ class _BookingDialogState extends State<BookingDialog> {
       await notificationService.cancelNotification(base + 2);
     }
 
-    await notificationService.debugPendingNotifications(); // confirm all 3 are pending
+    await notificationService.debugPendingNotifications();
   }
 
   Future<void> _cancelGigNotifications(Gig gig) async {
+    // Bug fix: previously created a fresh uninitialized NotificationService
+    // instance and called cancel() on it without calling init() first.
+    // The singleton + init() call ensures the plugin is always ready.
     final notificationService = NotificationService();
+    await notificationService.init();
+
     final int base = gig.id.hashCode;
-    await notificationService.cancelNotification(base);     // day-of
-    await notificationService.cancelNotification(base + 1); // days-before
-    await notificationService.cancelNotification(base + 2); // day-after
+    await notificationService.cancelNotification(base);      // day-of
+    await notificationService.cancelNotification(base + 1);  // days-before
+    await notificationService.cancelNotification(base + 2);  // day-after
   }
 
   Future<void> _loadProfileAddress() async {

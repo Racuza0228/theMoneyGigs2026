@@ -18,8 +18,8 @@ class StoredLocation {
   String? comment;
 
   // AGGREGATED rating from all users (for Firebase)
-  final double averageRating;  // ← NEW: Average from all users
-  final int totalRatings;      // ← NEW: Count of ratings
+  final double averageRating;
+  final int totalRatings;
 
   bool isArchived;
   final bool isMuted;
@@ -28,6 +28,11 @@ class StoredLocation {
   final List<JamSession> jamSessions;
 
   final VenueContact? contact;
+
+  /// Booking logistics — only populated when [contact.isSharedWithNetwork] is
+  /// true. Null for private / standalone users.
+  final BookingInfo? bookingInfo;
+
   final String? venueNotes;
   final String? venueNotesUrl;
 
@@ -45,19 +50,20 @@ class StoredLocation {
     required this.coordinates,
     this.rating = 0.0,
     this.comment,
-    this.averageRating = 0.0,  // ← NEW: Defaults to 0
-    this.totalRatings = 0,     // ← NEW: Defaults to 0
+    this.averageRating = 0.0,
+    this.totalRatings = 0,
     this.isArchived = false,
     this.jamSessions = const [],
     this.isMuted = false,
     this.isPrivate = false,
     this.contact,
+    this.bookingInfo,
     this.venueNotes,
     this.venueNotesUrl,
     this.driveDuration,
     this.driveDistance,
-    this.instrumentTags = const [], // <<< Add to constructor
-    this.genreTags = const [],    // <<< Add to constructor
+    this.instrumentTags = const [],
+    this.genreTags = const [],
   });
 
   bool get hasJamOpenMic => jamSessions.isNotEmpty;
@@ -70,22 +76,24 @@ class StoredLocation {
     'longitude': coordinates.longitude,
     'rating': rating,
     'comment': comment,
-    'averageRating': averageRating,  // ← NEW
-    'totalRatings': totalRatings,    // ← NEW
+    'averageRating': averageRating,
+    'totalRatings': totalRatings,
     'isArchived': isArchived,
     'jamSessions': jamSessions.map((js) => js.toJson()).toList(),
     'isMuted': isMuted,
     'isPrivate': isPrivate,
     'contact': contact?.toJson(),
+    'bookingInfo': bookingInfo?.toJson(),
     'venueNotes': venueNotes,
     'venueNotesUrl': venueNotesUrl,
     'driveDuration': driveDuration,
     'driveDistance': driveDistance,
-    'instrumentTags': instrumentTags, // <<< Add to toJson
-    'genreTags': genreTags,       // <<< Add to toJson
+    'instrumentTags': instrumentTags,
+    'genreTags': genreTags,
   };
 
-  /// A private helper function to handle backward compatibility for old jam session data.
+  /// A private helper function to handle backward compatibility for old jam
+  /// session data.
   static List<JamSession> _migrateOldJamData(Map<String, dynamic> json) {
     if (json['hasJamOpenMic'] != true) {
       return [];
@@ -96,8 +104,10 @@ class StoredLocation {
         JamSession(
           id: 'migrated_jam_1',
           style: json['jamStyle'] as String?,
-          day: DayOfWeek.values.byName((json['jamOpenMicDay'] as String).split('.').last),
-          time: TimeOfDay(hour: timeMap['hour'], minute: timeMap['minute']),
+          day: DayOfWeek.values
+              .byName((json['jamOpenMicDay'] as String).split('.').last),
+          time: TimeOfDay(
+              hour: timeMap['hour'], minute: timeMap['minute']),
           frequency: JamFrequencyType.values.firstWhere(
                 (e) => e.toString() == json['jamFrequencyType'],
             orElse: () => JamFrequencyType.weekly,
@@ -107,7 +117,6 @@ class StoredLocation {
         )
       ];
     } catch (_) {
-      // Could not migrate, return an empty list to prevent crashes.
       return [];
     }
   }
@@ -115,17 +124,16 @@ class StoredLocation {
   factory StoredLocation.fromJson(Map<String, dynamic> json) {
     List<JamSession> sessions = [];
     if (json['jamSessions'] != null && json['jamSessions'] is List) {
-      // New, preferred format: Load directly from the list.
       sessions = (json['jamSessions'] as List)
           .map((js) => JamSession.fromJson(js))
           .toList();
     } else {
-      // Old format detected, attempt to migrate the data.
       sessions = _migrateOldJamData(json);
     }
 
     return StoredLocation(
-      placeId: json['placeId'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      placeId: json['placeId'] ??
+          DateTime.now().millisecondsSinceEpoch.toString(),
       isPublic: json['isPublic'] as bool? ?? false,
       name: json['name'] ?? 'Unnamed Venue',
       address: json['address'] ?? 'No address',
@@ -135,20 +143,25 @@ class StoredLocation {
       ),
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
       comment: json['comment'] as String?,
-      averageRating: (json['averageRating'] as num?)?.toDouble() ?? 0.0,  // ← NEW: Read from JSON, default 0
-      totalRatings: json['totalRatings'] as int? ?? 0,                    // ← NEW: Read from JSON, default 0
+      averageRating:
+      (json['averageRating'] as num?)?.toDouble() ?? 0.0,
+      totalRatings: json['totalRatings'] as int? ?? 0,
       isArchived: json['isArchived'] as bool? ?? false,
       jamSessions: sessions,
       isMuted: json['isMuted'] as bool? ?? false,
       isPrivate: json['isPrivate'] as bool? ?? false,
-      contact: json['contact'] != null ? VenueContact.fromJson(json['contact']) : null,
+      contact: json['contact'] != null
+          ? VenueContact.fromJson(json['contact'])
+          : null,
+      bookingInfo: json['bookingInfo'] != null
+          ? BookingInfo.fromJson(json['bookingInfo'])
+          : null,
       venueNotes: json['venueNotes'] as String?,
       venueNotesUrl: json['venueNotesUrl'] as String?,
       driveDuration: json['driveDuration'] as String?,
       driveDistance: json['driveDistance'] as String?,
       instrumentTags: List<String>.from(json['instrumentTags'] ?? []),
       genreTags: List<String>.from(json['genreTags'] ?? []),
-
     );
   }
 
@@ -160,19 +173,20 @@ class StoredLocation {
     LatLng? coordinates,
     double? rating,
     String? comment,
-    double? averageRating,      // ← NEW
-    int? totalRatings,          // ← NEW
+    double? averageRating,
+    int? totalRatings,
     bool? isArchived,
     List<JamSession>? jamSessions,
     bool? isMuted,
     bool? isPrivate,
     VenueContact? contact,
+    BookingInfo? bookingInfo,
     ValueGetter<String?>? venueNotes,
     ValueGetter<String?>? venueNotesUrl,
     ValueGetter<String?>? driveDuration,
     ValueGetter<String?>? driveDistance,
-    List<String>? instrumentTags, // <<< Add to copyWith
-    List<String>? genreTags,       // <<< Add to copyWith
+    List<String>? instrumentTags,
+    List<String>? genreTags,
   }) {
     return StoredLocation(
       placeId: placeId ?? this.placeId,
@@ -182,19 +196,23 @@ class StoredLocation {
       coordinates: coordinates ?? this.coordinates,
       rating: rating ?? this.rating,
       comment: comment ?? this.comment,
-      averageRating: averageRating ?? this.averageRating,  // ← NEW
-      totalRatings: totalRatings ?? this.totalRatings,      // ← NEW
+      averageRating: averageRating ?? this.averageRating,
+      totalRatings: totalRatings ?? this.totalRatings,
       isArchived: isArchived ?? this.isArchived,
       jamSessions: jamSessions ?? this.jamSessions,
       isMuted: isMuted ?? this.isMuted,
       isPrivate: isPrivate ?? this.isPrivate,
       contact: contact ?? this.contact,
+      bookingInfo: bookingInfo ?? this.bookingInfo,
       venueNotes: venueNotes != null ? venueNotes() : this.venueNotes,
-      venueNotesUrl: venueNotesUrl != null ? venueNotesUrl() : this.venueNotesUrl,
-      driveDuration: driveDuration != null ? driveDuration() : this.driveDuration,
-      driveDistance: driveDistance != null ? driveDistance() : this.driveDistance,
-      instrumentTags: instrumentTags ?? this.instrumentTags, // <<< Add assignment
-      genreTags: genreTags ?? this.genreTags,             // <<< Add assignment
+      venueNotesUrl:
+      venueNotesUrl != null ? venueNotesUrl() : this.venueNotesUrl,
+      driveDuration:
+      driveDuration != null ? driveDuration() : this.driveDuration,
+      driveDistance:
+      driveDistance != null ? driveDistance() : this.driveDistance,
+      instrumentTags: instrumentTags ?? this.instrumentTags,
+      genreTags: genreTags ?? this.genreTags,
     );
   }
 
@@ -203,9 +221,14 @@ class StoredLocation {
       return 'Not set up';
     }
     return jamSessions.map((session) {
-      String dayString = toBeginningOfSentenceCase(session.day.toString().split('.').last) ?? '';
+      String dayString =
+          toBeginningOfSentenceCase(session.day.toString().split('.').last) ??
+              '';
       String timeString = session.time.format(context);
-      String styleString = (session.style != null && session.style!.isNotEmpty) ? ' (${session.style})' : '';
+      String styleString =
+      (session.style != null && session.style!.isNotEmpty)
+          ? ' (${session.style})'
+          : '';
       return '$dayString at $timeString$styleString';
     }).join('\n');
   }
@@ -217,7 +240,5 @@ class StoredLocation {
   }
 
   @override
-  int get hashCode {
-    return placeId.hashCode;
-  }
+  int get hashCode => placeId.hashCode;
 }

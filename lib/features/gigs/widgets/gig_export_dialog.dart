@@ -13,6 +13,7 @@ import 'package:open_file/open_file.dart';
 import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/gigs/services/gig_backup_service.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
+import 'package:the_money_gigs/features/gigs/widgets/tax_year_summary_card.dart';
 
 /// Shows the gig export dialog.
 /// Pass [allGigs] (the raw master list from SharedPreferences) and
@@ -454,6 +455,8 @@ class GigExportDialog extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  TaxYearSummaryCard(allGigs: allGigs),
+                  const SizedBox(height: 16),
                   // ── SPREADSHEETS ──────────────────────────────────────────
                   _SectionHeader(
                     icon: Icons.table_chart_outlined,
