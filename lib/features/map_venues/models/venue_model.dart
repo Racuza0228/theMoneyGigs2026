@@ -41,6 +41,8 @@ class StoredLocation {
 
   final List<String> instrumentTags;
   final List<String> genreTags;
+  final List<String> paymentMethodTags;
+  final List<String> taxArrangementTags;
 
   StoredLocation({
     required this.placeId,
@@ -64,6 +66,8 @@ class StoredLocation {
     this.driveDistance,
     this.instrumentTags = const [],
     this.genreTags = const [],
+    this.paymentMethodTags = const [],
+    this.taxArrangementTags = const [],
   });
 
   bool get hasJamOpenMic => jamSessions.isNotEmpty;
@@ -90,6 +94,8 @@ class StoredLocation {
     'driveDistance': driveDistance,
     'instrumentTags': instrumentTags,
     'genreTags': genreTags,
+    'paymentMethodTags': paymentMethodTags,
+    'taxArrangementTags': taxArrangementTags,
   };
 
   /// A private helper function to handle backward compatibility for old jam
@@ -162,6 +168,8 @@ class StoredLocation {
       driveDistance: json['driveDistance'] as String?,
       instrumentTags: List<String>.from(json['instrumentTags'] ?? []),
       genreTags: List<String>.from(json['genreTags'] ?? []),
+      paymentMethodTags: List<String>.from(json['paymentMethodTags'] ?? []),
+      taxArrangementTags: List<String>.from(json['taxArrangementTags'] ?? []),
     );
   }
 
@@ -187,6 +195,8 @@ class StoredLocation {
     ValueGetter<String?>? driveDistance,
     List<String>? instrumentTags,
     List<String>? genreTags,
+    List<String>? paymentMethodTags,
+    List<String>? taxArrangementTags,
   }) {
     return StoredLocation(
       placeId: placeId ?? this.placeId,
@@ -213,6 +223,8 @@ class StoredLocation {
       driveDistance != null ? driveDistance() : this.driveDistance,
       instrumentTags: instrumentTags ?? this.instrumentTags,
       genreTags: genreTags ?? this.genreTags,
+      paymentMethodTags: paymentMethodTags ?? this.paymentMethodTags,
+      taxArrangementTags: taxArrangementTags ?? this.taxArrangementTags,
     );
   }
 

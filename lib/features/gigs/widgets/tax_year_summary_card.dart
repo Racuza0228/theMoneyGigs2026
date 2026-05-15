@@ -13,9 +13,11 @@
 // Fields marked TODO(sprint1) will populate once paymentType,
 // is1099Received, and mileageKm are added to gig_model.dart.
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 
 class TaxYearSummaryCard extends StatefulWidget {
@@ -30,10 +32,35 @@ class TaxYearSummaryCard extends StatefulWidget {
 class _TaxYearSummaryCardState extends State<TaxYearSummaryCard> {
   late int _selectedYear;
 
+  // Tax documents received: list of {venueName, type} for the selected year
+  List<({String venueName, String type})> _taxDocs = [];
+
   @override
   void initState() {
     super.initState();
     _selectedYear = DateTime.now().year;
+    _loadTaxDocs();
+  }
+
+  Future<void> _loadTaxDocs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final allKeys = prefs.getKeys();
+    final yearKeys = allKeys.where(
+          (k) => k.startsWith('tax_doc_') && k.endsWith('_$_selectedYear'),
+    );
+
+    final docs = <({String venueName, String type})>[];
+    for (final key in yearKeys) {
+      final raw = prefs.getString(key);
+      if (raw != null) {
+        final data = jsonDecode(raw) as Map<String, dynamic>;
+        final type = data['type'] as String?;
+        final venueName = data['venueName'] as String? ?? 'Unknown Venue';
+        if (type != null) docs.add((venueName: venueName, type: type));
+      }
+    }
+
+    if (mounted) setState(() => _taxDocs = docs);
   }
 
   /// Payable, completed gigs for the selected year.
@@ -45,6 +72,69 @@ class _TaxYearSummaryCardState extends State<TaxYearSummaryCard> {
     if (!g.hasEnded) return false;
     return g.dateTime.year == _selectedYear;
   }).toList();
+
+  List<Widget> _buildTaxDocRows(ThemeData theme, ColorScheme cs) {
+    final nec = _taxDocs.where((d) => d.type == '1099-NEC').toList();
+    final w2  = _taxDocs.where((d) => d.type == 'W2').toList();
+
+    if (_taxDocs.isEmpty) {
+      return [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Text(
+            'None recorded — open Venue Notes to log a received document.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: cs.onSurfaceVariant),
+          ),
+        ),
+      ];
+    }
+
+    Widget docBlock(String label, List<({String venueName, String type})> docs) {
+      if (docs.isEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Expanded(
+                flex: 5,
+                child: Text(label,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant)),
+              ),
+              Expanded(
+                flex: 4,
+                child: Text(
+                  '${docs.length}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600, color: cs.onSurface),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+              const SizedBox(width: 19),
+            ]),
+            Padding(
+              padding: const EdgeInsets.only(left: 8, top: 2),
+              child: Text(
+                docs.map((d) => d.venueName).join(' · '),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return [
+      docBlock('1099-NEC Received', nec),
+      docBlock('W2 Received', w2),
+    ];
+  }
 
   String _buildSummaryCsv({
     required int gigCount,
@@ -70,7 +160,12 @@ class _TaxYearSummaryCardState extends State<TaxYearSummaryCard> {
     sb.writeln('Band Gigs,$bandCount');
     sb.writeln('Est. Mileage,— (coming soon)');
     sb.writeln('W2 / 1099 / Cash,— / — / — (coming soon)');
-    sb.writeln('1099s Received,— (coming soon)');
+    final nec = _taxDocs.where((d) => d.type == '1099-NEC').toList();
+    final w2  = _taxDocs.where((d) => d.type == 'W2').toList();
+    sb.writeln('1099-NEC Received,${nec.length}');
+    if (nec.isNotEmpty) sb.writeln('  Venues,${nec.map((d) => d.venueName).join(' | ')}');
+    sb.writeln('W2 Received,${w2.length}');
+    if (w2.isNotEmpty) sb.writeln('  Venues,${w2.map((d) => d.venueName).join(' | ')}');
     return sb.toString();
   }
 
@@ -113,7 +208,7 @@ class _TaxYearSummaryCardState extends State<TaxYearSummaryCard> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: cs.primary.withOpacity(0.35),
+          color: cs.primary.withValues(alpha: 0.35),
           width: 1.5,
         ),
       ),
@@ -129,7 +224,7 @@ class _TaxYearSummaryCardState extends State<TaxYearSummaryCard> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: cs.primary.withOpacity(0.12),
+                    color: cs.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(Icons.receipt_long, color: cs.primary, size: 20),
@@ -146,7 +241,10 @@ class _TaxYearSummaryCardState extends State<TaxYearSummaryCard> {
                 // ── Year picker ───────────────────────────────────────────────
                 _YearPicker(
                   year: _selectedYear,
-                  onChanged: (y) => setState(() => _selectedYear = y),
+                  onChanged: (y) {
+                    setState(() => _selectedYear = y);
+                    _loadTaxDocs();
+                  },
                 ),
               ],
             ),
@@ -169,7 +267,7 @@ class _TaxYearSummaryCardState extends State<TaxYearSummaryCard> {
                 _StatRow('Gross Income', currency.format(grossIncome)),
                 _StatRow('Tips', currency.format(tips)),
                 _StatRow('Expenses', '${currency.format(expenses)}',
-                      ),
+                ),
                 _StatRow('Net Income', currency.format(netIncome),
                     bold: true, valueColor: cs.primary),
                 _StatRow('Avg True Rate',
@@ -182,7 +280,20 @@ class _TaxYearSummaryCardState extends State<TaxYearSummaryCard> {
               Divider(color: cs.outlineVariant),
               const SizedBox(height: 8),
 
-              // ── Sprint 1 stubs ────────────────────────────────────────────────
+              // ── Tax documents received ────────────────────────────────────
+              Text(
+                'TAX DOCUMENTS RECEIVED',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  letterSpacing: 1.0,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ..._buildTaxDocRows(theme, cs),
+
+              // ── Sprint 1 stubs ────────────────────────────────────────────
+              const SizedBox(height: 12),
               Text(
                 'COMING IN NEXT UPDATE',
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -199,9 +310,6 @@ class _TaxYearSummaryCardState extends State<TaxYearSummaryCard> {
                 _StatRow('W2 / 1099 / Cash', '— / — / —',
                     stub: true,
                     hint: 'Log payment type per gig'),
-                _StatRow('1099s Received', '—',
-                    stub: true,
-                    hint: 'Flag per gig at tax time'),
               ]),
 
               const SizedBox(height: 14),
@@ -308,7 +416,7 @@ class _ArrowBtn extends StatelessWidget {
         onPressed: onPressed,
         color: onPressed != null
             ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.onSurface.withOpacity(0.25),
+            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.25),
       ),
     );
   }
@@ -348,12 +456,12 @@ class _StatGrid extends StatelessWidget {
     return Column(
       children: rows.map((row) {
         final labelStyle = theme.textTheme.bodySmall?.copyWith(
-          color: row.stub ? cs.onSurfaceVariant.withOpacity(0.6) : cs.onSurfaceVariant,
+          color: row.stub ? cs.onSurfaceVariant.withValues(alpha: 0.6) : cs.onSurfaceVariant,
         );
         final valueStyle = theme.textTheme.bodySmall?.copyWith(
           fontWeight: row.bold ? FontWeight.bold : FontWeight.w500,
           color: row.stub
-              ? cs.onSurfaceVariant.withOpacity(0.45)
+              ? cs.onSurfaceVariant.withValues(alpha: 0.45)
               : (row.valueColor ?? cs.onSurface),
         );
 
@@ -380,7 +488,7 @@ class _StatGrid extends StatelessWidget {
                   child: Icon(
                     Icons.info_outline,
                     size: 13,
-                    color: cs.onSurfaceVariant.withOpacity(0.4),
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.4),
                   ),
                 ),
               ] else

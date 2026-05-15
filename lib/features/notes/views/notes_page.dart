@@ -60,6 +60,10 @@ class _NotesPageState extends State<NotesPage> {
   double? _currentTipsAmount;
   double? _initialTipsAmount;
 
+  // --- TAX DOCUMENT STATE (venue notes only) ---
+  int _taxDocYear = DateTime.now().year;
+  String? _taxDocType; // '1099-NEC' | 'W2' | null = none
+
   bool get _isEditingGig => widget.editingGigId != null;
 
   /// Returns true if this gig has ended and can be reviewed
@@ -198,6 +202,9 @@ class _NotesPageState extends State<NotesPage> {
           .toList();
 
       _historicalGigsForVenue.sort((a, b) => b.dateTime.compareTo(a.dateTime));
+
+      // Load tax doc status for current year
+      await _loadTaxDoc();
     } else {
       throw Exception("Venue not found.");
     }
@@ -362,6 +369,42 @@ class _NotesPageState extends State<NotesPage> {
       globalRefreshNotifier.notify();
     } else {
       throw Exception("Could not find venue to update.");
+    }
+  }
+
+  // ── Tax document helpers (venue mode only) ────────────────────────────────
+
+  String _taxDocKey(int year) =>
+      'tax_doc_${widget.editingVenueId}_$year';
+
+  Future<void> _loadTaxDoc() async {
+    if (widget.editingVenueId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_taxDocKey(_taxDocYear));
+    if (mounted) {
+      setState(() {
+        if (raw != null) {
+          final data = jsonDecode(raw) as Map<String, dynamic>;
+          _taxDocType = data['type'] as String?;
+        } else {
+          _taxDocType = null;
+        }
+      });
+    }
+  }
+
+  Future<void> _saveTaxDoc(String? type) async {
+    if (widget.editingVenueId == null) return;
+    setState(() => _taxDocType = type);
+    final prefs = await SharedPreferences.getInstance();
+    final key = _taxDocKey(_taxDocYear);
+    if (type == null) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setString(
+        key,
+        jsonEncode({'type': type, 'venueName': _displayName}),
+      );
     }
   }
 
@@ -548,6 +591,89 @@ class _NotesPageState extends State<NotesPage> {
                 ],
               ),
 
+            // Tax Documents section (venue notes only)
+            if (!_isEditingGig) ...[
+              const SizedBox(height: 24),
+              const Text('Tax Documents',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Divider(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Tax Year'),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 28, height: 28,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          icon: const Icon(Icons.chevron_left),
+                          onPressed: () {
+                            setState(() => _taxDocYear--);
+                            _loadTaxDoc();
+                          },
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          '$_taxDocYear',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: _taxDocYear == DateTime.now().year
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 28, height: 28,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          icon: const Icon(Icons.chevron_right),
+                          onPressed: _taxDocYear < DateTime.now().year
+                              ? () {
+                            setState(() => _taxDocYear++);
+                            _loadTaxDoc();
+                          }
+                              : null,
+                          color: _taxDocYear < DateTime.now().year
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.25),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Did this venue send you a tax document for $_taxDocYear?',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final entry in [
+                    ('None', null),
+                    ('1099-NEC', '1099-NEC'),
+                    ('W2', 'W2'),
+                  ])
+                    ChoiceChip(
+                      label: Text(entry.$1),
+                      selected: _taxDocType == entry.$2,
+                      onSelected: (_) => _saveTaxDoc(entry.$2),
+                    ),
+                ],
+              ),
+            ],
+
             // Historical Gig Notes Section (for venue notes only)
             if (!_isEditingGig && _historicalGigsForVenue.isNotEmpty) ...[
               const SizedBox(height: 32),
@@ -597,7 +723,7 @@ class _NotesPageState extends State<NotesPage> {
       ),
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(12.0),
-        color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.95),
+        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
         child: SafeArea(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,

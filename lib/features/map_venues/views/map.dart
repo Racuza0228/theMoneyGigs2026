@@ -25,7 +25,9 @@ import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/map_venues/models/place_models.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.dart';
-import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
+//import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
+import 'package:the_money_gigs/features/map_venues/widgets/venue_details_page.dart';
+import 'package:the_money_gigs/features/profile/views/profile.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
@@ -371,31 +373,57 @@ class _MapPageState extends State<MapPage> {
     if (!mounted) return;
     setState(() { _isLoading = true; });
 
+    // ── Step 1: Local data — each call has its own error handling internally.
+    // If any of these fail they return empty lists, so we always have a safe
+    // value to work with regardless of what the device state looks like.
     _setCustomMarkerStyles();
-    final loadedGigIcon = await _loadCustomMarker();
-    final localVenues = await _loadSavedLocations();
-    final localGigs = await _loadAllGigs();
-    final localJamVenues = await _loadJamSessionAsset();
+
+    final loadedGigIcon = await _loadCustomMarker().catchError((e) {
+      log("⚠️ Could not load custom marker icon, using default: $e");
+      return BitmapDescriptor.defaultMarker;
+    });
+
+    final localVenues   = await _loadSavedLocations().catchError((e) {
+      log("⚠️ Could not load saved locations: $e");
+      return <StoredLocation>[];
+    });
+
+    final localGigs     = await _loadAllGigs().catchError((e) {
+      log("⚠️ Could not load gigs: $e");
+      return <Gig>[];
+    });
+
+    final localJamVenues = await _loadJamSessionAsset().catchError((e) {
+      log("⚠️ Could not load jam session asset: $e");
+      return <StoredLocation>[];
+    });
 
     _userSavedPlaceIds = localVenues.map((v) => v.placeId).toSet();
 
-    Map<String, StoredLocation> finalVenuesMap = { for (var venue in localVenues) venue.placeId: venue };
+    // ── Step 2: Build the local venue map.
+    Map<String, StoredLocation> finalVenuesMap = {
+      for (var venue in localVenues) venue.placeId: venue,
+    };
     for (var jamVenue in localJamVenues) {
       if (!finalVenuesMap.containsKey(jamVenue.placeId)) {
         finalVenuesMap[jamVenue.placeId] = jamVenue;
       }
     }
 
+    // ── Step 3: Attempt Firebase merge if the user is connected.
+    // The entire network block is wrapped — a Firebase failure falls back
+    // gracefully to local data rather than crashing the app.
     final prefs = await SharedPreferences.getInstance();
     final bool isConnected = prefs.getBool(_isConnectedKey) ?? false;
 
     if (isConnected) {
       log("🔌 Network connection detected. Fetching public data to merge...");
-      await initializeNetworkServices();
+      try {
+        await initializeNetworkServices();
 
-      const String userId = 'default_user_id'; // Placeholder for your auth service
+        if (!mounted) return;
 
-      if (mounted){
+        const String userId = 'default_user_id';
         _venueRepository = VenueRepository();
         final publicVenues = await _venueRepository!.getAllPublicVenues(userId);
         log("✅ Fetched ${publicVenues.length} public venues from Firebase.");
@@ -419,6 +447,10 @@ class _MapPageState extends State<MapPage> {
             finalVenuesMap[publicVenue.placeId] = publicVenue;
           }
         }
+      } catch (e) {
+        // Firebase failed — not fatal. User still sees their local venues.
+        // Silently continue; the map will render with whatever local data exists.
+        log("❌ Firebase venue load failed — continuing with local data only: $e");
       }
     } else {
       log("🚫 No network. Using local SharedPreferences data only.");
@@ -427,17 +459,18 @@ class _MapPageState extends State<MapPage> {
       }
     }
 
-    if (mounted) {
-      setState(() {
-        _gigMarkerIcon = loadedGigIcon;
-        _allKnownMapVenues = finalVenuesMap.values.toList();
-        _allLoadedGigs = localGigs;
-      });
-    }
+    // ── Step 4: Commit state and update markers.
+    // Guard mounted check before every setState — the user may have
+    // navigated away during the async Firebase load.
+    if (!mounted) return;
+    setState(() {
+      _gigMarkerIcon      = loadedGigIcon;
+      _allKnownMapVenues  = finalVenuesMap.values.toList();
+      _allLoadedGigs      = localGigs;
+      _isLoading          = false;
+    });
 
     _updateMarkers();
-
-    if (mounted) { setState(() { _isLoading = false; }); }
   }
 
   Future<void> _refreshVenuesFromFirebase() async {
@@ -891,32 +924,33 @@ class _MapPageState extends State<MapPage> {
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     final demoStep = demoProvider.isDemoModeActive ? demoProvider.currentStep : null;
 
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return VenueDetailsDialog(
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VenueDetailPage(
           venue: location,
           nextGig: nextUpcomingGig,
           currentDemoStep: demoStep,
           onArchive: () {
-            Navigator.of(dialogContext).pop();
+            Navigator.of(context).pop();
             _archiveVenue(location);
           },
           onBook: (venueToSaveAndBook) async {
-            final nav = Navigator.of(dialogContext);
             await _updateAndSaveLocationReview(venueToSaveAndBook);
             final newGig = await _launchBookingDialogForVenue(venueToSaveAndBook);
-            if (mounted) nav.pop();
             if (newGig != null) {
               await Future.delayed(const Duration(milliseconds: 100));
-              _showLocationDetailsDialog(venueToSaveAndBook);
+              if (mounted) {
+                Navigator.of(context).pop(); // pop VenueDetailPage
+                _showLocationDetailsDialog(venueToSaveAndBook); // reopen
+              }
             }
           },
           onSave: (updatedVenue) {
             _updateAndSaveLocationReview(updatedVenue);
           },
           onContactSaved: (contact, bookingInfo) async {
-            final index = _allKnownMapVenues.indexWhere((v) => v.placeId == location.placeId);
+            final index = _allKnownMapVenues.indexWhere(
+                    (v) => v.placeId == location.placeId);
             if (index != -1) {
               final updatedVenue = _allKnownMapVenues[index].copyWith(
                 contact: contact,
@@ -926,17 +960,28 @@ class _MapPageState extends State<MapPage> {
             }
           },
           onEditJamSettings: () async {
-            Navigator.of(dialogContext).pop();
-            final result = await showDialog<JamOpenMicDialogResult>(context: context, builder: (_) => JamOpenMicDialog(venue: location));
-            if (result != null && result.settingsChanged && result.updatedVenue != null) {
+            Navigator.of(context).pop(); // pop VenueDetailPage
+            final result = await showDialog<JamOpenMicDialogResult>(
+              context: context,
+              builder: (_) => JamOpenMicDialog(venue: location),
+            );
+            if (result != null &&
+                result.settingsChanged &&
+                result.updatedVenue != null) {
               await _updateVenueJamNightSettings(result.updatedVenue!);
             }
           },
           onDataChanged: () async {
             await _refreshVenuesFromFirebase();
           },
-        );
-      },
+          onNavigateToProfile: () {
+            Navigator.of(context).pop(); // close VenueDetailPage first
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ProfilePage()),
+            );
+          },
+        ),
+      ),
     );
   }
 

@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
-import 'package:the_money_gigs/features/notes/views/notes_page.dart';
 
 class VenuesListTab extends StatelessWidget {
   final bool isLoading;
@@ -61,9 +60,7 @@ class VenuesListTab extends StatelessWidget {
       itemBuilder: (context, index) {
         final venue = sortedDisplayableVenues[index];
         final int futureGigsCount = _getGigsCountForVenue(venue);
-        final bool hasVenueNotes = (venue.venueNotes?.isNotEmpty ?? false) || (venue.venueNotesUrl?.isNotEmpty ?? false);
         final venueContact = venue.contact;
-
         String venueDisplayName = venue.isPrivate ? '[PRIVATE] ${venue.name}' : venue.name;
 
         return Card(
@@ -111,18 +108,6 @@ class VenuesListTab extends StatelessWidget {
                     ),
                 ]
               ],
-            ),
-            trailing: IconButton(
-              icon: Icon(
-                hasVenueNotes ? Icons.speaker_notes : Icons.speaker_notes_off_outlined,
-                color: hasVenueNotes ? Theme.of(context).colorScheme.primary : Colors.grey,
-              ),
-              tooltip: 'View/Edit Venue Notes',
-              onPressed: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (context) => NotesPage(editingVenueId: venue.placeId),
-                ));
-              },
             ),
             onTap: () => onVenueTapped(venue),
           ),

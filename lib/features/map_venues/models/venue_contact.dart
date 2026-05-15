@@ -145,7 +145,12 @@ class BookingInfo {
   /// Legacy "leadsOutWeeks" values are converted on read (see fromJson).
   final int? leadsOutMonths;
 
-  /// "guarantee" | "door" | "both" | null
+  /// Multi-select deal types: "guarantee" and/or "door".
+  /// Replaces the old single-value [dealType] string.
+  final List<String> dealTypes;
+
+  /// Legacy single-value deal type. Kept for migration only — use [dealTypes].
+  @Deprecated('Use dealTypes instead')
   final String? dealType;
 
   /// General booking notes (separate from contact-level notes).
@@ -157,6 +162,8 @@ class BookingInfo {
 
   const BookingInfo({
     this.leadsOutMonths,
+    this.dealTypes = const [],
+    // ignore: deprecated_member_use_from_same_package
     this.dealType,
     this.notes,
     this.bookingWindowStart,
@@ -189,7 +196,7 @@ class BookingInfo {
 
   Map<String, dynamic> toJson() => {
     'leadsOutMonths': leadsOutMonths,
-    'dealType': dealType,
+    'dealTypes': dealTypes,
     'notes': notes,
     'bookingWindowStart': bookingWindowStart?.toIso8601String(),
   };
@@ -216,9 +223,23 @@ class BookingInfo {
       } catch (_) {}
     }
 
+    // ── Migration: old dealType string → dealTypes list ───────────────────
+    // "both" → ["guarantee", "door"]; any other value → [value]
+    List<String> dealTypes = [];
+    if (json['dealTypes'] != null) {
+      dealTypes = List<String>.from(json['dealTypes'] as List);
+    } else if (json['dealType'] != null) {
+      final old = json['dealType'] as String;
+      if (old == 'both') {
+        dealTypes = ['guarantee', 'door'];
+      } else if (old.isNotEmpty) {
+        dealTypes = [old];
+      }
+    }
+
     return BookingInfo(
       leadsOutMonths: (months != null && months > 0) ? months : null,
-      dealType: json['dealType'] as String?,
+      dealTypes: dealTypes,
       notes: json['notes'] as String?,
       bookingWindowStart: windowStart,
     );
@@ -226,13 +247,13 @@ class BookingInfo {
 
   BookingInfo copyWith({
     int? leadsOutMonths,
-    String? dealType,
+    List<String>? dealTypes,
     String? notes,
     DateTime? bookingWindowStart,
   }) {
     return BookingInfo(
       leadsOutMonths: leadsOutMonths ?? this.leadsOutMonths,
-      dealType: dealType ?? this.dealType,
+      dealTypes: dealTypes ?? this.dealTypes,
       notes: notes ?? this.notes,
       bookingWindowStart: bookingWindowStart ?? this.bookingWindowStart,
     );

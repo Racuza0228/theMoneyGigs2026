@@ -65,7 +65,9 @@ Future<void> main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   print('✅ Firebase Initialized');
 
-  DemoTrackingService().syncPendingData();
+  DemoTrackingService().syncPendingData().catchError((e) {
+    print('⚠️ DemoTrackingService sync failed silently: $e');
+  });
 
   final prefs = await SharedPreferences.getInstance();
   final bool hasEverConnected = prefs.getBool('is_connected_to_network') ?? false;
@@ -176,7 +178,7 @@ class _MainPageState extends State<MainPage> {
   Future<void> _initializeAppServices() async {
     final results = await Future.wait([
       _initializeSettings(),
-      _checkForAppUpdate(),
+      Platform.isAndroid ? _checkForAppUpdate() : Future.value(null),
       GigRetrospectiveService.checkForRetrospectiveOnStartup(),
     ]);
 

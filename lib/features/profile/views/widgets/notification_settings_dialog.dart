@@ -3,8 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/core/services/notification_service.dart';
-import 'package:timezone/data/latest_all.dart' as tz;  // ← Add this import
-
 class NotificationSettingsDialog extends StatefulWidget {
   const NotificationSettingsDialog({super.key});
 
@@ -67,48 +65,11 @@ class _NotificationSettingsDialogState
       // ✅ Check if notifications are now enabled
       final nowEnabled = _notifyOnDayOfGig || _notifyAfterGig || daysBefore != null;
 
-      // ✅ If enabling notifications for the first time, initialize service
-      if (wasDisabled && nowEnabled && mounted) {
-        print('📬 First-time notification enable - initializing service...');
-
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            return const Dialog(
-              child: Padding(
-                padding: EdgeInsets.all(20.0),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(width: 20),
-                    Text("Setting up notifications..."),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-
-        try {
-          // Initialize timezone data (required for scheduling)
-          tz.initializeTimeZones();
-
-          // Initialize and request permissions
-          final notificationService = NotificationService();
-          await notificationService.init();
-          await notificationService.requestPermissions();
-
-          print('✅ Notification service initialized on-demand');
-        } catch (e) {
-          print('❌ Error initializing notifications: $e');
-        } finally {
-          if (mounted) Navigator.of(context, rootNavigator: true).pop();
-        }
-      }
-
-      // --- UPDATE ALL NOTIFICATIONS ---
+      // ✅ Always init before scheduling — init() is a no-op if already done.
+      // Previously, init() only ran on first-time enable, meaning
+      // updateAllGigNotifications() could run without timezone being set.
+      // The redundant tz.initializeTimeZones() call is also removed here;
+      // NotificationService.init() handles timezone setup internally.
       if (nowEnabled && mounted) {
         showDialog(
           context: context,
@@ -122,7 +83,7 @@ class _NotificationSettingsDialogState
                   children: [
                     CircularProgressIndicator(),
                     SizedBox(width: 20),
-                    Text("Updating all notifications..."),
+                    Text("Updating notifications..."),
                   ],
                 ),
               ),
@@ -131,9 +92,23 @@ class _NotificationSettingsDialogState
         );
 
         try {
-          await NotificationService().updateAllGigNotifications();
+          final notificationService = NotificationService();
+          // init() sets up timezone + plugin. Safe to call every time —
+          // no-ops if already initialized.
+          await notificationService.init();
+
+          // First-time enable: also request OS permissions.
+          if (wasDisabled) {
+            print('📬 First-time enable — requesting permissions...');
+            await notificationService.requestPermissions();
+          }
+
+          await notificationService.updateAllGigNotifications();
+          print('✅ Notification update complete.');
+        } catch (e) {
+          print('❌ Error updating notifications: $e');
         } finally {
-          if(mounted) Navigator.of(context, rootNavigator: true).pop();
+          if (mounted) Navigator.of(context, rootNavigator: true).pop();
         }
       }
 

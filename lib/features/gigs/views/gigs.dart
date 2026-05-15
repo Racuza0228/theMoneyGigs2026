@@ -27,7 +27,8 @@ import 'package:the_money_gigs/features/notes/views/notes_page.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 import 'package:the_money_gigs/core/services/gig_embed_service.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.dart';
-import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
+import 'package:the_money_gigs/features/map_venues/widgets/venue_details_page.dart';
+import 'package:the_money_gigs/features/profile/views/profile.dart';
 // <<< --- REFACTORING: ADD IMPORT FOR THE NEW VENUES TAB WIDGET --- >>>
 import 'package:the_money_gigs/features/venues/views/venues_list_tab.dart';
 import 'package:the_money_gigs/features/gigs/widgets/gig_export_dialog.dart';
@@ -1043,78 +1044,79 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   Future<void> _showVenueDetailsDialog(StoredLocation venue) async {
     if (!mounted) return;
 
-    List<Gig> upcomingGigsAtVenue = _displayedGigs.where((gig) {
-      bool venueMatch = gig.placeId == venue.placeId;
-      if (!venueMatch) return false;
+    final upcomingGigs = _displayedGigs
+        .where((g) =>
+    g.placeId == venue.placeId &&
+        g.dateTime.isAfter(DateTime.now()) &&
+        !g.isJamOpenMic)
+        .toList()
+      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    final nextUpcomingGig = upcomingGigs.isNotEmpty ? upcomingGigs.first : null;
 
-      // Check if the gig is in the future
-      bool dateMatch = gig.dateTime.isAfter(DateTime.now());
-
-      // Ensure it's not a jam/open mic session
-      return dateMatch && !gig.isJamOpenMic;
-    }).toList();
-
-    upcomingGigsAtVenue.sort((a, b) => a.dateTime.compareTo(b.dateTime));
-    Gig? nextUpcomingGig = upcomingGigsAtVenue.isNotEmpty ? upcomingGigsAtVenue.first : null;
-
-    await showDialog(
-        context: context,
-        builder: (BuildContext dialogContext) {
-          return VenueDetailsDialog(
-            venue: venue,
-            nextGig: nextUpcomingGig,
-            onArchive: () {
-              Navigator.of(dialogContext).pop();
-              _archiveVenue(venue);
-            },
-            onBook: (venueToSaveAndBook) async {
-              await _updateAndSaveLocationReview(venueToSaveAndBook);
-
-              final newGig = await _launchBookingDialogForVenue(venueToSaveAndBook);
-
-              if(mounted) Navigator.of(dialogContext).pop();
-
-              if (newGig != null) {
-                await Future.delayed(const Duration(milliseconds: 100));
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VenueDetailPage(
+          venue: venue,
+          nextGig: nextUpcomingGig,
+          onArchive: () {
+            Navigator.of(context).pop();
+            _archiveVenue(venue);
+          },
+          onBook: (venueToSaveAndBook) async {
+            await _updateAndSaveLocationReview(venueToSaveAndBook);
+            final newGig = await _launchBookingDialogForVenue(venueToSaveAndBook);
+            if (newGig != null) {
+              await Future.delayed(const Duration(milliseconds: 100));
+              if (mounted) {
+                Navigator.of(context).pop();
                 _showVenueDetailsDialog(venueToSaveAndBook);
               }
-            },
-            onSave: (updatedVenue) {
-              _updateAndSaveLocationReview(updatedVenue);
-            },
-            onContactSaved: (contact, bookingInfo) async {
-              final int index = _allKnownVenues.indexWhere((v) => v.placeId == venue.placeId);
-              if (index != -1) {
-                _allKnownVenues[index] = _allKnownVenues[index].copyWith(
-                  contact: contact,
-                  bookingInfo: bookingInfo,
-                );
-                final prefs = await SharedPreferences.getInstance();
-                final List<String> updatedVenuesJson = _allKnownVenues.map((v) => jsonEncode(v.toJson())).toList();
-                await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
-                globalRefreshNotifier.notify();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Contact updated for ${venue.name}.'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              }
-            },
-            onEditJamSettings: () async {
-              Navigator.of(dialogContext).pop();
-              final result = await showDialog<JamOpenMicDialogResult>(
-                context: context,
-                builder: (_) => JamOpenMicDialog(venue: venue),
+            }
+          },
+          onSave: (updatedVenue) {
+            _updateAndSaveLocationReview(updatedVenue);
+          },
+          onContactSaved: (contact, bookingInfo) async {
+            final index = _allKnownVenues.indexWhere((v) => v.placeId == venue.placeId);
+            if (index != -1) {
+              _allKnownVenues[index] = _allKnownVenues[index].copyWith(
+                contact: contact,
+                bookingInfo: bookingInfo,
               );
-              if (result != null && result.settingsChanged && result.updatedVenue != null) {
-                await _updateVenueJamNightSettings(result.updatedVenue!);
+              final prefs = await SharedPreferences.getInstance();
+              final updatedJson = _allKnownVenues.map((v) => jsonEncode(v.toJson())).toList();
+              await prefs.setStringList(_keySavedLocations, updatedJson);
+              globalRefreshNotifier.notify();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Contact updated for ${venue.name}.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
               }
-            },
-          );
-        });
+            }
+          },
+          onEditJamSettings: () async {
+            Navigator.of(context).pop();
+            final result = await showDialog<JamOpenMicDialogResult>(
+              context: context,
+              builder: (_) => JamOpenMicDialog(venue: venue),
+            );
+            if (result != null && result.settingsChanged && result.updatedVenue != null) {
+              await _updateVenueJamNightSettings(result.updatedVenue!);
+            }
+          },
+          onDataChanged: () => _loadVenues(),
+          onNavigateToProfile: () {
+            Navigator.of(context).pop();
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ProfilePage()),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _updateAndSaveLocationReview(StoredLocation updatedLocation) async {

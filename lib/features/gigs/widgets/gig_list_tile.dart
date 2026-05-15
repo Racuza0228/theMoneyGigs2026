@@ -21,14 +21,14 @@ class GigListTile extends StatelessWidget {
   final Gig gig;
   final GigTileStyle style;
   final VoidCallback onTap;
-  final VoidCallback onNotesTap;
+  final VoidCallback? onNotesTap;
 
   const GigListTile({
     super.key,
     required this.gig,
     required this.style,
     required this.onTap,
-    required this.onNotesTap,
+    this.onNotesTap,
   });
 
   bool get _isPast {
@@ -72,7 +72,7 @@ class GigListTile extends StatelessWidget {
 
   Color _getCardColor(BuildContext context) {
     if (_isJam) {
-      return Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.7);
+      return Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.7);
     }
     return Theme.of(context).cardColor;
   }
@@ -202,7 +202,7 @@ class GigListTile extends StatelessWidget {
                 ? Theme.of(context)
                 .colorScheme
                 .onSecondaryContainer
-                .withOpacity(0.8)
+                .withValues(alpha: 0.8)
                 : Theme.of(context).textTheme.bodyMedium?.color),
           ),
         ),
@@ -216,7 +216,7 @@ class GigListTile extends StatelessWidget {
                   .textTheme
                   .bodyMedium
                   ?.color
-                  ?.withOpacity(0.9),
+                  ?.withValues(alpha: 0.9),
             ),
           )
         else
@@ -230,6 +230,7 @@ class GigListTile extends StatelessWidget {
 
   Widget? _buildTrailing(BuildContext context) {
     if (_isJam) return null;
+    if (onNotesTap == null) return null;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -254,7 +255,7 @@ class GigListTile extends StatelessWidget {
           ),
         IconButton(
           icon: Icon(
-            _hasNotes ? Icons.speaker_notes : Icons.speaker_notes_off_outlined,
+            _hasNotes ? Icons.note_alt : Icons.note_alt_outlined,
             color: _hasNotes
                 ? Theme.of(context).colorScheme.primary
                 : Colors.grey,

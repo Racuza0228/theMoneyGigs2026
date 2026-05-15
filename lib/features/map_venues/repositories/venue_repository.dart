@@ -473,6 +473,121 @@ class VenueRepository {
     }
   }
 
+  // ── Category-based tag methods (paymentMethods, taxArrangements, etc.) ───
+  // These mirror voteForTag / removeVoteForTag / getVenueTags but accept a
+  // free-form tagCategory string so new tag types can be added without
+  // touching the repository again.
+
+  Future<bool> voteForTagByCategory({
+    required String placeId,
+    required String userId,
+    required String tagName,
+    required String tagCategory,
+  }) async {
+    try {
+      final tagRef = _firestoreInstance
+          .collection('venues')
+          .doc(placeId)
+          .collection('tags')
+          .doc(tagCategory)
+          .collection('items')
+          .doc(tagName);
+
+      await _firestoreInstance.runTransaction((tx) async {
+        final tagDoc = await tx.get(tagRef);
+        if (tagDoc.exists) {
+          final voters = List<String>.from(tagDoc.data()?['voters'] ?? []);
+          if (voters.contains(userId)) return;
+          voters.add(userId);
+          tx.update(tagRef, {
+            'count': FieldValue.increment(1),
+            'voters': voters,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          tx.set(tagRef, {
+            'count': 1,
+            'voters': [userId],
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      });
+      return true;
+    } catch (e) {
+      print('❌ Error voting for tag ($tagCategory): $e');
+      return false;
+    }
+  }
+
+  Future<bool> removeVoteForTagByCategory({
+    required String placeId,
+    required String userId,
+    required String tagName,
+    required String tagCategory,
+  }) async {
+    try {
+      final tagRef = _firestoreInstance
+          .collection('venues')
+          .doc(placeId)
+          .collection('tags')
+          .doc(tagCategory)
+          .collection('items')
+          .doc(tagName);
+
+      await _firestoreInstance.runTransaction((tx) async {
+        final tagDoc = await tx.get(tagRef);
+        if (!tagDoc.exists) return;
+        final voters = List<String>.from(tagDoc.data()?['voters'] ?? []);
+        if (!voters.contains(userId)) return;
+        voters.remove(userId);
+        if (voters.isEmpty) {
+          tx.delete(tagRef);
+        } else {
+          tx.update(tagRef, {
+            'count': FieldValue.increment(-1),
+            'voters': voters,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      });
+      return true;
+    } catch (e) {
+      print('❌ Error removing tag vote ($tagCategory): $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, Map<String, dynamic>>> getVenueTagsByCategory({
+    required String placeId,
+    required String userId,
+    required String tagCategory,
+  }) async {
+    try {
+      final snapshot = await _firestoreInstance
+          .collection('venues')
+          .doc(placeId)
+          .collection('tags')
+          .doc(tagCategory)
+          .collection('items')
+          .get();
+
+      final Map<String, Map<String, dynamic>> tags = {};
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final voters = List<String>.from(data['voters'] ?? []);
+        tags[doc.id] = {
+          'count': data['count'] as int,
+          'userVoted': voters.contains(userId),
+        };
+      }
+      return tags;
+    } catch (e) {
+      print('❌ Error fetching tags ($tagCategory): $e');
+      return {};
+    }
+  }
+
   // ── Comments ──────────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> getRecentComments({
