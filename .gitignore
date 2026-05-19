@@ -47,3 +47,5 @@ app.*.map.json
 *.zip
 *.pdf
 output.txt
+macos/Pods/
+android/app/build/
