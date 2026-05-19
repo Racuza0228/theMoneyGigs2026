@@ -642,10 +642,24 @@ class _MapPageState extends State<MapPage> {
 
     if (mounted && placeDetails != null) {
       final GoogleMapController controller = await _controller.future;
+
+      const nonVenueTypes = {
+        'locality', 'administrative_area_level_1', 'administrative_area_level_2',
+        'administrative_area_level_3', 'country', 'political', 'postal_code',
+        'neighborhood', 'sublocality', 'sublocality_level_1',
+        'route', 'intersection', 'colloquial_area', 'natural_feature',
+      };
+
+      final isVenue = placeDetails.types.isEmpty ||
+          !placeDetails.types.every((t) => nonVenueTypes.contains(t));
+
       controller.animateCamera(CameraUpdate.newCameraPosition(
-        CameraPosition(target: placeDetails.coordinates, zoom: 16.0),
+        CameraPosition(target: placeDetails.coordinates, zoom: isVenue ? 16.0 : 12.0),
       ));
-      _askToAddOrViewVenue(placeDetails);
+
+      if (isVenue) {
+        _askToAddOrViewVenue(placeDetails);
+      }
     }
     if (mounted) setState(() => _isLoading = false);
   }
