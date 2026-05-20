@@ -24,7 +24,7 @@ flutter precache --ios
 # Get dependencies
 flutter pub get
 
-export FLUTTER_DISABLE_IOS_SPM=true
+flutter config --no-enable-swift-package-manager
 # Run Flutter build to generate necessary files
 flutter build ios --release --no-codesign
 
