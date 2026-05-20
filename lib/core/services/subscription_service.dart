@@ -1,6 +1,7 @@
 // lib/core/services/subscription_service.dart
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:flutter/services.dart'; // ← ADD THIS for PlatformException
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class SubscriptionService {
   static const String _entitlementId = 'network_access';
@@ -14,10 +15,10 @@ class SubscriptionService {
       // Check if user has the network_access entitlement
       final hasEntitlement = customerInfo.entitlements.all[_entitlementId]?.isActive ?? false;
 
-      print('📊 Subscription status: ${hasEntitlement ? "ACTIVE" : "INACTIVE"}');
+      log('📊 Subscription status: ${hasEntitlement ? "ACTIVE" : "INACTIVE"}');
       return hasEntitlement;
     } catch (e) {
-      print('❌ Error checking subscription: $e');
+      log('❌ Error checking subscription: $e');
       return false;
     }
   }
@@ -28,7 +29,7 @@ class SubscriptionService {
       final offerings = await Purchases.getOfferings();
 
       if (offerings.current == null) {
-        print('⚠️ No offerings configured in RevenueCat');
+        log('⚠️ No offerings configured in RevenueCat');
         return [];
       }
 
@@ -36,10 +37,10 @@ class SubscriptionService {
           .map((package) => package.storeProduct)
           .toList();
 
-      print('📦 Found ${products.length} products');
+      log('📦 Found ${products.length} products');
       return products;
     } catch (e) {
-      print('❌ Error fetching products: $e');
+      log('❌ Error fetching products: $e');
       return [];
     }
   }
@@ -48,26 +49,26 @@ class SubscriptionService {
   /// Purchase monthly subscription
   Future<bool> purchaseMonthlySubscription() async {
     try {
-      print('💳 Starting purchase...');
+      log('💳 Starting purchase...');
 
       // Get offerings
       final offerings = await Purchases.getOfferings();
       if (offerings.current == null) {
-        print('❌ No offerings available');
+        log('❌ No offerings available');
         return false;
       }
 
       // Find the monthly package
       final package = offerings.current!.monthly;
       if (package == null) {
-        print('❌ Monthly package not found in offerings');
+        log('❌ Monthly package not found in offerings');
         // Check what packages ARE available
         final available = offerings.current!.availablePackages;
-        print('📦 Available packages: ${available.map((p) => p.identifier).toList()}');
+        log('📦 Available packages: ${available.map((p) => p.identifier).toList()}');
         return false;
       }
 
-      print('💳 Purchasing package: ${package.identifier}');
+      log('💳 Purchasing package: ${package.identifier}');
 
       // Make purchase - returns CustomerInfo now, not PurchaseResult
       final purchaseResult = await Purchases.purchasePackage(package);
@@ -79,10 +80,10 @@ class SubscriptionService {
       final hasEntitlement = customerInfo.entitlements.all[_entitlementId]?.isActive ?? false;
 
       if (hasEntitlement) {
-        print('✅ Purchase successful!');
+        log('✅ Purchase successful!');
         return true;
       } else {
-        print('⚠️ Purchase completed but entitlement not active');
+        log('⚠️ Purchase completed but entitlement not active');
         return false;
       }
 
@@ -90,17 +91,17 @@ class SubscriptionService {
       final errorCode = PurchasesErrorHelper.getErrorCode(e);
 
       if (errorCode == PurchasesErrorCode.purchaseCancelledError) {
-        print('ℹ️ User cancelled purchase');
+        log('ℹ️ User cancelled purchase');
       } else if (errorCode == PurchasesErrorCode.purchaseNotAllowedError) {
-        print('❌ User not allowed to purchase');
+        log('❌ User not allowed to purchase');
       } else if (errorCode == PurchasesErrorCode.productNotAvailableForPurchaseError) {
-        print('❌ Product not available for purchase');
+        log('❌ Product not available for purchase');
       } else {
-        print('❌ Purchase error: ${e.message}');
+        log('❌ Purchase error: ${e.message}');
       }
       return false;
     } catch (e) {
-      print('❌ Unexpected purchase error: $e');
+      log('❌ Unexpected purchase error: $e');
       return false;
     }
   }
@@ -108,20 +109,20 @@ class SubscriptionService {
   /// Restore previous purchases
   Future<bool> restorePurchases() async {
     try {
-      print('🔄 Restoring purchases...');
+      log('🔄 Restoring purchases...');
 
       final customerInfo = await Purchases.restorePurchases();
       final hasEntitlement = customerInfo.entitlements.all[_entitlementId]?.isActive ?? false;
 
       if (hasEntitlement) {
-        print('✅ Purchases restored successfully');
+        log('✅ Purchases restored successfully');
         return true;
       } else {
-        print('ℹ️ No active purchases to restore');
+        log('ℹ️ No active purchases to restore');
         return false;
       }
     } catch (e) {
-      print('❌ Error restoring purchases: $e');
+      log('❌ Error restoring purchases: $e');
       return false;
     }
   }
@@ -143,7 +144,7 @@ class SubscriptionService {
         willRenew: entitlement.willRenew,
       );
     } catch (e) {
-      print('❌ Error getting subscription info: $e');
+      log('❌ Error getting subscription info: $e');
       return null;
     }
   }
@@ -157,14 +158,14 @@ class SubscriptionService {
       final managementURL = customerInfo.managementURL;
 
       if (managementURL != null) {
-        print('📱 Management URL: $managementURL');
+        log('📱 Management URL: $managementURL');
         // You can use url_launcher to open this URL
         // await launchUrl(Uri.parse(managementURL));
       } else {
-        print('⚠️ No management URL available');
+        log('⚠️ No management URL available');
       }
     } catch (e) {
-      print('❌ Error getting management URL: $e');
+      log('❌ Error getting management URL: $e');
     }
   }
 }

@@ -455,18 +455,20 @@ class VenueRepository {
     required String userId,
     required List<String> genreTags,
     required List<String> instrumentTags,
+    List<String> actFormatTags = const [],  // ADD THIS
   }) async {
     try {
       for (final genre in genreTags) {
-        await voteForTag(
-            placeId: placeId, userId: userId, tagName: genre, isGenre: true);
+        await voteForTagByCategory(
+            placeId: placeId, userId: userId, tagName: genre, tagCategory: 'genres');
       }
       for (final instrument in instrumentTags) {
-        await voteForTag(
-            placeId: placeId,
-            userId: userId,
-            tagName: instrument,
-            isGenre: false);
+        await voteForTagByCategory(
+            placeId: placeId, userId: userId, tagName: instrument, tagCategory: 'instruments');
+      }
+      for (final format in actFormatTags) {
+        await voteForTagByCategory(
+            placeId: placeId, userId: userId, tagName: format, tagCategory: 'actFormats');
       }
     } catch (e) {
       print('❌ Error syncing tags: $e');

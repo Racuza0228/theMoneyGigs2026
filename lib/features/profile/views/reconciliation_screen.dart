@@ -9,6 +9,8 @@ import 'package:the_money_gigs/features/map_venues/repositories/venue_repository
 import 'package:the_money_gigs/features/profile/views/widgets/reconciliation_dialog.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 
+import '../../../core/services/auth_service.dart';
+
 class ReconciliationScreen extends StatefulWidget {
   const ReconciliationScreen({super.key});
 
@@ -107,8 +109,9 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
   Future<void> _handlePublish(StoredLocation venue) async {
     // Mark the venue as public for local storage consistency
     final publicVenue = venue.copyWith(isPrivate: false);
-    // NOTE: Replace with your actual user ID from your authentication provider
-    const userId = 'current_user_id';
+
+    final authService = AuthService();
+    final userId = authService.isSignedIn ? authService.currentUserId : 'anonymous';
 
     // 1. Save the core venue data to the 'venues' collection.
     // The repository handles the translation (e.g., removing private fields).

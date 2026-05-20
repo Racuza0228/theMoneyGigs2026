@@ -18,7 +18,6 @@ import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
-import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_tags_widget.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,6 +68,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
   late bool _isPrivateVenue;
   late List<String> _instrumentTags;
   late List<String> _genreTags;
+  late List<String> _actFormatTags;  // ADD THIS
   late List<String> _paymentMethodTags;
   late List<String> _taxArrangementTags;
   late BookingInfo _localBookingInfo;
@@ -100,6 +100,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
     _isPrivateVenue = widget.venue.isPrivate;
     _instrumentTags = List.from(widget.venue.instrumentTags);
     _genreTags = List.from(widget.venue.genreTags);
+    _actFormatTags = List.from(widget.venue.actFormatTags);
     _paymentMethodTags = List.from(widget.venue.paymentMethodTags);
     _taxArrangementTags = List.from(widget.venue.taxArrangementTags);
     _localBookingInfo = widget.venue.bookingInfo ?? const BookingInfo();
@@ -169,6 +170,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
       isPrivate: _isPrivateVenue,
       instrumentTags: _instrumentTags,
       genreTags: _genreTags,
+      actFormatTags: _actFormatTags,
       paymentMethodTags: _paymentMethodTags,
       taxArrangementTags: _taxArrangementTags,
       bookingInfo: _localBookingInfo,
@@ -223,13 +225,15 @@ class _VenueDetailPageState extends State<VenueDetailPage>
             .then((saveVerified) {
           if (saveVerified) {
             if (updatedVenue.genreTags.isNotEmpty ||
-                updatedVenue.instrumentTags.isNotEmpty) {
+                updatedVenue.instrumentTags.isNotEmpty ||
+                updatedVenue.actFormatTags.isNotEmpty) {   // ADD THIS
               _venueRepository
                   .syncLocalTagsToFirebase(
                 placeId: updatedVenue.placeId,
                 userId: userId,
                 genreTags: updatedVenue.genreTags,
                 instrumentTags: updatedVenue.instrumentTags,
+                actFormatTags: updatedVenue.actFormatTags,  // ADD THIS
               )
                   .catchError(
                       (e) => log('❌ Error syncing tags to Firebase: $e'));
@@ -378,9 +382,10 @@ class _VenueDetailPageState extends State<VenueDetailPage>
             genreTags: _genreTags,
             isPrivateVenue: _isPrivateVenue,
             onRatingChanged: (r) => setState(() { _currentRating = r; _isDirty = true; }),
-            onTagsChanged: (instruments, genres) => setState(() {
+            onTagsChanged: (instruments, genres, actFormats) => setState(() {
               _instrumentTags = instruments;
               _genreTags = genres;
+              _actFormatTags = actFormats;  // ADD THIS
               _isDirty = true;
             }),
             onPrivateChanged: (v) => setState(() { _isPrivateVenue = v; _isDirty = true; }),
@@ -444,7 +449,7 @@ class _GeneralTab extends StatefulWidget {
   final bool isPrivateVenue;
 
   final ValueChanged<double> onRatingChanged;
-  final Function(List<String> instruments, List<String> genres) onTagsChanged;
+  final Function(List<String> instruments, List<String> genres, List<String> actFormats) onTagsChanged;
   final ValueChanged<bool> onPrivateChanged;
   final VoidCallback onEditJamSettings;
   final VoidCallback onDirty;

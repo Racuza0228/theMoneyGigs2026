@@ -7,8 +7,8 @@ import 'package:the_money_gigs/core/services/auth_service.dart';
 
 class VenueTagsWidget extends StatefulWidget {
   final StoredLocation venue;
-  final Function(List<String> instruments, List<String> genres) onTagsChanged;
-  final bool isConnected; // Whether user is connected to Firebase
+  final Function(List<String> instruments, List<String> genres, List<String> actFormats) onTagsChanged;
+  final bool isConnected;
 
   const VenueTagsWidget({
     super.key,
@@ -24,34 +24,46 @@ class VenueTagsWidget extends StatefulWidget {
 class _VenueTagsWidgetState extends State<VenueTagsWidget> {
   final Set<String> _userSelectedGenres = {};
   final Set<String> _userSelectedInstruments = {};
+  final Set<String> _userSelectedActFormats = {};
 
   // Firebase tags with vote counts: { tagName: { count: int, userVoted: bool } }
   Map<String, Map<String, dynamic>> _firebaseGenreTags = {};
   Map<String, Map<String, dynamic>> _firebaseInstrumentTags = {};
+  Map<String, Map<String, dynamic>> _firebaseActFormatTags = {};
 
   final VenueRepository _venueRepository = VenueRepository();
   AuthService? _authService;
   bool _isLoading = true;
 
-  // Suggestions for venues (can differ from user profiles)
+  // Tag category constants — match Firestore subcollection names
+  static const String _catGenres = 'genres';
+  static const String _catInstruments = 'instruments';
+  static const String _catActFormats = 'actFormats';
+
   final List<String> _suggestedInstruments = [
-    'Full Backline', 'PA System', 'Acoustic', 'Electric', 'Drums',
-    'Bass Amp', 'Guitar Amp', 'Keyboard', 'Piano', 'Vocal Mics'
+    'Full PA', 'Front of House Only', 'House Sound Engineer',
+    'Wedge Monitors', 'IEM Capability', 'Full Backline',
+    'Guitar Amp', 'Bass Amp', 'Drum Kit', 'Piano/Keys Provided',
+    'Vocal Mics',
   ];
+
   final List<String> _suggestedGenres = [
     'Rock', 'Pop', 'Country', 'Jazz', 'Blues', 'R&B/Soul', 'Hip Hop',
-    'Electronic', 'Folk', 'Singer-Songwriter', 'Open Format', 'Metal'
+    'Electronic', 'Folk', 'Singer-Songwriter', 'Open Format', 'Metal',
+  ];
+
+  final List<String> _suggestedActFormats = [
+    'Solo', 'Duo', 'Trio', 'Small Ensemble', 'Full Band',
+    'Acoustic Only', 'Electric', 'DJ',
   ];
 
   @override
   void initState() {
     super.initState();
-
-    // Initialize user's local selections
     _userSelectedGenres.addAll(widget.venue.genreTags);
     _userSelectedInstruments.addAll(widget.venue.instrumentTags);
+    _userSelectedActFormats.addAll(widget.venue.actFormatTags);
 
-    // Load Firebase tags if connected
     if (widget.isConnected) {
       _initializeAuthAndLoadTags();
     } else {
@@ -78,48 +90,86 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
     try {
       final userId = _authService!.currentUserId;
 
-      // Load both genre and instrument tags from Firebase
-      final genres = await _venueRepository.getVenueTags(
-        placeId: widget.venue.placeId,
-        userId: userId,
-        isGenre: true,
-      );
-
-      final instruments = await _venueRepository.getVenueTags(
-        placeId: widget.venue.placeId,
-        userId: userId,
-        isGenre: false,
-      );
+      final results = await Future.wait([
+        _venueRepository.getVenueTagsByCategory(
+          placeId: widget.venue.placeId,
+          userId: userId,
+          tagCategory: _catGenres,
+        ),
+        _venueRepository.getVenueTagsByCategory(
+          placeId: widget.venue.placeId,
+          userId: userId,
+          tagCategory: _catInstruments,
+        ),
+        _venueRepository.getVenueTagsByCategory(
+          placeId: widget.venue.placeId,
+          userId: userId,
+          tagCategory: _catActFormats,
+        ),
+      ]);
 
       if (mounted) {
         setState(() {
-          _firebaseGenreTags = genres;
-          _firebaseInstrumentTags = instruments;
+          _firebaseGenreTags = results[0];
+          _firebaseInstrumentTags = results[1];
+          _firebaseActFormatTags = results[2];
           _isLoading = false;
         });
       }
     } catch (e) {
       print('❌ Error loading Firebase tags: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _notifyParent() {
-    print('🏷️ VenueTagsWidget: Notifying parent of tag changes');
-    print('   - Genres: $_userSelectedGenres');
-    print('   - Instruments: $_userSelectedInstruments');
-    widget.onTagsChanged(_userSelectedInstruments.toList(), _userSelectedGenres.toList());
+    widget.onTagsChanged(
+      _userSelectedInstruments.toList(),
+      _userSelectedGenres.toList(),
+      _userSelectedActFormats.toList(),
+    );
   }
 
-  Future<void> _toggleTag(String tag, bool isGenre) async {
-    print('🏷️ VenueTagsWidget: Toggling tag "$tag" (${isGenre ? "genre" : "instrument"})');
-    final tagSet = isGenre ? _userSelectedGenres : _userSelectedInstruments;
-    final isCurrentlySelected = tagSet.contains(tag);
-    print('   - Was selected: $isCurrentlySelected');
+  String _categoryFor(String section) {
+    switch (section) {
+      case 'genres': return _catGenres;
+      case 'instruments': return _catInstruments;
+      case 'actFormats': return _catActFormats;
+      default: return section;
+    }
+  }
 
-    // Update local state immediately for responsive UI
+  Set<String> _tagSetFor(String section) {
+    switch (section) {
+      case 'genres': return _userSelectedGenres;
+      case 'instruments': return _userSelectedInstruments;
+      case 'actFormats': return _userSelectedActFormats;
+      default: return _userSelectedGenres;
+    }
+  }
+
+  Map<String, Map<String, dynamic>> _firebaseTagsFor(String section) {
+    switch (section) {
+      case 'genres': return _firebaseGenreTags;
+      case 'instruments': return _firebaseInstrumentTags;
+      case 'actFormats': return _firebaseActFormatTags;
+      default: return _firebaseGenreTags;
+    }
+  }
+
+  List<String> _suggestionsFor(String section) {
+    switch (section) {
+      case 'genres': return _suggestedGenres;
+      case 'instruments': return _suggestedInstruments;
+      case 'actFormats': return _suggestedActFormats;
+      default: return _suggestedGenres;
+    }
+  }
+
+  Future<void> _toggleTag(String tag, String section) async {
+    final tagSet = _tagSetFor(section);
+    final isCurrentlySelected = tagSet.contains(tag);
+
     setState(() {
       if (isCurrentlySelected) {
         tagSet.remove(tag);
@@ -128,41 +178,38 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
       }
     });
 
-    print('   - Now selected: ${tagSet.contains(tag)}');
     _notifyParent();
 
-    // If connected to Firebase, sync the vote
     if (widget.isConnected && _authService != null) {
       final userId = _authService!.currentUserId;
+      final category = _categoryFor(section);
 
       if (isCurrentlySelected) {
-        // Remove vote
-        await _venueRepository.removeVoteForTag(
+        await _venueRepository.removeVoteForTagByCategory(
           placeId: widget.venue.placeId,
           userId: userId,
           tagName: tag,
-          isGenre: isGenre,
+          tagCategory: category,
         );
       } else {
-        // Add vote
-        await _venueRepository.voteForTag(
+        await _venueRepository.voteForTagByCategory(
           placeId: widget.venue.placeId,
           userId: userId,
           tagName: tag,
-          isGenre: isGenre,
+          tagCategory: category,
         );
       }
 
-      // Reload Firebase tags to get updated counts
       await _loadFirebaseTags();
     }
   }
 
-  Future<void> _showAddTagDialog(String title, bool isGenre) async {
-    final tagSet = isGenre ? _userSelectedGenres : _userSelectedInstruments;
-    final suggestions = isGenre ? _suggestedGenres : _suggestedInstruments;
+  Future<void> _showAddTagDialog(String title, String section) async {
+    final tagSet = _tagSetFor(section);
+    final suggestions = _suggestionsFor(section);
     final TextEditingController controller = TextEditingController();
-    final availableSuggestions = suggestions.where((s) => !tagSet.contains(s)).toList();
+    final availableSuggestions =
+    suggestions.where((s) => !tagSet.contains(s)).toList();
 
     showDialog(
       context: context,
@@ -170,7 +217,8 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
       builder: (context) {
         return AlertDialog(
           backgroundColor: const Color(0xFF3a3a3c),
-          title: Text('Add $title', style: const TextStyle(color: Colors.white)),
+          title: Text('Add $title',
+              style: const TextStyle(color: Colors.white)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -182,20 +230,28 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
                     labelText: 'New ${title.singularize()}',
-                    labelStyle: TextStyle(color: Colors.orangeAccent.shade100),
-                    enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey.shade600)),
-                    focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Theme.of(context).colorScheme.primary)),
+                    labelStyle:
+                    TextStyle(color: Colors.orangeAccent.shade100),
+                    enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.grey.shade600)),
+                    focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(
+                            color:
+                            Theme.of(context).colorScheme.primary)),
                   ),
                   onSubmitted: (value) {
                     if (value.trim().isNotEmpty) {
-                      _toggleTag(value.trim(), isGenre);
+                      _toggleTag(value.trim(), section);
                     }
                     Navigator.of(context).pop();
                   },
                 ),
                 const SizedBox(height: 20),
                 if (availableSuggestions.isNotEmpty)
-                  Text('Suggestions', style: TextStyle(color: Colors.orangeAccent.shade100, fontWeight: FontWeight.bold)),
+                  Text('Suggestions',
+                      style: TextStyle(
+                          color: Colors.orangeAccent.shade100,
+                          fontWeight: FontWeight.bold)),
                 if (availableSuggestions.isNotEmpty)
                   const SizedBox(height: 8),
                 Wrap(
@@ -205,7 +261,7 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
                     return ActionChip(
                       label: Text(suggestion),
                       onPressed: () {
-                        _toggleTag(suggestion, isGenre);
+                        _toggleTag(suggestion, section);
                         Navigator.of(context).pop();
                       },
                     );
@@ -223,7 +279,7 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
               child: const Text('Add'),
               onPressed: () {
                 if (controller.text.trim().isNotEmpty) {
-                  _toggleTag(controller.text.trim(), isGenre);
+                  _toggleTag(controller.text.trim(), section);
                 }
                 Navigator.of(context).pop();
               },
@@ -234,27 +290,20 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
     );
   }
 
-  Widget _buildTagSection(String title, bool isGenre) {
+  Widget _buildTagSection(String title, String section) {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Combine local and Firebase tags
-    final userTags = isGenre ? _userSelectedGenres : _userSelectedInstruments;
-    final firebaseTags = isGenre ? _firebaseGenreTags : _firebaseInstrumentTags;
-
-    // All unique tags (from user + Firebase)
+    final userTags = _tagSetFor(section);
+    final firebaseTags = _firebaseTagsFor(section);
     final allTags = <String>{...userTags, ...firebaseTags.keys}.toList();
 
-    // Sort: Most popular first, then alphabetically
     allTags.sort((a, b) {
       final aCount = firebaseTags[a]?['count'] ?? 0;
       final bCount = firebaseTags[b]?['count'] ?? 0;
-
-      if (aCount != bCount) {
-        return bCount.compareTo(aCount); // Descending by count
-      }
-      return a.compareTo(b); // Alphabetically
+      if (aCount != bCount) return bCount.compareTo(aCount);
+      return a.compareTo(b);
     });
 
     return Column(
@@ -263,14 +312,14 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
+            Text(title,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 16)),
             IconButton(
-              icon: Icon(Icons.add_circle_outline, color: Colors.orangeAccent.shade100),
+              icon: Icon(Icons.add_circle_outline,
+                  color: Colors.orangeAccent.shade100),
               tooltip: 'Add ${title.singularize()}',
-              onPressed: () => _showAddTagDialog(title, isGenre),
+              onPressed: () => _showAddTagDialog(title, section),
             ),
           ],
         ),
@@ -280,7 +329,9 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
           padding: const EdgeInsets.symmetric(horizontal: 8.0),
           child: Text(
             'No ${title.toLowerCase()} specified.',
-            style: TextStyle(color: Colors.grey.shade400, fontStyle: FontStyle.italic),
+            style: TextStyle(
+                color: Colors.grey.shade400,
+                fontStyle: FontStyle.italic),
           ),
         )
             : Wrap(
@@ -291,29 +342,31 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
             final voteCount = firebaseTags[tag]?['count'] ?? 0;
             final showCount = widget.isConnected && voteCount > 0;
 
-            // Color: Purple if user selected, Orange if not
             final chipColor = isUserSelected
-                ? Theme.of(context).colorScheme.primary.withOpacity(0.8)  // Purple
-                : Colors.orangeAccent.shade100.withOpacity(0.6);           // Orange
+                ? Theme.of(context)
+                .colorScheme
+                .primary
+                .withOpacity(0.8)
+                : Colors.orangeAccent.shade100.withOpacity(0.6);
 
             return InputChip(
               label: Text(
                 showCount ? '$tag ($voteCount)' : tag,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold),
               ),
               backgroundColor: chipColor,
               selectedColor: chipColor,
               checkmarkColor: Colors.white,
               selected: isUserSelected,
-              onSelected: (_) {
-                print('🏷️ VenueTagsWidget: Chip tapped for "$tag"');
-                _toggleTag(tag, isGenre);
-              },
-              onDeleted: isUserSelected ? () {
-                print('🏷️ VenueTagsWidget: Delete icon tapped for "$tag"');
-                _toggleTag(tag, isGenre);
-              } : null,
-              deleteIcon: isUserSelected ? const Icon(Icons.cancel, size: 18) : null,
+              onSelected: (_) => _toggleTag(tag, section),
+              onDeleted: isUserSelected
+                  ? () => _toggleTag(tag, section)
+                  : null,
+              deleteIcon: isUserSelected
+                  ? const Icon(Icons.cancel, size: 18)
+                  : null,
               deleteIconColor: Colors.white70,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -329,20 +382,19 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _buildTagSection('Typical Genres', true),
+        _buildTagSection('Typical Genres', 'genres'),
         const SizedBox(height: 8),
-        _buildTagSection('Instrumentation', false),
+        _buildTagSection('Typical Act Format', 'actFormats'),
+        const SizedBox(height: 8),
+        _buildTagSection('House Sound & Equipment', 'instruments'),
       ],
     );
   }
 }
 
-// Helper extension to make dialog titles cleaner
 extension StringExtension on String {
   String singularize() {
-    if (endsWith('s')) {
-      return substring(0, length - 1);
-    }
+    if (endsWith('s')) return substring(0, length - 1);
     return this;
   }
 }

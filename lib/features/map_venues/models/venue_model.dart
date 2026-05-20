@@ -41,6 +41,7 @@ class StoredLocation {
 
   final List<String> instrumentTags;
   final List<String> genreTags;
+  final List<String> actFormatTags;
   final List<String> paymentMethodTags;
   final List<String> taxArrangementTags;
 
@@ -66,6 +67,7 @@ class StoredLocation {
     this.driveDistance,
     this.instrumentTags = const [],
     this.genreTags = const [],
+    this.actFormatTags = const [],
     this.paymentMethodTags = const [],
     this.taxArrangementTags = const [],
   });
@@ -94,6 +96,7 @@ class StoredLocation {
     'driveDistance': driveDistance,
     'instrumentTags': instrumentTags,
     'genreTags': genreTags,
+    'actFormatTags': actFormatTags,
     'paymentMethodTags': paymentMethodTags,
     'taxArrangementTags': taxArrangementTags,
   };
@@ -168,6 +171,7 @@ class StoredLocation {
       driveDistance: json['driveDistance'] as String?,
       instrumentTags: List<String>.from(json['instrumentTags'] ?? []),
       genreTags: List<String>.from(json['genreTags'] ?? []),
+      actFormatTags: List<String>.from(json['actFormatTags'] ?? []),
       paymentMethodTags: List<String>.from(json['paymentMethodTags'] ?? []),
       taxArrangementTags: List<String>.from(json['taxArrangementTags'] ?? []),
     );
@@ -195,6 +199,7 @@ class StoredLocation {
     ValueGetter<String?>? driveDistance,
     List<String>? instrumentTags,
     List<String>? genreTags,
+    List<String>? actFormatTags,
     List<String>? paymentMethodTags,
     List<String>? taxArrangementTags,
   }) {
@@ -223,6 +228,7 @@ class StoredLocation {
       driveDistance != null ? driveDistance() : this.driveDistance,
       instrumentTags: instrumentTags ?? this.instrumentTags,
       genreTags: genreTags ?? this.genreTags,
+      actFormatTags: actFormatTags ?? this.actFormatTags,
       paymentMethodTags: paymentMethodTags ?? this.paymentMethodTags,
       taxArrangementTags: taxArrangementTags ?? this.taxArrangementTags,
     );
