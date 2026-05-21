@@ -29,6 +29,8 @@ import 'features/gigs/models/gig_model.dart';
 import 'features/gigs/services/gig_retrospective_service.dart';
 import 'features/gigs/widgets/retrospective_notification_banner.dart';
 import 'package:the_money_gigs/features/app_demo/services/demo_tracking_service.dart';
+import 'package:upgrader/upgrader.dart';
+import 'features/gigs/services/auto_backup_service.dart';
 
 bool _areNetworkServicesInitialized = false;
 
@@ -69,6 +71,11 @@ Future<void> main() async {
     print('⚠️ DemoTrackingService sync failed silently: $e');
   });
 
+  // Restore from local backup if SharedPreferences was wiped (reinstall / clear data).
+  await AutoBackupService.restoreIfNeeded();
+  // Snapshot current state — fire-and-forget, never blocks startup.
+  AutoBackupService.saveBackup();
+
   final prefs = await SharedPreferences.getInstance();
   final bool hasEverConnected = prefs.getBool('is_connected_to_network') ?? false;
 
@@ -105,7 +112,7 @@ class MyApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const MainPage(),
+      home: UpgradeAlert(child: const MainPage()),
       debugShowCheckedModeBanner: false,
     );
   }

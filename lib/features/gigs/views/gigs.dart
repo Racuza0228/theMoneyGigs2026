@@ -24,9 +24,7 @@ import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.dart';
 import 'package:the_money_gigs/features/notes/views/notes_page.dart';
-import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 import 'package:the_money_gigs/core/services/gig_embed_service.dart';
-import 'package:the_money_gigs/features/map_venues/widgets/venue_contact_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_details_page.dart';
 import 'package:the_money_gigs/features/profile/views/profile.dart';
 // <<< --- REFACTORING: ADD IMPORT FOR THE NEW VENUES TAB WIDGET --- >>>
