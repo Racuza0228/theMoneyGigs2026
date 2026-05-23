@@ -212,35 +212,49 @@ class _VenueDetailPageState extends State<VenueDetailPage>
         final userId = authService.isSignedIn
             ? authService.currentUserId
             : 'anonymous';
+
+        // New venue → write to public DB, stripping private fields first
         if (!widget.venue.isPublic) {
-          _venueRepository.saveVenue(updatedVenue, userId);
+          final venueForFirebase = updatedVenue.copyWith(
+            venueNotes: () => null,
+            venueNotesUrl: () => null,
+          );
+          _venueRepository.saveVenue(venueForFirebase, userId);
         }
-        _venueRepository
-            .saveVenueRating(
-          userId: userId,
-          placeId: updatedVenue.placeId,
-          rating: updatedVenue.rating,
-          comment: updatedVenue.comment,
-        )
-            .then((saveVerified) {
-          if (saveVerified) {
-            if (updatedVenue.genreTags.isNotEmpty ||
-                updatedVenue.instrumentTags.isNotEmpty ||
-                updatedVenue.actFormatTags.isNotEmpty) {   // ADD THIS
-              _venueRepository
-                  .syncLocalTagsToFirebase(
-                placeId: updatedVenue.placeId,
-                userId: userId,
-                genreTags: updatedVenue.genreTags,
-                instrumentTags: updatedVenue.instrumentTags,
-                actFormatTags: updatedVenue.actFormatTags,  // ADD THIS
-              )
-                  .catchError(
-                      (e) => log('❌ Error syncing tags to Firebase: $e'));
-            }
-            widget.onDataChanged?.call();
-          }
-        });
+
+        // Only write a rating/comment if the user actually provided one.
+        // A zero rating with no comment is a no-op SAVE tap — skip it entirely.
+        final hasRating = updatedVenue.rating > 0;
+        final hasComment = updatedVenue.comment != null &&
+            updatedVenue.comment!.trim().isNotEmpty;
+
+        if (hasRating || hasComment) {
+          _venueRepository.saveVenueRating(
+            userId: userId,
+            placeId: updatedVenue.placeId,
+            rating: updatedVenue.rating,   // may be 0 for comment-only; repo guards the average
+            comment: updatedVenue.comment,
+          ).catchError((e) => log('❌ Error saving rating: $e'));
+        }
+
+        // Tag sync is independent of the rating — always push if tags exist.
+        if (updatedVenue.genreTags.isNotEmpty ||
+            updatedVenue.instrumentTags.isNotEmpty ||
+            updatedVenue.actFormatTags.isNotEmpty) {
+          _venueRepository
+              .syncLocalTagsToFirebase(
+            placeId: updatedVenue.placeId,
+            userId: userId,
+            genreTags: updatedVenue.genreTags,
+            instrumentTags: updatedVenue.instrumentTags,
+            actFormatTags: updatedVenue.actFormatTags,
+          )
+              .catchError((e) => log('❌ Error syncing tags to Firebase: $e'));
+        }
+
+        // Refresh community data regardless of which writes ran
+        widget.onDataChanged?.call();
+
       } catch (e) {
         log('❌ Error during Firebase save: $e');
       }
@@ -299,7 +313,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
             Tab(text: 'General'),
             Tab(text: 'Business'),
             Tab(text: 'Booking'),
-            Tab(text: 'Notes'),
+            Tab(text: 'Private'),
           ],
         ),
       ),
@@ -509,9 +523,10 @@ class _GeneralTabState extends State<_GeneralTab>
   Future<void> _loadCurrentUserId() async {
     try {
       final authService = AuthService();
-      if (authService.isSignedIn) {
-        setState(() => _currentUserId = authService.currentUserId);
-      }
+      final id = authService.isSignedIn
+          ? authService.currentUserId
+          : 'anonymous';
+      if (mounted) setState(() => _currentUserId = id);
     } catch (_) {}
   }
 
@@ -2190,7 +2205,7 @@ class _NotesTabState extends State<_NotesTab>
         children: [
 
           // ── Venue Notes field ─────────────────────────────────────────────
-          Text('Venue Notes',
+          Text('Personal Notes',
               style: theme.textTheme.titleMedium
                   ?.copyWith(color: theme.colorScheme.primary)),
           const SizedBox(height: 12),
@@ -2200,7 +2215,7 @@ class _NotesTabState extends State<_NotesTab>
             minLines: 4,
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
-              hintText: 'Gate codes, parking, sound engineer, load-in quirks…',
+              hintText: 'anything you would like to remember but not share',
               border: OutlineInputBorder(),
             ),
           ),
@@ -2208,7 +2223,7 @@ class _NotesTabState extends State<_NotesTab>
           const Divider(height: 32),
 
           // ── Related Link ──────────────────────────────────────────────────
-          Text('Related Link',
+          Text('External Docs (link)',
               style: theme.textTheme.titleMedium
                   ?.copyWith(color: theme.colorScheme.primary)),
           const SizedBox(height: 12),

@@ -25,7 +25,7 @@ import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/map_venues/models/place_models.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.dart';
-//import 'package:the_money_gigs/features/map_venues/widgets/venue_details_dialog.dart';
+
 import 'package:the_money_gigs/features/map_venues/widgets/venue_details_page.dart';
 import 'package:the_money_gigs/features/profile/views/profile.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
@@ -35,6 +35,8 @@ import 'package:the_money_gigs/features/map_venues/repositories/venue_repository
 import 'package:the_money_gigs/main.dart';
 import 'package:the_money_gigs/features/app_demo/widgets/map_demo_overlay.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/map_tutorial_overlay.dart';
+
+import '../../../core/services/auth_service.dart';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -54,14 +56,20 @@ StoredLocation _mergeJamPreferences(
   final Map<String, bool> localPrefs = {
     for (var session in localVenue.jamSessions) session.id: session.showInGigsList,
   };
+  final publicIds = publicVenue.jamSessions.map((s) => s.id).toSet();
+
   final mergedSessions = publicVenue.jamSessions.map((pubSession) {
     final localPref = localPrefs[pubSession.id];
-    if (localPref != null) {
-      return pubSession.copyWith(showInGigsList: localPref);
-    }
-    return pubSession;
+    return localPref != null
+        ? pubSession.copyWith(showInGigsList: localPref)
+        : pubSession;
   }).toList();
-  return publicVenue.copyWith(jamSessions: mergedSessions);
+
+  // Keep jams the user added locally that aren't in Firebase yet.
+  final localOnly =
+  localVenue.jamSessions.where((s) => !publicIds.contains(s.id)).toList();
+
+  return publicVenue.copyWith(jamSessions: [...mergedSessions, ...localOnly]);
 }
 
 class _MapPageState extends State<MapPage> {
@@ -75,6 +83,7 @@ class _MapPageState extends State<MapPage> {
   bool _isFullyInitialized = false;
   bool _isLoading = false;
   bool _showMapTutorial = false;
+  bool _locationPermissionGranted = false;
 
   // Search UI state
   final TextEditingController _searchController = TextEditingController();
@@ -165,12 +174,45 @@ class _MapPageState extends State<MapPage> {
   }
 
   Future<void> _setInitialCameraPosition() async {
-    final locationService = LocationService();
-    final LatLng center = await locationService.getInitialMapCenter();
-    if (mounted) {
-      setState(() {
-        _initialCameraPosition = CameraPosition(target: center, zoom: 12.0);
-      });
+    // Hard fallback: if location fails for ANY reason (permission denied,
+    // PlatformException, geolocator throwing on a fresh install), we still
+    // give the map a valid starting position rather than leaving
+    // _initialCameraPosition null and hanging on the loading spinner forever.
+    const LatLng fallback = LatLng(39.1031, -84.5120); // Cincinnati default
+    try {
+      final locationService = LocationService();
+      final LatLng center = await locationService.getInitialMapCenter();
+      if (mounted) {
+        setState(() {
+          _initialCameraPosition = CameraPosition(target: center, zoom: 12.0);
+        });
+      }
+    } catch (e, s) {
+      log('⚠️ _setInitialCameraPosition failed — using Cincinnati fallback: $e\n$s');
+      if (mounted) {
+        setState(() {
+          _initialCameraPosition =
+              CameraPosition(target: fallback, zoom: 12.0);
+        });
+      }
+    }
+
+    // Gate myLocation on actual permission status so the Google Maps SDK
+    // never gets called into CLLocationManager with a denied state — which
+    // triggers a native assertion on iOS 26 regardless of the Dart-level catch.
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (mounted) {
+        setState(() {
+          _locationPermissionGranted =
+              permission == LocationPermission.whileInUse ||
+                  permission == LocationPermission.always;
+        });
+      }
+    } catch (e) {
+      // If the permission check itself fails, leave _locationPermissionGranted
+      // false — safe default, myLocation stays off, no SDK assertion.
+      log('⚠️ Geolocator.checkPermission failed: $e');
     }
   }
 
@@ -205,64 +247,73 @@ class _MapPageState extends State<MapPage> {
   /// It runs all the async setup and data loading.
   Future<void> _initializeAndLoadData() async {
     if (_isFullyInitialized) return;
+    try {
+      // Show a one-time explanation before the OS location dialog appears.
+      // This gives users context so the permission request doesn't feel random.
+      await _showLocationRationaleIfNeeded();
 
-    // Show a one-time explanation before the OS location dialog appears.
-    // This gives users context so the permission request doesn't feel random.
-    await _showLocationRationaleIfNeeded();
+      // _setInitialCameraPosition is now internally guarded — a location
+      // failure falls back to Cincinnati rather than throwing up the stack.
+      await _setInitialCameraPosition();
 
-    // LocationService.getInitialMapCenter() handles permissions internally
-    // via geolocator (priority: profile address → GPS → Cincinnati default).
-    await _setInitialCameraPosition();
+      if (!mounted) return;
 
-    if (!mounted) return;
+      // Set up listeners.
+      globalRefreshNotifier.addListener(_handleGlobalRefresh);
 
-    // Set up listeners.
-    globalRefreshNotifier.addListener(_handleGlobalRefresh);
+      _demoProvider = Provider.of<DemoProvider>(context, listen: false);
+      _demoProvider?.addListener(_onDemoStateChanged);
 
-    _demoProvider = Provider.of<DemoProvider>(context, listen: false);
-    _demoProvider?.addListener(_onDemoStateChanged);
-
-    _searchController.addListener(() {
-      if (_debounce?.isActive ?? false) _debounce!.cancel();
-      _debounce = Timer(const Duration(milliseconds: 300), () {
-        if (_searchController.text.isNotEmpty) {
-          _fetchAutocompleteResults(_searchController.text);
-        } else {
-          if (mounted) setState(() => _autocompleteResults = []);
-        }
+      _searchController.addListener(() {
+        if (_debounce?.isActive ?? false) _debounce!.cancel();
+        _debounce = Timer(const Duration(milliseconds: 300), () {
+          if (_searchController.text.isNotEmpty) {
+            _fetchAutocompleteResults(_searchController.text);
+          } else {
+            if (mounted) setState(() => _autocompleteResults = []);
+          }
+        });
       });
-    });
 
-    if (_googleApiKey.isEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Warning: Google API Key is missing. Map search will fail.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      });
-    }
+      if (_googleApiKey.isEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                    'Warning: Google API Key is missing. Map search will fail.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        });
+      }
 
-    // Now load all the data for the map.
-    await _loadAllMapData();
+      // Now load all the data for the map.
+      await _loadAllMapData();
 
-    if (mounted) {
-      setState(() {
-        _isFullyInitialized = true;
-      });
-    }
+      if (mounted) {
+        setState(() => _isFullyInitialized = true);
+      }
 
-    // Check demo state once everything is ready.
-    _onDemoStateChanged();
+      // Check demo state once everything is ready.
+      _onDemoStateChanged();
 
-    // Show the first-time tutorial after a short delay so the map markers
-    // have rendered and the user can see what we're explaining.
-    if (mounted && await MapTutorialOverlay.shouldShow()) {
-      await Future.delayed(const Duration(milliseconds: 800));
-      if (mounted) setState(() => _showMapTutorial = true);
+      // Show the first-time tutorial after a short delay so the map markers
+      // have rendered and the user can see what we're explaining.
+      if (mounted && await MapTutorialOverlay.shouldShow()) {
+        await Future.delayed(const Duration(milliseconds: 800));
+        if (mounted) setState(() => _showMapTutorial = true);
+      }
+    } catch (e, s) {
+      // Any unhandled throw inside map initialization lands here instead of
+      // escaping to the zone as an uncaught error (the previous SIGTRAP path).
+      log('❌ _initializeAndLoadData failed — showing empty map: $e\n$s');
+      // Unblock the UI so the user sees the map shell rather than an
+      // infinite spinner, even if some data failed to load.
+      if (mounted && !_isFullyInitialized) {
+        setState(() => _isFullyInitialized = true);
+      }
     }
   }
 
@@ -293,7 +344,9 @@ class _MapPageState extends State<MapPage> {
     // Onboarding just finished — initialize the map now that the user has
     // seen the welcome screen and understands what the app does.
     if (!demoProvider.isDemoModeActive && !_isFullyInitialized) {
-      _initializeAndLoadData();
+      _initializeAndLoadData().catchError((Object e, StackTrace s) {
+        log('❌ Map init (demo state change) failed: $e\n$s');
+      });
       return;
     }
 
@@ -331,9 +384,11 @@ class _MapPageState extends State<MapPage> {
       targetWidth: width,
     );
     ui.FrameInfo fi = await codec.getNextFrame();
-    return (await fi.image.toByteData(format: ui.ImageByteFormat.png))!
-        .buffer
-        .asUint8List();
+    final byteData = await fi.image.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData == null) {
+      throw Exception('toByteData returned null for asset: $path');
+    }
+    return byteData.buffer.asUint8List();
   }
 
   void _handleGlobalRefresh() {
@@ -342,7 +397,7 @@ class _MapPageState extends State<MapPage> {
       _loadAllMapData();
       // Re-center in case the user just saved a new profile address.
       // This runs in parallel with the data reload — no blocking.
-      _recenterMapFromProfile();
+      //_recenterMapFromProfile();
     }
   }
 
@@ -481,7 +536,10 @@ class _MapPageState extends State<MapPage> {
 
     log("🔄 Refreshing venues from Firebase...");
     try {
-      const String userId = 'current_user_id'; // TODO: Get from FirebaseAuth
+      final authService = AuthService();
+      final String userId = authService.isSignedIn
+          ? authService.currentUserId
+          : 'anonymous';
       final publicVenues = await _venueRepository!.getAllPublicVenues(userId);
       if (!mounted) return;
 
@@ -919,7 +977,26 @@ class _MapPageState extends State<MapPage> {
   }
 
   Future<void> _updateVenueJamNightSettings(StoredLocation updatedVenue) async {
+    // 1. Always save locally first — this is the ground truth on-device.
     await _updateAndSaveLocationReview(updatedVenue);
+
+    // 2. Only push to Firebase if the venue is already public + we're connected.
+    //    Private/local-only venues stay local until the user formally saves them.
+    if (_venueRepository == null || !updatedVenue.isPublic) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final bool isConnected = prefs.getBool(_isConnectedKey) ?? false;
+    if (!isConnected) return;
+
+    try {
+      await _venueRepository!.syncJamSessionsToFirebase(
+        placeId: updatedVenue.placeId,
+        jamSessions: updatedVenue.jamSessions,
+      );
+    } catch (e) {
+      log('❌ Jam sync to Firebase failed (local save succeeded): $e');
+      // Non-fatal — local copy is intact; will merge on next load.
+    }
   }
 
   Future<void> _showLocationDetailsDialog(StoredLocation passedInLocation) async {
@@ -1015,7 +1092,9 @@ class _MapPageState extends State<MapPage> {
           final demoProvider =
           Provider.of<DemoProvider>(context, listen: false);
           if (demoProvider.isDemoModeActive) return;
-          _initializeAndLoadData();
+          _initializeAndLoadData().catchError((Object e, StackTrace s) {
+            log('❌ Map init (VisibilityDetector) failed: $e\n$s');
+          });
         }
       },
       child: buildMapContent(),
@@ -1074,8 +1153,8 @@ class _MapPageState extends State<MapPage> {
                   _handleMapTap(tappedPoint);
                 }
               },
-              myLocationButtonEnabled: true,
-              myLocationEnabled: true,
+              myLocationButtonEnabled: _locationPermissionGranted,
+              myLocationEnabled: _locationPermissionGranted,
               padding: EdgeInsets.only(
                 top: _isSearchVisible ? 120 : 70,
                 bottom: Theme.of(context).platform == TargetPlatform.iOS ? 90 : 60,

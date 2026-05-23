@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../models/venue_contact.dart';
 import '../models/venue_model.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class VenueRepository {
   FirebaseFirestore? _firestore;
@@ -25,7 +26,7 @@ class VenueRepository {
       final snapshot = await _firestoreInstance.collection('venues').get();
       return snapshot.docs.map((doc) => doc.id).toList();
     } catch (e) {
-      print('Error fetching public venue IDs: $e');
+      log('Error fetching public venue IDs: $e');
       return [];
     }
   }
@@ -55,7 +56,7 @@ class VenueRepository {
             comment: ratingData?['comment'] as String?);
       }).toList();
     } catch (e) {
-      print('❌ Error fetching public venues: $e');
+      log('❌ Error fetching public venues: $e');
       return [];
     }
   }
@@ -89,6 +90,26 @@ class VenueRepository {
       venueData['totalRatings'] = 0;
       await venueRef.set(venueData);
     }
+  }
+
+  /// Pushes locally-added jam sessions to the public venue document.
+  ///
+  /// Only touches the `jamSessions` field — ratings, tags, contact, and all
+  /// other community data are left completely untouched.
+  ///
+  /// Callers must guard for isPublic == true and network connectivity before
+  /// calling. If the document doesn't exist (shouldn't happen for a public
+  /// venue), the update throws and the caller logs it as non-fatal.
+  Future<void> syncJamSessionsToFirebase({
+    required String placeId,
+    required List jamSessions,
+  }) async {
+    final venueRef = _firestoreInstance.collection('venues').doc(placeId);
+    await venueRef.update({
+      'jamSessions': jamSessions.map((js) => js.toJson()).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    log('✅ Jam sessions synced to Firebase: $placeId');
   }
 
   // ── Contact ───────────────────────────────────────────────────────────────
@@ -147,7 +168,7 @@ class VenueRepository {
     }
 
     await venueRef.set(updates, SetOptions(merge: true));
-    print(
+    log(
         '✅ Saved contact for $placeId (shared: ${contact.isSharedWithNetwork})');
   }
 
@@ -188,7 +209,7 @@ class VenueRepository {
         'userConfirmed': userConfDoc.exists,
       };
     } catch (e) {
-      print('❌ Error fetching confirmation state: $e');
+      log('❌ Error fetching confirmation state: $e');
       return {'count': 0, 'userConfirmed': false};
     }
   }
@@ -221,7 +242,7 @@ class VenueRepository {
       });
     });
 
-    print('✅ Contact confirmed for $placeId by $userId');
+    log('✅ Contact confirmed for $placeId by $userId');
   }
 
   /// Removes the current user's confirmation (undo / toggle off).
@@ -252,7 +273,7 @@ class VenueRepository {
       });
     });
 
-    print('✅ Contact confirmation removed for $placeId by $userId');
+    log('✅ Contact confirmation removed for $placeId by $userId');
   }
 
   // ── Ratings ───────────────────────────────────────────────────────────────
@@ -265,6 +286,11 @@ class VenueRepository {
   }) async {
     final docId = '${placeId}_$userId';
 
+    if (rating <= 0) {
+      log('⚠️ saveVenueRating: skipping zero rating for $placeId');
+      return false;
+    }
+    
     try {
       final batch = _firestoreInstance.batch();
 
@@ -287,7 +313,7 @@ class VenueRepository {
       final venueDoc = await venueRef.get();
 
       if (!venueDoc.exists) {
-        print('⚠️ Cannot rate non-existent venue: $placeId');
+        log('⚠️ Cannot rate non-existent venue: $placeId');
         return false;
       }
 
@@ -313,18 +339,20 @@ class VenueRepository {
         newAverage = (currentAverage * currentTotal + rating) / newTotal;
       }
 
-      batch.update(venueRef, {
-        'averageRating': newAverage,
-        'totalRatings': newTotal,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      if (rating > 0) {
+        batch.update(venueRef, {
+          'averageRating': newAverage,
+          'totalRatings': newTotal,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
 
       await batch.commit();
 
       final verified = await ratingRef.get();
       return verified.exists;
     } catch (e) {
-      print('❌ Error saving rating: $e');
+      log('❌ Error saving rating: $e');
       return false;
     }
   }
@@ -371,7 +399,7 @@ class VenueRepository {
 
       return true;
     } catch (e) {
-      print('❌ Error voting for tag: $e');
+      log('❌ Error voting for tag: $e');
       return false;
     }
   }
@@ -414,7 +442,7 @@ class VenueRepository {
 
       return true;
     } catch (e) {
-      print('❌ Error removing tag vote: $e');
+      log('❌ Error removing tag vote: $e');
       return false;
     }
   }
@@ -445,7 +473,7 @@ class VenueRepository {
       }
       return tags;
     } catch (e) {
-      print('❌ Error fetching tags: $e');
+      log('❌ Error fetching tags: $e');
       return {};
     }
   }
@@ -471,7 +499,7 @@ class VenueRepository {
             placeId: placeId, userId: userId, tagName: format, tagCategory: 'actFormats');
       }
     } catch (e) {
-      print('❌ Error syncing tags: $e');
+      log('❌ Error syncing tags: $e');
     }
   }
 
@@ -517,7 +545,7 @@ class VenueRepository {
       });
       return true;
     } catch (e) {
-      print('❌ Error voting for tag ($tagCategory): $e');
+      log('❌ Error voting for tag ($tagCategory): $e');
       return false;
     }
   }
@@ -555,7 +583,7 @@ class VenueRepository {
       });
       return true;
     } catch (e) {
-      print('❌ Error removing tag vote ($tagCategory): $e');
+      log('❌ Error removing tag vote ($tagCategory): $e');
       return false;
     }
   }
@@ -585,7 +613,7 @@ class VenueRepository {
       }
       return tags;
     } catch (e) {
-      print('❌ Error fetching tags ($tagCategory): $e');
+      log('❌ Error fetching tags ($tagCategory): $e');
       return {};
     }
   }
@@ -611,6 +639,7 @@ class VenueRepository {
         'comment': doc.data()['comment'] as String,
         'rating': (doc.data()['rating'] as num).toDouble(),
         'updatedAt': doc.data()['updatedAt'] as Timestamp?,
+        'userId': doc.data()['userId'] as String?,   // ← ADDED: powers the "You" badge in the carousel
       })
           .toList();
 
@@ -625,7 +654,7 @@ class VenueRepository {
 
       return withText.take(limit).toList();
     } catch (e) {
-      print('❌ Error fetching comments: $e');
+      log('❌ Error fetching comments: $e');
       return [];
     }
   }
