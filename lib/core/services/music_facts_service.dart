@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class MusicFactsService {
   static const String _mbBaseUrl = 'https://musicbrainz.org/ws/2';
@@ -65,7 +66,7 @@ class MusicFactsService {
       return _enrichWithLocationContext(facts, venueCity);
 
     } catch (e) {
-      print('Error fetching music facts: $e');
+      log('Error fetching music facts: $e');
       return null;
     }
   }
@@ -209,7 +210,7 @@ class MusicFactsService {
           try {
             wikipediaTitle = Uri.parse(wikiUrl).pathSegments.last;
           } catch (e) {
-            print('Error parsing Wikipedia URL: $e');
+            log('Error parsing Wikipedia URL: $e');
           }
         }
         break;
@@ -329,7 +330,7 @@ class MusicFactsService {
         }
       }
     } catch (e) {
-      print('Error fetching Wikipedia summary: $e');
+      log('Error fetching Wikipedia summary: $e');
     }
 
     return null;
@@ -405,7 +406,7 @@ class MusicFactsService {
         },
       );
     } catch (e) {
-      print('HTTP request error: $e');
+      log('HTTP request error: $e');
       return null;
     }
   }

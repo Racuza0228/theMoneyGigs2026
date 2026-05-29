@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../providers/demo_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-
+import 'package:the_money_gigs/core/utils/logger.dart';
 class DemoTrackingService {
   static const String _demoSessionIdKey = 'demo_session_id';
   static const String _needsSyncKey = 'demo_needs_sync';
@@ -32,7 +32,7 @@ class DemoTrackingService {
 
     if (await _isOffline()) return;
 
-    print('📡 Internet detected, syncing pending demo data...');
+    log('📡 Internet detected, syncing pending demo data...');
 
     final cachedStepString = prefs.getString(_cachedStepKey);
     if (cachedStepString != null) {
@@ -61,7 +61,7 @@ class DemoTrackingService {
       final sessionId = await _getOrCreateSessionId();
 
       if (await _isOffline()) {
-        print('📴 Offline: Session started locally, will sync on first step update.');
+        log('📴 Offline: Session started locally, will sync on first step update.');
         return;
       }
 
@@ -76,9 +76,9 @@ class DemoTrackingService {
         },
         SetOptions(merge: true),
       );
-      print('✅ Demo session started: $sessionId');
+      log('✅ Demo session started: $sessionId');
     } catch (e) {
-      print('❌ Error starting demo session: $e');
+      log('❌ Error starting demo session: $e');
     }
   }
 
@@ -93,7 +93,7 @@ class DemoTrackingService {
 
       // 2. Check connectivity before trying Firebase
       if (await _isOffline()) {
-        print('📴 Offline: Step ${step.toString()} saved locally for later sync.');
+        log('📴 Offline: Step ${step.toString()} saved locally for later sync.');
         return;
       }
 
@@ -108,10 +108,10 @@ class DemoTrackingService {
 
       // 3. If successful, clear the "Needs Sync" flag
       await prefs.setBool(_needsSyncKey, false);
-      print('✅ Demo step synced to Firebase: ${step.toString()}');
+      log('✅ Demo step synced to Firebase: ${step.toString()}');
 
     } catch (e) {
-      print('⚠️ Firebase update failed (will retry later): $e');
+      log('⚠️ Firebase update failed (will retry later): $e');
     }
   }
 
@@ -119,7 +119,7 @@ class DemoTrackingService {
     try {
       if (await _isOffline()) {
         // Just clear locally if offline; syncPendingData will pick up the last step later
-        print('📴 Offline: Exiting demo, cleanup handled locally.');
+        log('📴 Offline: Exiting demo, cleanup handled locally.');
       } else {
         final sessionId = await _getOrCreateSessionId();
         await _firestore.collection('demoSessions').doc(sessionId).update({
@@ -128,10 +128,10 @@ class DemoTrackingService {
           'onboardingExited': true,
           'isCompleted': false,
         });
-        print('✅ Demo session exited at step: ${lastStep.toString()}');
+        log('✅ Demo session exited at step: ${lastStep.toString()}');
       }
     } catch (e) {
-      print('❌ Error marking demo as exited: $e');
+      log('❌ Error marking demo as exited: $e');
     } finally {
       await clearLocalSession();
     }
@@ -139,7 +139,7 @@ class DemoTrackingService {
 
   Future<void> completeDemoSession() async {
     await clearLocalSession();
-    print('✅ Local demo session cleared after completion.');
+    log('✅ Local demo session cleared after completion.');
   }
 
   Future<void> clearLocalSession() async {

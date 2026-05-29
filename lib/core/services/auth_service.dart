@@ -2,6 +2,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -19,17 +20,17 @@ class AuthService {
   /// Sign in with Google
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      print("🔵 Starting Google Sign-In...");
+      log("🔵 Starting Google Sign-In...");
 
       // Trigger Google Sign-In flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
       if (googleUser == null) {
-        print("⚠️ User cancelled Google Sign-In");
+        log("⚠️ User cancelled Google Sign-In");
         return null; // User cancelled
       }
 
-      print("✅ Google account selected: ${googleUser.email}");
+      log("✅ Google account selected: ${googleUser.email}");
 
       // Obtain auth details
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
@@ -43,7 +44,7 @@ class AuthService {
       // Sign in to Firebase
       final userCredential = await _auth.signInWithCredential(credential);
 
-      print("✅ Signed in to Firebase: ${userCredential.user?.email}");
+      log("✅ Signed in to Firebase: ${userCredential.user?.email}");
 
       // Identify user to RevenueCat — wrapped in its own try-catch because
       // RevenueCat may not be initialized yet (standalone users). A failure
@@ -51,18 +52,18 @@ class AuthService {
       if (userCredential.user != null) {
         try {
           await Purchases.logIn(userCredential.user!.uid);
-          print('✅ User identified to RevenueCat: ${userCredential.user!.uid}');
+          log('✅ User identified to RevenueCat: ${userCredential.user!.uid}');
         } catch (e) {
           // RevenueCat not configured yet — harmless. initializeNetworkServices()
           // will be called before any subscription check is needed.
-          print('⚠️ RevenueCat logIn skipped (not yet configured): $e');
+          log('⚠️ RevenueCat logIn skipped (not yet configured): $e');
         }
       }
 
       return userCredential;
 
     } catch (e) {
-      print("❌ Google Sign-In error: $e");
+      log("❌ Google Sign-In error: $e");
       return null;
     }
   }
@@ -73,7 +74,7 @@ class AuthService {
       _auth.signOut(),
       _googleSignIn.signOut(),
     ]);
-    print("✅ Signed out");
+    log("✅ Signed out");
   }
 
   /// Check if user is signed in

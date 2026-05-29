@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/core/services/notification_service.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
+
 class NotificationSettingsDialog extends StatefulWidget {
   const NotificationSettingsDialog({super.key});
 
@@ -99,14 +101,14 @@ class _NotificationSettingsDialogState
 
           // First-time enable: also request OS permissions.
           if (wasDisabled) {
-            print('📬 First-time enable — requesting permissions...');
+            log('📬 First-time enable — requesting permissions...');
             await notificationService.requestPermissions();
           }
 
           await notificationService.updateAllGigNotifications();
-          print('✅ Notification update complete.');
+          log('✅ Notification update complete.');
         } catch (e) {
-          print('❌ Error updating notifications: $e');
+          log('❌ Error updating notifications: $e');
         } finally {
           if (mounted) Navigator.of(context, rootNavigator: true).pop();
         }

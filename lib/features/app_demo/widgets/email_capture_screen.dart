@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/demo_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class EmailCaptureScreen extends StatefulWidget {
   const EmailCaptureScreen({super.key});
@@ -71,7 +72,7 @@ class _EmailCaptureScreenState extends State<EmailCaptureScreen> {
       await prefs.setBool('email_captured', true);
       await prefs.setString('captured_email', email);
 
-      print('✅ Email lead captured: $email');
+      log('✅ Email lead captured: $email');
 
       // Advance demo
       if (mounted) {
@@ -80,7 +81,7 @@ class _EmailCaptureScreenState extends State<EmailCaptureScreen> {
         Navigator.of(context).pop();
       }
     } catch (e) {
-      print('❌ Error capturing email: $e');
+      log('❌ Error capturing email: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error saving email. Please try again.')),

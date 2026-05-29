@@ -20,6 +20,7 @@ import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/fina
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/venue_selection_view.dart';
 import 'package:the_money_gigs/core/services/notification_service.dart';
 import 'package:the_money_gigs/features/gigs/widgets/recurring_gig_dialog.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 // These enums and classes remain the same
 enum GigEditResultAction { updated, deleted, noChange }
@@ -244,92 +245,6 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
-  Future<void> _scheduleGigNotifications(Gig gig) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // Singleton: NotificationService() always returns the same instance.
-    // init() is a no-op if already initialized, so calling it here is safe.
-    final notificationService = NotificationService();
-    await notificationService.init();
-
-    final int base = gig.id.hashCode;
-    final now = DateTime.now();
-    final gigTime = DateFormat.jm().format(gig.dateTime);
-
-    // ── Day-of (9am on gig day) ──────────────────────────────────────────────
-    final bool notifyOnDayOfGig = prefs.getBool('notify_on_day_of_gig') ?? false;
-    final DateTime dayOfTime = DateTime(
-        gig.dateTime.year, gig.dateTime.month, gig.dateTime.day, 9, 0);
-
-    if (notifyOnDayOfGig && dayOfTime.isAfter(now)) {
-      await notificationService.scheduleNotification(
-        id: base,
-        title: 'You have a gig today!',
-        body: 'You have a gig today at ${gig.venueName} at $gigTime!',
-        scheduledDate: dayOfTime,
-        payload: 'day_of:${gig.id}',
-      );
-    } else {
-      await notificationService.cancelNotification(base);
-    }
-
-    // ── Days-before (9am N days before gig) ─────────────────────────────────
-    final int? daysBefore = prefs.getInt('notify_days_before');
-    if (daysBefore != null && daysBefore > 0) {
-      final DateTime beforeDate =
-      gig.dateTime.subtract(Duration(days: daysBefore));
-      final DateTime beforeTime = DateTime(
-          beforeDate.year, beforeDate.month, beforeDate.day, 9, 0);
-      if (beforeTime.isAfter(now)) {
-        await notificationService.scheduleNotification(
-          id: base + 1,
-          title: 'Upcoming gig reminder',
-          body: 'Your gig at ${gig.venueName} is in '
-              '$daysBefore day${daysBefore > 1 ? "s" : ""} '
-              'on ${DateFormat.yMMMEd().format(gig.dateTime)} at $gigTime.',
-          scheduledDate: beforeTime,
-          payload: 'days_before:${gig.id}',
-        );
-      } else {
-        await notificationService.cancelNotification(base + 1);
-      }
-    } else {
-      await notificationService.cancelNotification(base + 1);
-    }
-
-    // ── Day-after retrospective (9am the morning after the gig) ─────────────
-    final bool notifyAfterGig = prefs.getBool('notify_after_gig') ?? true;
-    final DateTime afterGigDate = gig.dateTime.add(const Duration(days: 1));
-    final DateTime afterTime = DateTime(
-        afterGigDate.year, afterGigDate.month, afterGigDate.day, 9, 0);
-    if (notifyAfterGig && afterTime.isAfter(now)) {
-      await notificationService.scheduleNotification(
-        id: base + 2,
-        title: 'How was the gig?',
-        body: 'How did the gig at ${gig.venueName} go?',
-        scheduledDate: afterTime,
-        payload: 'retrospective:${gig.id}',
-      );
-    } else {
-      await notificationService.cancelNotification(base + 2);
-    }
-
-    await notificationService.debugPendingNotifications();
-  }
-
-  Future<void> _cancelGigNotifications(Gig gig) async {
-    // Bug fix: previously created a fresh uninitialized NotificationService
-    // instance and called cancel() on it without calling init() first.
-    // The singleton + init() call ensures the plugin is always ready.
-    final notificationService = NotificationService();
-    await notificationService.init();
-
-    final int base = gig.id.hashCode;
-    await notificationService.cancelNotification(base);      // day-of
-    await notificationService.cancelNotification(base + 1);  // days-before
-    await notificationService.cancelNotification(base + 2);  // day-after
-  }
-
   Future<void> _loadProfileAddress() async {
     final prefs = await SharedPreferences.getInstance();
     _profileAddress1 = prefs.getString('profile_address1');
@@ -344,13 +259,13 @@ class _BookingDialogState extends State<BookingDialog> {
   }
 
   Future<void> _initializeDialogState() async {
-    print("--- Initializing Dialog State ---");
+    log("--- Initializing Dialog State ---");
     await _loadProfileAddress();
     await _loadAllKnownVenuesInternal();
     await _loadAllKnownBands();
     if (!mounted) return;
     if (_isEditingMode) {
-      print("Editing Mode: Gig has bandName = '${widget.editingGig?.bandName}'");
+      log("Editing Mode: Gig has bandName = '${widget.editingGig?.bandName}'");
 
       _editableGig = widget.editingGig!.copyWith(
         id: widget.editingGig!.id,
@@ -429,7 +344,7 @@ class _BookingDialogState extends State<BookingDialog> {
         _selectedBand = _editableGig?.bandName;
         _isInitialized = true;
       });
-      print("Setting UI state: _selectedBand = '$_selectedBand'");
+      log("Setting UI state: _selectedBand = '$_selectedBand'");
     }
   }
 
@@ -513,32 +428,49 @@ class _BookingDialogState extends State<BookingDialog> {
 
   void _confirmAction() async {
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-    if (demoProvider.isDemoModeActive && widget.currentDemoStep == DemoStep.bookingFormAction) {
+    if (demoProvider.isDemoModeActive &&
+        widget.currentDemoStep == DemoStep.bookingFormAction) {
       demoProvider.nextStep();
-      Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.noChange));
+      Navigator.of(context)
+          .pop(GigEditResult(action: GigEditResultAction.noChange));
       return;
     }
     if (!_formKey.currentState!.validate()) return;
     if (_selectedDate == null || _selectedTime == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a date and time.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please select a date and time.')));
       }
       return;
     }
     if (mounted) setState(() => _isProcessing = true);
-    final DateTime selectedFullDateTime = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _selectedTime!.hour, _selectedTime!.minute);
+
+    final DateTime selectedFullDateTime = DateTime(
+        _selectedDate!.year,
+        _selectedDate!.month,
+        _selectedDate!.day,
+        _selectedTime!.hour,
+        _selectedTime!.minute);
+
     final double finalPay = double.tryParse(_payController.text) ?? 0;
-    final double finalOtherExpenses = double.tryParse(_otherExpensesController.text) ?? 0;
-    final double finalGigLengthHours = double.tryParse(_gigLengthController.text) ?? 0;
-    final double finalDriveSetupHours = double.tryParse(_driveSetupController.text) ?? 0;
-    final double finalRehearsalHours = double.tryParse(_rehearsalController.text) ?? 0;
+    final double finalOtherExpenses =
+        double.tryParse(_otherExpensesController.text) ?? 0;
+    final double finalGigLengthHours =
+        double.tryParse(_gigLengthController.text) ?? 0;
+    final double finalDriveSetupHours =
+        double.tryParse(_driveSetupController.text) ?? 0;
+    final double finalRehearsalHours =
+        double.tryParse(_rehearsalController.text) ?? 0;
+
     StoredLocation finalVenueDetails;
     if (_isAddNewVenue) {
       String newVenueName = _newVenueNameController.text.trim();
       String newVenueAddress = _newVenueAddressController.text.trim();
       if (newVenueName.isEmpty || newVenueAddress.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('New venue name and address are required.')));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content:
+              Text('New venue name and address are required.')));
           setState(() => _isProcessing = false);
         }
         return;
@@ -548,7 +480,13 @@ class _BookingDialogState extends State<BookingDialog> {
         if (mounted) setState(() => _isProcessing = false);
         return;
       }
-      finalVenueDetails = StoredLocation(placeId: 'manual_${DateTime.now().millisecondsSinceEpoch}', name: newVenueName, address: newVenueAddress, coordinates: coords, isArchived: false, isPrivate: _isPrivateVenue);
+      finalVenueDetails = StoredLocation(
+          placeId: 'manual_${DateTime.now().millisecondsSinceEpoch}',
+          name: newVenueName,
+          address: newVenueAddress,
+          coordinates: coords,
+          isArchived: false,
+          isPrivate: _isPrivateVenue);
       await _saveNewVenueToPrefs(finalVenueDetails);
     } else {
       if (_selectedVenue!.isPrivate != _isPrivateVenue) {
@@ -558,6 +496,7 @@ class _BookingDialogState extends State<BookingDialog> {
         finalVenueDetails = _selectedVenue!;
       }
     }
+
     if (!mounted) {
       setState(() => _isProcessing = false);
       return;
@@ -567,10 +506,10 @@ class _BookingDialogState extends State<BookingDialog> {
     if (_isAddNewBand) {
       finalBandName = _newBandNameController.text.trim();
       if (finalBandName.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a band name.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please enter a band name.')));
         return;
       }
-      // Save to global list if new
       if (!_allKnownBands.contains(finalBandName)) {
         _allKnownBands.add(finalBandName);
         final prefs = await SharedPreferences.getInstance();
@@ -580,8 +519,15 @@ class _BookingDialogState extends State<BookingDialog> {
       finalBandName = _selectedBand;
     }
 
-    print("--- Confirming Action ---");
-    print("Returning gig with bandName: '$finalBandName'");
+    log("--- Confirming Action ---");
+    log("Returning gig with bandName: '$finalBandName'");
+
+    // ✅ FIX: New bookings always start with retrospectiveCompleted = false.
+    // Edit mode preserves the existing review state.
+    // This prevents recurring occurrences from inheriting a completed
+    // review from the parent template record.
+    final bool? resolvedRetrospectiveCompleted =
+    _isEditingMode ? _editableGig!.retrospectiveCompleted : false;
 
     final Gig newOrUpdatedGigData = _editableGig!.copyWith(
         venueName: finalVenueDetails.name,
@@ -600,43 +546,62 @@ class _BookingDialogState extends State<BookingDialog> {
         notesUrl: _editableGig!.notesUrl,
         isRecurring: _editableGig!.isRecurring,
         recurrenceFrequency: _editableGig!.recurrenceFrequency,
-        recurrenceDay: _editableGig!.recurrenceDay, recurrenceNthValue: _editableGig!.recurrenceNthValue, recurrenceEndDate: _editableGig!.recurrenceEndDate);
+        recurrenceDay: _editableGig!.recurrenceDay,
+        recurrenceNthValue: _editableGig!.recurrenceNthValue,
+        recurrenceEndDate: _editableGig!.recurrenceEndDate,
+        retrospectiveCompleted: resolvedRetrospectiveCompleted);
 
-    List<Gig> otherGigsToCheck = List.from(widget.existingGigs.where((g) => !g.isJamOpenMic));
+    log("🧹 retrospectiveCompleted set to: $resolvedRetrospectiveCompleted (editingMode: $_isEditingMode)");
+
+    List<Gig> otherGigsToCheck =
+    List.from(widget.existingGigs.where((g) => !g.isJamOpenMic));
     if (_isEditingMode) {
-      otherGigsToCheck.removeWhere((g) => g.id == widget.editingGig!.id);
+      otherGigsToCheck
+          .removeWhere((g) => g.id == widget.editingGig!.id);
     }
-    final conflictingGig = _checkForConflict(newOrUpdatedGigData.dateTime, newOrUpdatedGigData.gigLengthHours, otherGigsToCheck);
+    final conflictingGig = _checkForConflict(newOrUpdatedGigData.dateTime,
+        newOrUpdatedGigData.gigLengthHours, otherGigsToCheck);
     if (conflictingGig != null) {
-      final bool? bookAnyway = await showDialog<bool>(context: context, builder: (BuildContext dialogContext) => AlertDialog(title: const Text('Scheduling Conflict'), content: Text('This gig conflicts with "${conflictingGig.venueName}" on ${DateFormat.yMMMEd().format(conflictingGig.dateTime)}. ${_isEditingMode ? "Update" : "Book"} anyway?'), actions: <Widget>[TextButton(child: const Text('CANCEL'), onPressed: () => Navigator.of(dialogContext).pop(false)), TextButton(child: Text('${_isEditingMode ? "UPDATE" : "BOOK"} ANYWAY'), onPressed: () => Navigator.of(dialogContext).pop(true))]));
+      final bool? bookAnyway = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog(
+              title: const Text('Scheduling Conflict'),
+              content: Text(
+                  'This gig conflicts with "${conflictingGig.venueName}" on ${DateFormat.yMMMEd().format(conflictingGig.dateTime)}. ${_isEditingMode ? "Update" : "Book"} anyway?'),
+              actions: <Widget>[
+                TextButton(
+                    child: const Text('CANCEL'),
+                    onPressed: () =>
+                        Navigator.of(dialogContext).pop(false)),
+                TextButton(
+                    child: Text(
+                        '${_isEditingMode ? "UPDATE" : "BOOK"} ANYWAY'),
+                    onPressed: () =>
+                        Navigator.of(dialogContext).pop(true))
+              ]));
       if (bookAnyway != true) {
         if (mounted) setState(() => _isProcessing = false);
         return;
       }
     }
+
     await _audioPlayer.play(AssetSource('sounds/thetone.wav'));
     await Future.delayed(const Duration(milliseconds: 2500));
-    if (await _areNotificationsEnabled()) {
-      try {
-        await _scheduleGigNotifications(newOrUpdatedGigData);
-      } catch (e) {
-        print("⚠️ Error scheduling notifications, but continuing with booking. Error: $e");
-      }
-    } else {
-      print("🔕 Notifications are disabled by the user. Skipping scheduling.");
+
+    try {
+      final notificationService = NotificationService();
+      await notificationService.init();
+      await notificationService.updateAllGigNotifications();
+      log("🔔 Notifications rescheduled after gig save.");
+    } catch (e) {
+      log("⚠️ Error rescheduling notifications, but continuing. Error: $e");
     }
+
     if (mounted) setState(() => _isProcessing = false);
     if (mounted && Navigator.canPop(context)) {
-      Navigator.of(context).pop(GigEditResult(action: GigEditResultAction.updated, gig: newOrUpdatedGigData));
+      Navigator.of(context).pop(
+          GigEditResult(action: GigEditResultAction.updated, gig: newOrUpdatedGigData));
     }
-  }
-
-  Future<bool> _areNotificationsEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    final bool notifyOnDayOfGig = prefs.getBool('notify_on_day_of_gig') ?? false;
-    final bool notifyAfterGig   = prefs.getBool('notify_after_gig') ?? true;
-    final int? daysBefore = prefs.getInt('notify_days_before');
-    return notifyOnDayOfGig || notifyAfterGig || (daysBefore != null && daysBefore > 0);
   }
 
   Future<void> _loadAllKnownVenuesInternal() async {
@@ -645,7 +610,7 @@ class _BookingDialogState extends State<BookingDialog> {
     if (locationsJson != null) {
       _allKnownVenuesInternal = locationsJson.map((jsonString) {
         try { return StoredLocation.fromJson(jsonDecode(jsonString)); }
-        catch (e) { print("Error decoding one stored location in BookingDialog: $e"); return null; }
+        catch (e) { log("Error decoding one stored location in BookingDialog: $e"); return null; }
       }).whereType<StoredLocation>().toList();
     }
   }
@@ -734,7 +699,7 @@ class _BookingDialogState extends State<BookingDialog> {
         });
       }
     } catch (e) {
-      print("Error filtering/setting up venues for dropdown: $e");
+      log("Error filtering/setting up venues for dropdown: $e");
       if (mounted) {
         setState(() {
           _selectableVenuesForDropdown = [_addNewVenuePlaceholder];

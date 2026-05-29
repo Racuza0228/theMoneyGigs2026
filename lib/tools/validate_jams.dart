@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 // --- IMPORTANT: PASTE YOUR GOOGLE API KEY HERE ---
 // It's safe to do this here because this script is only run locally by you.
@@ -10,7 +11,7 @@ const String googleApiKey = "AIzaSyCjyQbNWIXnY5L9AHXhZrhzqsDwYAZPKVo";
 
 Future<void> main() async {
   if (googleApiKey == "YOUR_GOOGLE_API_KEY_HERE" || googleApiKey.isEmpty) {
-    print("\nERROR: Please paste your Google API Key into the googleApiKey variable in this script.\n");
+    log("\nERROR: Please paste your Google API Key into the googleApiKey variable in this script.\n");
     return;
   }
 
@@ -19,11 +20,11 @@ Future<void> main() async {
   final outputFile = File('assets/jam_sessions_corrected.json');
 
   if (!await inputFile.exists()) {
-    print("Error: `assets/jam_sessions.json` not found!");
+    log("Error: `assets/jam_sessions.json` not found!");
     return;
   }
 
-  print("Starting validation process...");
+  log("Starting validation process...");
 
   // Read the source JSON file
   final jsonString = await inputFile.readAsString();
@@ -98,10 +99,10 @@ Future<void> main() async {
   final encoder = JsonEncoder.withIndent('  '); // Pretty-print the JSON
   await outputFile.writeAsString(encoder.convert(correctedVenues));
 
-  print("\n------------------------------------");
-  print("Validation Complete!");
-  print("Corrections made: $corrections");
-  print("Errors/Not Found: $errors");
-  print("A new file has been created at: ${outputFile.path}");
-  print("------------------------------------");
+  log("\n------------------------------------");
+  log("Validation Complete!");
+  log("Corrections made: $corrections");
+  log("Errors/Not Found: $errors");
+  log("A new file has been created at: ${outputFile.path}");
+  log("------------------------------------");
 }

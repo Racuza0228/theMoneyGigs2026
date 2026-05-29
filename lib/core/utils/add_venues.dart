@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class VenueDiscoveryService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -11,7 +12,7 @@ class VenueDiscoveryService {
   /// Deletes all venues from the 'venues' collection that were created by the system.
   /// This is useful for cleaning up data added by the syncLiveMusicVenues script.
   Future<void> deleteSystemVenues() async {
-    print("🔥 Starting deletion of 'system' created venues...");
+    log("🔥 Starting deletion of 'system' created venues...");
 
     try {
       // 1. Create a query to find all documents where 'createdBy' is 'system'.
@@ -23,11 +24,11 @@ class VenueDiscoveryService {
       final int documentsToDelete = querySnapshot.docs.length;
 
       if (documentsToDelete == 0) {
-        print("✅ No venues with 'createdBy: system' found. Nothing to delete.");
+        log("✅ No venues with 'createdBy: system' found. Nothing to delete.");
         return;
       }
 
-      print("Found $documentsToDelete system-created venues to delete.");
+      log("Found $documentsToDelete system-created venues to delete.");
 
       // 2. Firestore limits batch writes to 500 operations.
       // We process the deletion in chunks to handle more than 500 documents safely.
@@ -40,7 +41,7 @@ class VenueDiscoveryService {
         // If we've hit the 500-operation limit, commit the batch and start a new one.
         if (i == 500) {
           await batch.commit();
-          print("...committed a batch of 500 deletions.");
+          log("...committed a batch of 500 deletions.");
           batch = _db.batch();
           i = 0;
         }
@@ -49,13 +50,13 @@ class VenueDiscoveryService {
       // 3. Commit any remaining operations in the last batch.
       if (i > 0) {
         await batch.commit();
-        print("...committed the final batch of $i deletions.");
+        log("...committed the final batch of $i deletions.");
       }
 
-      print("✅ Successfully deleted $documentsToDelete system-created venues.");
+      log("✅ Successfully deleted $documentsToDelete system-created venues.");
 
     } catch (e) {
-      print("❌ An error occurred during deletion: $e");
+      log("❌ An error occurred during deletion: $e");
     }
   }
 
@@ -79,12 +80,12 @@ class VenueDiscoveryService {
         final data = jsonDecode(response.body);
 
         if (data['status'] != 'OK' && data['status'] != 'ZERO_RESULTS') {
-          print("Google API Error Status: ${data['status']}");
+          log("Google API Error Status: ${data['status']}");
           return;
         }
 
         List venues = data['results'] ?? [];
-        print("Found ${venues.length} potential venues.");
+        log("Found ${venues.length} potential venues.");
 
         WriteBatch batch = _db.batch();
         int newVenuesCount = 0;
@@ -112,19 +113,19 @@ class VenueDiscoveryService {
               'createdAt': FieldValue.serverTimestamp(),
             });
             newVenuesCount++;
-            print("Marked for addition: ${venue['name']}");
+            log("Marked for addition: ${venue['name']}");
           }
         }
 
         if (newVenuesCount > 0) {
           await batch.commit();
-          print("Successfully added $newVenuesCount new venues.");
+          log("Successfully added $newVenuesCount new venues.");
         } else {
-          print("No new venues to add.");
+          log("No new venues to add.");
         }
       }
     } catch (e) {
-      print("Error during sync: $e");
+      log("Error during sync: $e");
     }
   }
 }

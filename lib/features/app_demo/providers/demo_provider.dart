@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/features/app_demo/services/demo_tracking_service.dart';
-
+import 'package:the_money_gigs/core/utils/logger.dart';
 enum DemoStep {
   none,
 
@@ -48,7 +48,7 @@ class DemoProvider with ChangeNotifier {
     _currentStep = DemoStep.onboardingWelcome; // Always start at the new simple onboarding
 
     await _trackingService.startDemoSession();
-    print('🎬 DemoProvider: Starting onboarding');
+    log('🎬 DemoProvider: Starting onboarding');
 
     Future.microtask(notifyListeners);
   }
@@ -76,7 +76,7 @@ class DemoProvider with ChangeNotifier {
       _handleDemoCompletion();
     }
 
-    print('🎬 DemoProvider: Step → $_currentStep');
+    log('🎬 DemoProvider: Step → $_currentStep');
     notifyListeners();
   }
 
@@ -111,7 +111,7 @@ class DemoProvider with ChangeNotifier {
 
   Future<void> _handleDemoCompletion() async {
     if (!_isDemoModeActive) return;
-    print('🎬 DemoProvider: Onboarding completed.');
+    log('🎬 DemoProvider: Onboarding completed.');
 
     // Mark intro as seen so we never show it again
     final prefs = await SharedPreferences.getInstance();
@@ -129,7 +129,7 @@ class DemoProvider with ChangeNotifier {
 
   Future<void> endDemo() async {
     if (!_isDemoModeActive) return;
-    print('🎬 DemoProvider: User exited onboarding at $_currentStep');
+    log('🎬 DemoProvider: User exited onboarding at $_currentStep');
 
     // Mark intro as seen even if they skipped — don't show again
     final prefs = await SharedPreferences.getInstance();
@@ -152,6 +152,6 @@ class DemoProvider with ChangeNotifier {
     await prefs.remove('pending_code_is_founder');
     await prefs.remove('email_captured');
     await prefs.remove('captured_email');
-    print('🎬 DemoProvider: Reset all onboarding flags for testing');
+    log('🎬 DemoProvider: Reset all onboarding flags for testing');
   }
 }

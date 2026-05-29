@@ -22,6 +22,7 @@ class GigListTile extends StatelessWidget {
   final GigTileStyle style;
   final VoidCallback onTap;
   final VoidCallback? onNotesTap;
+  final VoidCallback? onReviewTap;
 
   const GigListTile({
     super.key,
@@ -29,6 +30,7 @@ class GigListTile extends StatelessWidget {
     required this.style,
     required this.onTap,
     this.onNotesTap,
+    this.onReviewTap,
   });
 
   bool get _isPast {
@@ -51,6 +53,9 @@ class GigListTile extends StatelessWidget {
 
   bool get _needsReview =>
       _isPast && !_isJam && !(gig.retrospectiveCompleted ?? false);
+
+  bool get _reviewDone =>
+      _isPast && !_isJam && (gig.retrospectiveCompleted ?? false);
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +84,6 @@ class GigListTile extends StatelessWidget {
 
   Widget _buildLeading(BuildContext context) {
     if (style == GigTileStyle.calendarView) {
-      // Calendar view: simple icon
       return Icon(
         _isJam ? Icons.music_note : Icons.event,
         color: _isPast
@@ -90,7 +94,6 @@ class GigListTile extends StatelessWidget {
       );
     }
 
-    // List view: CircleAvatar with date or music note
     return CircleAvatar(
       backgroundColor: _isJam
           ? Theme.of(context).colorScheme.tertiary
@@ -106,11 +109,10 @@ class GigListTile extends StatelessWidget {
   }
 
   Widget _buildTitle(BuildContext context) {
-    // 1. Determine if we have a valid band name to show
-    final bool hasBandName = gig.bandName != null && gig.bandName!.trim().isNotEmpty;
+    final bool hasBandName =
+        gig.bandName != null && gig.bandName!.trim().isNotEmpty;
 
     if (style == GigTileStyle.calendarView) {
-      // Calendar view: handle optional band name without showing "null"
       return Text(
         hasBandName
             ? '${gig.venueName} - ${gig.bandName}'
@@ -122,7 +124,6 @@ class GigListTile extends StatelessWidget {
       );
     }
 
-    // List view: Venue Name with Band Name underneath
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -156,8 +157,6 @@ class GigListTile extends StatelessWidget {
               ),
           ],
         ),
-
-        // 2. Only render the band name widget if it actually exists
         if (hasBandName)
           Padding(
             padding: const EdgeInsets.only(top: 2.0),
@@ -178,7 +177,6 @@ class GigListTile extends StatelessWidget {
 
   Widget _buildSubtitle(BuildContext context) {
     if (style == GigTileStyle.calendarView) {
-      // Calendar view: time and pay only
       return Text(
         _isJam
             ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic'
@@ -189,7 +187,6 @@ class GigListTile extends StatelessWidget {
       );
     }
 
-    // List view: full date, time, pay, and hours
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -235,24 +232,44 @@ class GigListTile extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Show "Review" badge for past unreviewed gigs
+
+        // ── Needs review: tappable orange badge ──────────────────
         if (_needsReview)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            margin: const EdgeInsets.only(right: 4),
-            decoration: BoxDecoration(
-              color: Colors.orange.shade100,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              'Review',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: Colors.orange.shade800,
+          GestureDetector(
+            onTap: onReviewTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              margin: const EdgeInsets.only(right: 4),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade700,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'REVIEW',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
+
+        // ── Review done: tappable amber star ─────────────────────
+        if (_reviewDone)
+          GestureDetector(
+            onTap: onReviewTap,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 4.0),
+              child: Icon(
+                Icons.star_rounded,
+                size: 20,
+                color: Colors.amber.shade400,
+              ),
+            ),
+          ),
+
+        // ── Notes icon ───────────────────────────────────────────
         IconButton(
           icon: Icon(
             _hasNotes ? Icons.note_alt : Icons.note_alt_outlined,

@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:the_money_gigs/core/utils/logger.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
@@ -61,7 +61,7 @@ class _GigCalculatorState extends State<GigCalculator>
     _rehearsalTimeController.addListener(_calculateSuggestedPay);
 
     if (_googleApiKey.isEmpty) {
-      print('WARNING (GigCalculator): GOOGLE_API_KEY not defined.');
+      log('WARNING (GigCalculator): GOOGLE_API_KEY not defined.');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

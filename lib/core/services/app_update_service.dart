@@ -1,5 +1,6 @@
 // lib/core/services/app_update_service.dart
 import 'package:in_app_update/in_app_update.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class AppUpdateService {
   Future<void> checkForUpdate() async {    try {
@@ -17,7 +18,7 @@ class AppUpdateService {
     }
   } catch (e) {
     // Handle any errors that might occur during the update process.
-    print('Error checking for app update: $e');
+    log('Error checking for app update: $e');
   }
   }
 }

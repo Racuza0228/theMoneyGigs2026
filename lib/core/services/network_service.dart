@@ -1,6 +1,7 @@
 // lib/core/services/network_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class NetworkMember {
   final String userId;
@@ -93,14 +94,14 @@ class NetworkService {
       final doc = await _firestore.collection('networkMembers').doc(userId).get();
 
       if (!doc.exists) {
-        print('❌ User $userId not found in networkMembers');
+        log('❌ User $userId not found in networkMembers');
         return null;
       }
 
-      print('✅ User $userId found in networkMembers');
+      log('✅ User $userId found in networkMembers');
       return NetworkMember.fromFirestore(doc);
     } catch (e) {
-      print('❌ Error checking membership: $e');
+      log('❌ Error checking membership: $e');
       return null;
     }
   }
@@ -108,9 +109,9 @@ class NetworkService {
   Future<void> deleteMember(String userId) async {
     try {
       await _firestore.collection('networkMembers').doc(userId).delete();
-      print('✅ Rolled back and deleted member: $userId');
+      log('✅ Rolled back and deleted member: $userId');
     } catch (e) {
-      print('❌ Error rolling back member creation for user $userId: $e');
+      log('❌ Error rolling back member creation for user $userId: $e');
       // Even if this fails, we don't block the user. Log for admin review.
     }
   }
@@ -127,21 +128,21 @@ class NetworkService {
       final doc = await _firestore.collection('inviteCodes').doc(code).get();
 
       if (!doc.exists) {
-        print('❌ Invite code not found: $code');
+        log('❌ Invite code not found: $code');
         return null;
       }
 
       final inviteCode = InviteCode.fromFirestore(doc);
 
       if (!inviteCode.isAvailable) {
-        print('❌ Invite code exhausted: $code (${inviteCode.timesUsed}/${inviteCode.maxUses})');
+        log('❌ Invite code exhausted: $code (${inviteCode.timesUsed}/${inviteCode.maxUses})');
         return null;
       }
 
-      print('✅ Invite code valid: $code (isFounder: ${inviteCode.isFounderCode})');
+      log('✅ Invite code valid: $code (isFounder: ${inviteCode.isFounderCode})');
       return inviteCode;
     } catch (e) {
-      print('❌ Error validating invite code: $e');
+      log('❌ Error validating invite code: $e');
       return null;
     }
   }
@@ -153,7 +154,7 @@ class NetworkService {
     required String inviteCode,
   }) async {
     try {
-      print('🔵 Creating member with code: $inviteCode');
+      log('🔵 Creating member with code: $inviteCode');
 
       // 1. Validate invite code
       final inviteCodeDoc = await validateInviteCode(inviteCode);
@@ -217,10 +218,10 @@ class NetworkService {
       // Commit batch
       await batch.commit();
 
-      print('✅ New member created: $userId with codes: $newMemberCodes');
+      log('✅ New member created: $userId with codes: $newMemberCodes');
       return true;
     } catch (e) {
-      print('❌ Error creating member: $e');
+      log('❌ Error creating member: $e');
       return false;
     }
   }

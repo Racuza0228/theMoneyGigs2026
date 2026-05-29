@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 // Import our newly created models
 import 'package:the_money_gigs/features/map_venues/models/place_models.dart';
@@ -46,7 +47,7 @@ class PlacesService {
         }
       }
     } catch (e) {
-      print("PlacesService (Autocomplete) Error: $e");
+      log("PlacesService (Autocomplete) Error: $e");
     }
     return []; // Return empty list on error
   }
@@ -74,7 +75,7 @@ class PlacesService {
         }
       }
     } catch (e) {
-      print("PlacesService (Details) Error: $e");
+      log("PlacesService (Details) Error: $e");
     }
     return null; // Return null on error
   }

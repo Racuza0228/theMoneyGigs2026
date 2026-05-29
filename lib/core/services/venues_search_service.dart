@@ -3,6 +3,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:the_money_gigs/features/map_venues/models/place_models.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 // Import your existing Google Places service
 
 class VenueSearchService {
@@ -15,12 +16,12 @@ class VenueSearchService {
     final firebaseResults = await _searchFirebase(query);
 
     if (firebaseResults.isNotEmpty) {
-      print('✅ Found ${firebaseResults.length} venues in MoneyGigs database (FREE!)');
+      log('✅ Found ${firebaseResults.length} venues in MoneyGigs database (FREE!)');
       return firebaseResults;
     }
 
     // Step 2: Not in Firebase, search Google (COSTS MONEY)
-    print('⚠️ Not in MoneyGigs DB, calling Google Places API (costs money)');
+    log('⚠️ Not in MoneyGigs DB, calling Google Places API (costs money)');
     final googleResults = await _searchGooglePlaces(query);
 
     return googleResults;
@@ -53,7 +54,7 @@ class VenueSearchService {
 
       return matches;
     } catch (e) {
-      print('Error searching Firebase: $e');
+      log('Error searching Firebase: $e');
       return [];
     }
   }
@@ -73,12 +74,12 @@ class VenueSearchService {
     final firebaseVenue = await _getFromFirebase(placeId);
 
     if (firebaseVenue != null) {
-      print('✅ Loaded venue from MoneyGigs database (FREE!)');
+      log('✅ Loaded venue from MoneyGigs database (FREE!)');
       return firebaseVenue;
     }
 
     // Step 2: Not in Firebase, get from Google (COSTS MONEY)
-    print('⚠️ Getting venue from Google Places API (costs money)');
+    log('⚠️ Getting venue from Google Places API (costs money)');
     final googleVenue = await _getFromGooglePlaces(placeId);
 
     if (googleVenue != null) {
@@ -105,7 +106,7 @@ class VenueSearchService {
         'longitude': geoPoint.longitude,
       });
     } catch (e) {
-      print('Error loading from Firebase: $e');
+      log('Error loading from Firebase: $e');
       return null;
     }
   }
@@ -142,9 +143,9 @@ class VenueSearchService {
         'totalComments': 0,
       });
 
-      print('✅ Cached venue to MoneyGigs database for future users');
+      log('✅ Cached venue to MoneyGigs database for future users');
     } catch (e) {
-      print('Error caching to Firebase: $e');
+      log('Error caching to Firebase: $e');
     }
   }
 }

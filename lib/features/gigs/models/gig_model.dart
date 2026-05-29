@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_rating.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class Gig {
   String id;
@@ -298,14 +299,14 @@ class Gig {
         try {
           return Gig.fromJson(item as Map<String, dynamic>);
         } catch (e) {
-          print('Error decoding a single gig: $item. Error: $e');
+          log('Error decoding a single gig: $item. Error: $e');
           return null;
         }
       })
           .whereType<Gig>()
           .toList();
     } catch (e) {
-      print('Error decoding gigs list: $gigsString. Error: $e');
+      log('Error decoding gigs list: $gigsString. Error: $e');
       return [];
     }
   }

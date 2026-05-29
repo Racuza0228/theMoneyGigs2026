@@ -249,6 +249,8 @@ class _MainPageState extends State<MainPage> {
 
   Future<void> _initializeAppServices() async {
     Gig? pendingGigResult;
+    final prefs = await SharedPreferences.getInstance();
+
     try {
       final results = await Future.wait([
         _initializeSettings(),
@@ -260,13 +262,53 @@ class _MainPageState extends State<MainPage> {
 
       tz.initializeTimeZones();
       final notificationService = NotificationService();
-      // init() must run at startup — sets up timezone + plugin so that
-      // already-scheduled gig reminders fire correctly.
       await notificationService.init();
+
+// One-time cleanup of stale notifications scheduled with the old
+// per-gig ID formula. Runs once after this patch ships.
+      final bool notifCleanupDone =
+          prefs.getBool('notification_cleanup_v1') ?? false;
+      if (!notifCleanupDone) {
+        log('🧹 Running one-time notification cleanup...');
+        try {
+          await notificationService.updateAllGigNotifications();
+          await prefs.setBool('notification_cleanup_v1', true);
+          log('🧹 Notification cleanup complete.');
+        } catch (e) {
+          log('⚠️ Notification cleanup failed — will retry next launch: $e');
+        }
+      }
+
       await notificationService.debugPendingNotifications();
-      // requestPermissions() is intentionally NOT called here.
-      // The user opts in from the Profile page so they understand why
-      // we are asking before the OS dialog appears.
+
+      final bool gigDataCleanupDone =
+          prefs.getBool('gig_data_cleanup_v1') ?? false;
+      if (!gigDataCleanupDone) {
+        log('🧹 Running one-time gig data cleanup...');
+        try {
+          final String? gigsJson = prefs.getString('gigs_list');
+          if (gigsJson != null) {
+            List<Gig> gigs = Gig.decode(gigsJson);
+            bool changed = false;
+            gigs = gigs.map((g) {
+              // Reset retrospectiveCompleted on recurring parent templates only
+              if (g.isRecurring && g.retrospectiveCompleted == true) {
+                changed = true;
+                log('🧹 Resetting retrospectiveCompleted on parent: ${g.id} ${g.venueName}');
+                return g.copyWith(retrospectiveCompleted: false);
+              }
+              return g;
+            }).toList();
+            if (changed) {
+              await prefs.setString('gigs_list', Gig.encode(gigs));
+              log('🧹 Gig data cleanup complete.');
+            }
+          }
+          await prefs.setBool('gig_data_cleanup_v1', true);
+        } catch (e) {
+          log('⚠️ Gig data cleanup failed — will retry next launch: $e');
+        }
+      }
     } catch (e, s) {
       // A startup-service failure must never prevent the UI from showing.
       log('❌ _initializeAppServices failed — showing app anyway: $e\n$s');
@@ -427,6 +469,11 @@ class _MainPageState extends State<MainPage> {
             result.gig != null) {
           existingGigs.add(result.gig!);
           await prefs.setString('gigs_list', Gig.encode(existingGigs));
+
+          final notificationService = NotificationService();
+          await notificationService.init();
+          await notificationService.updateAllGigNotifications();
+
           globalRefreshNotifier.notify();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

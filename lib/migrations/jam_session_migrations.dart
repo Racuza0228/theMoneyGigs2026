@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class JamSessionMigration {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -16,12 +17,12 @@ class JamSessionMigration {
   /// Migrates jam sessions from assets/jam_sessions.json to Firestore
   Future<void> migrateJamSessions() async {
     try {
-      print('🔄 Starting jam session migration...');
+      log('🔄 Starting jam session migration...');
 
       // 1. Load JSON file
       final String jsonString = await rootBundle.loadString('assets/jam_sessions.json');
       final List<dynamic> jsonData = json.decode(jsonString);
-      print('   Loaded ${jsonData.length} venues from JSON');
+      log('   Loaded ${jsonData.length} venues from JSON');
 
       int successCount = 0;
       int errorCount = 0;
@@ -38,27 +39,27 @@ class JamSessionMigration {
 
           if (doc.exists) {
             skippedCount++;
-            print('   ⏭️  Skipped (exists): ${venueJson['name']}');
+            log('   ⏭️  Skipped (exists): ${venueJson['name']}');
             continue;
           }
 
           final venue = _parseVenueFromJson(venueJson);
           await _saveVenueToFirestore(venue);
           successCount++;
-          print('   ✅ Saved: ${venue.name}');
+          log('   ✅ Saved: ${venue.name}');
         } catch (e) {
           errorCount++;
-          print('   ❌ Error with ${venueJson['name']}: $e');
+          log('   ❌ Error with ${venueJson['name']}: $e');
         }
       }
 
-      print('✅ Migration complete!');
-      print('   Successful: $successCount');
-      print('   Skipped: $skippedCount');
-      print('   Errors: $errorCount');
+      log('✅ Migration complete!');
+      log('   Successful: $successCount');
+      log('   Skipped: $skippedCount');
+      log('   Errors: $errorCount');
 
     } catch (e) {
-      print('❌ Migration failed: $e');
+      log('❌ Migration failed: $e');
     }
   }
 

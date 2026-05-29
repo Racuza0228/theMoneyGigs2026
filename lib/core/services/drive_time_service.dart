@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart'; // <<< NEW IMPORT
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class DriveTimeService {
   final String googleApiKey;
@@ -35,25 +36,25 @@ class DriveTimeService {
 
     // Priority 1: A specific street address is provided.
     if (cleanAddress.trim().isNotEmpty) {
-      print("DriveTimeService: Using specific profile address as origin.");
+      log("DriveTimeService: Using specific profile address as origin.");
       return '$cleanAddress, $cleanCity, $cleanState $cleanZip'.trim();
     }
 
     // Priority 2: A partial, non-specific address (city, state, zip) is provided.
     if (cleanCity.trim().isNotEmpty || cleanState.trim().isNotEmpty || cleanZip.trim().isNotEmpty) {
-      print("DriveTimeService: Using partial profile address as origin.");
+      log("DriveTimeService: Using partial profile address as origin.");
       return '$cleanCity, $cleanState $cleanZip'.trim();
     }
 
     // Priority 3: FINAL FALLBACK. If no address info exists at all, try current location.
-    print("DriveTimeService: No profile address found. Falling back to current device location.");
+    log("DriveTimeService: No profile address found. Falling back to current device location.");
 
     bool serviceEnabled;
     LocationPermission permission;
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      print('DriveTimeService: Location services are disabled.');
+      log('DriveTimeService: Location services are disabled.');
       return null;
     }
 
@@ -61,26 +62,26 @@ class DriveTimeService {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        print('DriveTimeService: Location permissions were denied.');
+        log('DriveTimeService: Location permissions were denied.');
         return null;
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      print('DriveTimeService: Location permissions are permanently denied.');
+      log('DriveTimeService: Location permissions are permanently denied.');
       return null;
     }
 
     try {
-      print("DriveTimeService: Attempting to get current GPS position...");
+      log("DriveTimeService: Attempting to get current GPS position...");
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
       ).timeout(const Duration(seconds: 10));
 
-      print("DriveTimeService: Successfully retrieved GPS position.");
+      log("DriveTimeService: Successfully retrieved GPS position.");
       return '${position.latitude},${position.longitude}';
     } catch (e) {
-      print("DriveTimeService: Error getting current location (or timed out): $e");
+      log("DriveTimeService: Error getting current location (or timed out): $e");
       return null;
     }
   }
@@ -92,14 +93,14 @@ class DriveTimeService {
     }
 
     if (googleApiKey.isEmpty || googleApiKey == "YOUR_GOOGLE_PLACES_API_KEY_HERE") {
-      print("Cannot fetch drive time: Google API Key is not configured.");
+      log("Cannot fetch drive time: Google API Key is not configured.");
       return null;
     }
 
     final String? origin = await _getBestOrigin();
 
     if (origin == null || origin.trim().isEmpty) {
-      print("Cannot fetch drive time: No valid origin (user address or current location) is available.");
+      log("Cannot fetch drive time: No valid origin (user address or current location) is available.");
       return null;
     }
 
@@ -125,13 +126,13 @@ class DriveTimeService {
           await _updateVenueInPrefs(updatedVenue);
           return updatedVenue;
         } else {
-          print("Directions API Error: ${data['status']} - ${data['error_message'] ?? 'No routes found.'}");
+          log("Directions API Error: ${data['status']} - ${data['error_message'] ?? 'No routes found.'}");
         }
       } else {
-        print("Error contacting Directions API: ${response.statusCode}");
+        log("Error contacting Directions API: ${response.statusCode}");
       }
     } catch (e) {
-      print("An error occurred while fetching drive time: $e");
+      log("An error occurred while fetching drive time: $e");
     }
     return null;
   }

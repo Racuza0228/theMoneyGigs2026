@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class TestDataGenerator {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -8,24 +9,24 @@ class TestDataGenerator {
   Future<void> generateRatingsForAllVenues({
     int ratingsPerVenue = 8,
   }) async {
-    print('🧪 Starting test data generation...');
+    log('🧪 Starting test data generation...');
 
     // Get all venue IDs
     final venuesSnapshot = await _firestore.collection('venues').get();
 
     if (venuesSnapshot.docs.isEmpty) {
-      print('❌ No venues found in database');
+      log('❌ No venues found in database');
       return;
     }
 
-    print('📍 Found ${venuesSnapshot.docs.length} venues');
+    log('📍 Found ${venuesSnapshot.docs.length} venues');
 
     // Generate ratings for each venue
     for (var venueDoc in venuesSnapshot.docs) {
       final placeId = venueDoc.id;
       final venueName = venueDoc.data()['name'] as String? ?? 'Unknown';
 
-      print('\n🎯 Generating $ratingsPerVenue ratings for: $venueName');
+      log('\n🎯 Generating $ratingsPerVenue ratings for: $venueName');
 
       await generateFakeRatings(
         placeId: placeId,
@@ -33,7 +34,7 @@ class TestDataGenerator {
       );
     }
 
-    print('\n🎉 Complete! Generated ratings for ${venuesSnapshot.docs.length} venues');
+    log('\n🎉 Complete! Generated ratings for ${venuesSnapshot.docs.length} venues');
   }
 
   /// Generate fake ratings for a specific venue
@@ -91,7 +92,7 @@ class TestDataGenerator {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('   ✅ Rating ${i + 1}/$count: ${rating.toStringAsFixed(1)} stars');
+      log('   ✅ Rating ${i + 1}/$count: ${rating.toStringAsFixed(1)} stars');
 
       // Small delay to avoid rate limiting
       await Future.delayed(Duration(milliseconds: 50));
@@ -137,12 +138,12 @@ class TestDataGenerator {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    print('   📊 Updated aggregate: ${average.toStringAsFixed(2)} ($count ratings)');
+    log('   📊 Updated aggregate: ${average.toStringAsFixed(2)} ($count ratings)');
   }
 
   /// Delete ALL fake ratings from the entire database
   Future<void> deleteAllFakeRatings() async {
-    print('🗑️ Deleting ALL fake ratings...');
+    log('🗑️ Deleting ALL fake ratings...');
 
     // Get all ratings
     final ratingsSnapshot = await _firestore
@@ -162,15 +163,15 @@ class TestDataGenerator {
       }
     }
 
-    print('✅ Deleted $deleted fake ratings from ${affectedVenues.length} venues');
+    log('✅ Deleted $deleted fake ratings from ${affectedVenues.length} venues');
 
     // Recalculate aggregates for all affected venues
-    print('📊 Recalculating aggregates...');
+    log('📊 Recalculating aggregates...');
     for (var placeId in affectedVenues) {
       await _updateVenueAggregate(placeId);
     }
 
-    print('🎉 Cleanup complete!');
+    log('🎉 Cleanup complete!');
   }
 
   /// Get statistics about test data
