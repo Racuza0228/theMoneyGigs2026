@@ -9,10 +9,13 @@ import 'package:uuid/uuid.dart';
 
 class SetlistPage extends StatefulWidget {
   final Gig gig;
+  /// When true (embedded in NotesPage tab), hides the back button.
+  final bool isEmbedded;
 
   const SetlistPage({
     super.key,
     required this.gig,
+    this.isEmbedded = false,
   });
 
   @override
@@ -292,7 +295,7 @@ class _SetlistPageState extends State<SetlistPage> {
     return Scaffold(
       appBar: AppBar(
         // This is the key to returning the updated gig object to the previous page
-        leading: BackButton(onPressed: () => Navigator.pop(context, _currentGig)),
+        leading: widget.isEmbedded ? const SizedBox.shrink() : BackButton(onPressed: () => Navigator.pop(context, _currentGig)),
         title: Text(_isLoading ? 'SETLIST' : _setlist.name.toUpperCase()),
         centerTitle: true,
         actions: [
@@ -311,29 +314,31 @@ class _SetlistPageState extends State<SetlistPage> {
           : Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _currentGig.venueName,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  DateFormat.yMMMEd().add_jm().format(_currentGig.dateTime),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  formatGigLength(_currentGig.gigLengthHours),
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
+          // Header hidden when embedded in NotesPage (shown in NotesPage AppBar)
+          if (!widget.isEmbedded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _currentGig.venueName,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat.yMMMEd().add_jm().format(_currentGig.dateTime),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    formatGigLength(_currentGig.gigLengthHours),
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
             ),
-          ),
           const Divider(),
           Expanded(
             child: Padding(

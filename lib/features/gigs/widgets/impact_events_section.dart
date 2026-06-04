@@ -127,6 +127,13 @@ class _ImpactEventRow extends StatelessWidget {
     }
   }
 
+  /// Color for the distance pill — green when far, amber when close, red when very close.
+  Color _distanceColor(double miles) {
+    if (miles < 0.5) return Colors.red.shade600;
+    if (miles < 1.5) return Colors.orange.shade700;
+    return Colors.green.shade700;
+  }
+
   Future<void> _launchUrl(BuildContext context) async {
     if (event.sourceUrl == null || event.sourceUrl!.isEmpty) return;
     final uri = Uri.tryParse(event.sourceUrl!);
@@ -188,14 +195,27 @@ class _ImpactEventRow extends StatelessWidget {
                         ),
                       ),
                       if (event.distanceMiles != null) ...[
-                        Text(
-                          '  ·  ${event.distanceMiles!.toStringAsFixed(1)} mi away',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.5),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _distanceColor(event.distanceMiles!)
+                                .withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: _distanceColor(event.distanceMiles!)
+                                  .withValues(alpha: 0.35),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: Text(
+                            '${event.distanceMiles!.toStringAsFixed(1)} mi',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: _distanceColor(event.distanceMiles!),
+                            ),
                           ),
                         ),
                       ],

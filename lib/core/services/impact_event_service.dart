@@ -16,6 +16,7 @@
 //   --dart-define=TICKETMASTER_API_KEY=your_key_here
 
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
@@ -27,14 +28,15 @@ import 'package:the_money_gigs/features/gigs/models/impact_event.dart';
 
 const int kImpactWindowDaysBefore = 5;
 const int kImpactWindowDaysAfter = 0;
-const double kImpactRadiusMiles = 10.0;
+const double kImpactRadiusMiles = 5.0;  // API fetch radius
+const double kImpactFilterMiles = 5.0;   // Client-side filter — drop anything beyond this
 const Duration kImpactCacheTtl = Duration(hours: 24);
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
 class ImpactEventService {
-  static const String _cacheKeyPrefix = 'impact_events_v2_';
-  static const String _lastAssessedKeyPrefix = 'impact_assessed_v2_';
+  static const String _cacheKeyPrefix = 'impact_events_v4_';
+  static const String _lastAssessedKeyPrefix = 'impact_assessed_v4_';
   static const String _tmBaseUrl =
       'https://app.ticketmaster.com/discovery/v2/events.json';
 
@@ -176,6 +178,9 @@ class ImpactEventService {
     required DateTime windowStart,
     required DateTime windowEnd,
   }) async {
+    // Capture gig coords for client-side Haversine filtering
+    final double gigLat = latitude;
+    final double gigLng = longitude;
     try {
       final uri = Uri.parse(_tmBaseUrl).replace(
         queryParameters: {
@@ -216,7 +221,11 @@ class ImpactEventService {
 
       final rawEvents = embedded['events'] as List<dynamic>? ?? [];
       return rawEvents
-          .map((e) => _normalizeTicketmasterEvent(e as Map<String, dynamic>))
+          .map((e) => _normalizeTicketmasterEvent(
+        e as Map<String, dynamic>,
+        gigLat: gigLat,
+        gigLng: gigLng,
+      ))
           .whereType<ImpactEvent>()
           .toList();
     } catch (e) {
@@ -225,10 +234,16 @@ class ImpactEventService {
     }
   }
 
-  ImpactEvent? _normalizeTicketmasterEvent(Map<String, dynamic> item) {
+  ImpactEvent? _normalizeTicketmasterEvent(
+      Map<String, dynamic> item, {
+        required double gigLat,
+        required double gigLng,
+      }) {
     try {
       final name = item['name'] as String? ?? 'Unknown Event';
       final url = item['url'] as String?;
+
+      // Date/time
       final datesBlock = item['dates'] as Map<String, dynamic>?;
       final startBlock = datesBlock?['start'] as Map<String, dynamic>?;
       final localDate = startBlock?['localDate'] as String?;
@@ -239,6 +254,7 @@ class ImpactEventService {
       final eventDate =
       dateStr != null ? DateTime.tryParse(dateStr) ?? DateTime.now() : DateTime.now();
 
+      // Classification
       final classifications = item['classifications'] as List<dynamic>?;
       final firstClass = classifications?.isNotEmpty == true
           ? classifications!.first as Map<String, dynamic>
@@ -247,12 +263,31 @@ class ImpactEventService {
       (firstClass?['segment'] as Map<String, dynamic>?)?['name'] as String?;
       final genre =
       (firstClass?['genre'] as Map<String, dynamic>?)?['name'] as String?;
-
       final eventType = _deriveEventType(segment, genre, name);
-      final distancesBlock = item['distances'] as List<dynamic>?;
-      final distanceMiles = distancesBlock?.isNotEmpty == true
-          ? (distancesBlock!.first['distance'] as num?)?.toDouble()
-          : null;
+
+      // Distance — compute via Haversine from event venue coords to gig coords.
+      // Ticketmaster embeds venue location under _embedded.venues[0].location.
+      double? distanceMiles;
+      final embeddedVenues = item['_embedded']?['venues'] as List<dynamic>?;
+      if (embeddedVenues != null && embeddedVenues.isNotEmpty) {
+        final venueLocation =
+        (embeddedVenues.first as Map<String, dynamic>)['location']
+        as Map<String, dynamic>?;
+        final evtLatStr = venueLocation?['latitude'] as String?;
+        final evtLngStr = venueLocation?['longitude'] as String?;
+        if (evtLatStr != null && evtLngStr != null) {
+          final evtLat = double.tryParse(evtLatStr);
+          final evtLng = double.tryParse(evtLngStr);
+          if (evtLat != null && evtLng != null) {
+            distanceMiles = _haversineDistanceMiles(gigLat, gigLng, evtLat, evtLng);
+          }
+        }
+      }
+
+      // Filter: drop events beyond the client-side radius
+      if (distanceMiles != null && distanceMiles > kImpactFilterMiles) {
+        return null;
+      }
 
       return ImpactEvent(
         eventName: name,
@@ -269,6 +304,25 @@ class ImpactEventService {
     }
   }
 
+  /// Haversine formula — returns distance in miles between two lat/lng points.
+  /// Pure math, no API call, no packages.
+  static double _haversineDistanceMiles(
+      double lat1, double lng1,
+      double lat2, double lng2,
+      ) {
+    const double earthRadiusMiles = 3958.8;
+    final double dLat = _toRad(lat2 - lat1);
+    final double dLng = _toRad(lng2 - lng1);
+    final double a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_toRad(lat1)) *
+            math.cos(_toRad(lat2)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return earthRadiusMiles * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  static double _toRad(double deg) => deg * math.pi / 180;
+
   String _deriveEventType(String? segment, String? genre, String name) {
     final seg = segment?.toLowerCase() ?? '';
     final lower = name.toLowerCase();
@@ -283,15 +337,26 @@ class ImpactEventService {
   }
 
   String _deriveImpactLevel(String eventType, double? distanceMiles) {
-    if (eventType == 'festival') return 'high';
-    if (eventType == 'holiday') return 'high'; // handled by HolidayCalendar but kept for safety
+    // All events are now within kImpactFilterMiles (5 miles) —
+    // distance thresholds are meaningful and reliable.
+    final double d = distanceMiles ?? 99.0;
+
+    if (eventType == 'festival') {
+      return d < 2.0 ? 'high' : 'medium';
+    }
+    if (eventType == 'holiday') return 'high';
     if (eventType == 'sporting') {
-      return (distanceMiles != null && distanceMiles < 2.0) ? 'high' : 'medium';
+      if (d < 1.0) return 'high';
+      if (d < 3.0) return 'medium';
+      return 'low';
     }
     if (eventType == 'concert') {
-      return (distanceMiles != null && distanceMiles < 1.0) ? 'high' : 'medium';
+      if (d < 0.5) return 'high';   // same block — direct competition
+      if (d < 2.0) return 'medium';
+      return 'low';
     }
-    if (distanceMiles != null && distanceMiles < 1.0) return 'medium';
+    // other
+    if (d < 1.0) return 'medium';
     return 'low';
   }
 
@@ -382,25 +447,25 @@ class ImpactEventService {
   // So on a real gig date near a US holiday, you will see holiday events
   // in the badge even before you have a Ticketmaster key.
 
-     List<ImpactEvent> _mockEvents(DateTime gigDate) => [];
-  // List<ImpactEvent> _mockEvents(DateTime gigDate) => [
-  //   ImpactEvent(
-  //     eventName: 'Taste of Cincinnati',
-  //     eventDate: gigDate.subtract(const Duration(days: 2)),
-  //     eventType: 'festival',
-  //     distanceMiles: 2.1,
-  //     sourceUrl: 'https://tasteofcincinnati.com',
-  //     impactLevel: 'high',
-  //     apiSource: 'mock',
-  //   ),
-  //   ImpactEvent(
-  //     eventName: 'FC Cincinnati vs Columbus Crew',
-  //     eventDate: gigDate.subtract(const Duration(days: 1)),
-  //     eventType: 'sporting',
-  //     distanceMiles: 3.8,
-  //     sourceUrl: 'https://fccincinnati.com',
-  //     impactLevel: 'medium',
-  //     apiSource: 'mock',
-  //   ),
-  // ];
+  List<ImpactEvent> _mockEvents(DateTime gigDate) => [];
+// List<ImpactEvent> _mockEvents(DateTime gigDate) => [
+//   ImpactEvent(
+//     eventName: 'Taste of Cincinnati',
+//     eventDate: gigDate.subtract(const Duration(days: 2)),
+//     eventType: 'festival',
+//     distanceMiles: 2.1,
+//     sourceUrl: 'https://tasteofcincinnati.com',
+//     impactLevel: 'high',
+//     apiSource: 'mock',
+//   ),
+//   ImpactEvent(
+//     eventName: 'FC Cincinnati vs Columbus Crew',
+//     eventDate: gigDate.subtract(const Duration(days: 1)),
+//     eventType: 'sporting',
+//     distanceMiles: 3.8,
+//     sourceUrl: 'https://fccincinnati.com',
+//     impactLevel: 'medium',
+//     apiSource: 'mock',
+//   ),
+// ];
 }
