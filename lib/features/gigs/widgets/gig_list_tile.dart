@@ -1,28 +1,30 @@
 // lib/features/gigs/widgets/gig_list_tile.dart
+//
+// INTERACTION MODEL:
+//   Left side  → tap to edit gig (booking dialog)
+//   Right side → tap to open notes page (always includes impact events)
+//
+// A vertical divider separates the two zones. The right side has a
+// subtle tint so users can see it is a distinct tap target.
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 
-/// Defines the visual style/context for the gig tile.
 enum GigTileStyle {
-  /// Full details with date in avatar, used in main list view
   listView,
-  /// Compact style with icon, used in calendar day view
   calendarView,
 }
 
-/// A reusable widget that displays a gig as a card/tile.
-///
-/// Used in both the main gigs list view and the calendar day view.
-/// Handles past/future styling, jam sessions, recurring indicators,
-/// notes icons, and review badges.
 class GigListTile extends StatelessWidget {
   final Gig gig;
   final GigTileStyle style;
+
+  /// Left side: opens gig for editing
   final VoidCallback onTap;
+
+  /// Right side: opens notes page (always passes impact events)
   final VoidCallback? onNotesTap;
-  final VoidCallback? onReviewTap;
 
   const GigListTile({
     super.key,
@@ -30,7 +32,6 @@ class GigListTile extends StatelessWidget {
     required this.style,
     required this.onTap,
     this.onNotesTap,
-    this.onReviewTap,
   });
 
   bool get _isPast {
@@ -50,50 +51,139 @@ class GigListTile extends StatelessWidget {
   }
 
   bool get _isRecurring => gig.isRecurring || gig.isFromRecurring;
-
   bool get _needsReview =>
       _isPast && !_isJam && !(gig.retrospectiveCompleted ?? false);
-
   bool get _reviewDone =>
       _isPast && !_isJam && (gig.retrospectiveCompleted ?? false);
+  bool get _hasImpactEvents => !_isJam && gig.impactEventCount > 0;
+  bool get _hasSignificantImpact => gig.hasSignificantImpactEvents;
+
+  // ── Calendar view stays simple — no divider needed ────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    if (style == GigTileStyle.calendarView) {
+      return _buildCalendarTile(context);
+    }
+    return _buildListTile(context);
+  }
+
+  // ── Calendar view (unchanged from original) ───────────────────────────────
+
+  Widget _buildCalendarTile(BuildContext context) {
     return Card(
       elevation: _isPast ? 0.5 : (_isJam ? 1.5 : 2),
       color: _getCardColor(context),
-      margin: style == GigTileStyle.listView
-          ? const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0)
-          : const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+      margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
       child: ListTile(
-        leading: _buildLeading(context),
-        title: _buildTitle(context),
-        subtitle: _buildSubtitle(context),
-        trailing: _buildTrailing(context),
+        leading: Icon(
+          _isJam ? Icons.music_note : Icons.event,
+          color: _isPast
+              ? Colors.grey.shade500
+              : (_isJam
+              ? Theme.of(context).colorScheme.tertiary
+              : Theme.of(context).colorScheme.primary),
+        ),
+        title: Text(
+          gig.bandName != null && gig.bandName!.trim().isNotEmpty
+              ? '${gig.venueName} - ${gig.bandName}'
+              : gig.venueName,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: _isPast ? Colors.grey.shade600 : Colors.white,
+          ),
+        ),
+        subtitle: Text(
+          _isJam
+              ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic'
+              : '${DateFormat.jm().format(gig.dateTime)} - \$${gig.pay.toStringAsFixed(0)}',
+          style: TextStyle(
+            color: _isPast ? Colors.grey.shade500 : Colors.white,
+          ),
+        ),
         onTap: onTap,
       ),
     );
   }
 
-  Color _getCardColor(BuildContext context) {
-    if (_isJam) {
-      return Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.7);
-    }
-    return Theme.of(context).cardColor;
+  // ── List view — split left/right with vertical divider ───────────────────
+
+  Widget _buildListTile(BuildContext context) {
+    final bool showRightPanel = !_isJam && onNotesTap != null;
+
+    return Card(
+      elevation: _isPast ? 0.5 : (_isJam ? 1.5 : 2),
+      color: _getCardColor(context),
+      margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      clipBehavior: Clip.antiAlias, // keeps right-panel tint inside card border
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+
+            // ── LEFT: main content — taps to edit ──────────────────────────
+            Expanded(
+              child: InkWell(
+                onTap: onTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12.0, vertical: 10.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _buildLeading(context),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildTitleContent(context),
+                            const SizedBox(height: 2),
+                            _buildSubtitleContent(context),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // ── DIVIDER + RIGHT PANEL: notes + badges — taps to open notes ─
+            if (showRightPanel) ...[
+              // Vertical line
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.12),
+              ),
+
+              // Right panel with subtle tint
+              InkWell(
+                onTap: onNotesTap,
+                child: Container(
+                  width: 64,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.04),
+                  child: _buildRightPanel(context),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
-  Widget _buildLeading(BuildContext context) {
-    if (style == GigTileStyle.calendarView) {
-      return Icon(
-        _isJam ? Icons.music_note : Icons.event,
-        color: _isPast
-            ? Colors.grey.shade500
-            : (_isJam
-            ? Theme.of(context).colorScheme.tertiary
-            : Theme.of(context).colorScheme.primary),
-      );
-    }
+  // ── Leading avatar ────────────────────────────────────────────────────────
 
+  Widget _buildLeading(BuildContext context) {
     return CircleAvatar(
       backgroundColor: _isJam
           ? Theme.of(context).colorScheme.tertiary
@@ -108,21 +198,11 @@ class GigListTile extends StatelessWidget {
     );
   }
 
-  Widget _buildTitle(BuildContext context) {
+  // ── Title content ─────────────────────────────────────────────────────────
+
+  Widget _buildTitleContent(BuildContext context) {
     final bool hasBandName =
         gig.bandName != null && gig.bandName!.trim().isNotEmpty;
-
-    if (style == GigTileStyle.calendarView) {
-      return Text(
-        hasBandName
-            ? '${gig.venueName} - ${gig.bandName}'
-            : gig.venueName,
-        style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: _isPast ? Colors.grey.shade600 : Colors.white,
-        ),
-      );
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,21 +218,23 @@ class GigListTile extends StatelessWidget {
                   color: _isPast
                       ? Colors.grey.shade700
                       : (_isJam
-                      ? Theme.of(context).colorScheme.onSecondaryContainer
+                      ? Theme.of(context)
+                      .colorScheme
+                      .onSecondaryContainer
                       : Theme.of(context).textTheme.titleLarge?.color),
                 ),
               ),
             ),
             if (_isRecurring && !_isJam)
               Padding(
-                padding: const EdgeInsets.only(left: 8.0),
+                padding: const EdgeInsets.only(left: 6.0),
                 child: Icon(
                   Icons.event_repeat,
                   size: 16,
                   color: _isPast
                       ? Colors.grey.shade600
                       : Theme.of(context).colorScheme.secondary,
-                  semanticLabel: "Recurring Gig",
+                  semanticLabel: 'Recurring Gig',
                 ),
               ),
           ],
@@ -175,18 +257,9 @@ class GigListTile extends StatelessWidget {
     );
   }
 
-  Widget _buildSubtitle(BuildContext context) {
-    if (style == GigTileStyle.calendarView) {
-      return Text(
-        _isJam
-            ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic'
-            : '${DateFormat.jm().format(gig.dateTime)} - \$${gig.pay.toStringAsFixed(0)}',
-        style: TextStyle(
-          color: _isPast ? Colors.grey.shade500 : Colors.white,
-        ),
-      );
-    }
+  // ── Subtitle content ──────────────────────────────────────────────────────
 
+  Widget _buildSubtitleContent(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -218,36 +291,69 @@ class GigListTile extends StatelessWidget {
           )
         else
           const Text(
-            "Open Mic / Jam Session",
+            'Open Mic / Jam Session',
             style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
           ),
       ],
     );
   }
 
-  Widget? _buildTrailing(BuildContext context) {
-    if (_isJam) return null;
-    if (onNotesTap == null) return null;
+  // ── Right panel — stacked badges + notes icon ────────────────────────────
+  //
+  // Centered vertically. Impact badge on top (when present), then
+  // REVIEW or star, then notes icon at the bottom.
+  // All within the same 64px tap zone.
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+  Widget _buildRightPanel(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
 
-        // ── Needs review: tappable orange badge ──────────────────
+        // Impact event badge — gold circle
+        if (_hasImpactEvents)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4.0),
+            child: Tooltip(
+              message: '${gig.impactEventCount} nearby event'
+                  '${gig.impactEventCount == 1 ? '' : 's'}',
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: _hasSignificantImpact
+                      ? const Color(0xFFB8860B) // dark gold
+                      : const Color(0xFFCDA535).withValues(alpha: 0.75),
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '${gig.impactEventCount}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        // REVIEW badge
         if (_needsReview)
-          GestureDetector(
-            onTap: onReviewTap,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4.0),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              margin: const EdgeInsets.only(right: 4),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
                 color: Colors.orange.shade700,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
               child: const Text(
                 'REVIEW',
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 9,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
@@ -255,32 +361,37 @@ class GigListTile extends StatelessWidget {
             ),
           ),
 
-        // ── Review done: tappable amber star ─────────────────────
+        // Review done — amber star
         if (_reviewDone)
-          GestureDetector(
-            onTap: onReviewTap,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 4.0),
-              child: Icon(
-                Icons.star_rounded,
-                size: 20,
-                color: Colors.amber.shade400,
-              ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4.0),
+            child: Icon(
+              Icons.star_rounded,
+              size: 18,
+              color: Colors.amber.shade400,
             ),
           ),
 
-        // ── Notes icon ───────────────────────────────────────────
-        IconButton(
-          icon: Icon(
-            _hasNotes ? Icons.note_alt : Icons.note_alt_outlined,
-            color: _hasNotes
-                ? Theme.of(context).colorScheme.primary
-                : Colors.grey,
-          ),
-          onPressed: onNotesTap,
-          tooltip: 'View/Edit Notes',
+        // Notes icon — always present
+        Icon(
+          _hasNotes ? Icons.note_alt : Icons.note_alt_outlined,
+          size: 22,
+          color: _hasNotes
+              ? Theme.of(context).colorScheme.primary
+              : Colors.grey.shade500,
         ),
+
       ],
     );
+  }
+
+  Color _getCardColor(BuildContext context) {
+    if (_isJam) {
+      return Theme.of(context)
+          .colorScheme
+          .secondaryContainer
+          .withValues(alpha: 0.7);
+    }
+    return Theme.of(context).cardColor;
   }
 }

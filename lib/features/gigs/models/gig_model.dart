@@ -1,7 +1,15 @@
 // lib/features/gigs/models/gig_model.dart
+//
+// CHANGE LOG (Impact Event Intelligence update):
+//   + Added `impactEvents` field  — List<ImpactEvent>?
+//   + Added `lastAssessedAt` field — DateTime?
+//   + Updated toJson / fromJson / copyWith / encode / decode accordingly
+//   All existing fields and logic unchanged.
+
 import 'dart:convert';
 import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_rating.dart';
+import 'package:the_money_gigs/features/gigs/models/impact_event.dart'; // ← NEW
 import 'package:the_money_gigs/core/utils/logger.dart';
 
 class Gig {
@@ -16,8 +24,6 @@ class Gig {
   double pay;
   double? otherExpenses;
   // --- TIPS ---
-  // Stored as a dollar amount rather than a star rating so it contributes
-  // directly to trueHourlyRate. null = not yet recorded, 0.0 = no tips.
   double? tipsAmount;
   double gigLengthHours;
   double driveSetupTimeHours;
@@ -37,6 +43,9 @@ class Gig {
   // --- RETROSPECTIVE FIELDS ---
   List<GigRating>? gigRatings;
   bool? retrospectiveCompleted;
+  // --- IMPACT EVENT INTELLIGENCE ---    ← NEW SECTION
+  List<ImpactEvent>? impactEvents;
+  DateTime? lastAssessedAt;
 
   Gig({
     required this.id,
@@ -66,6 +75,8 @@ class Gig {
     this.recurrenceExceptions,
     this.gigRatings,
     this.retrospectiveCompleted,
+    this.impactEvents,       // ← NEW
+    this.lastAssessedAt,     // ← NEW
   });
 
   Gig copyWith({
@@ -96,6 +107,8 @@ class Gig {
     List<DateTime>? recurrenceExceptions,
     List<GigRating>? gigRatings,
     bool? retrospectiveCompleted,
+    List<ImpactEvent>? impactEvents,   // ← NEW
+    DateTime? lastAssessedAt,          // ← NEW
   }) {
     return Gig(
       id: id ?? this.id,
@@ -125,36 +138,45 @@ class Gig {
       recurrenceExceptions: recurrenceExceptions ?? this.recurrenceExceptions,
       gigRatings: gigRatings ?? this.gigRatings,
       retrospectiveCompleted: retrospectiveCompleted ?? this.retrospectiveCompleted,
+      impactEvents: impactEvents ?? this.impactEvents,       // ← NEW
+      lastAssessedAt: lastAssessedAt ?? this.lastAssessedAt, // ← NEW
     );
   }
 
   double get trueHourlyRate {
     final double totalHours =
         gigLengthHours + driveSetupTimeHours + rehearsalLengthHours;
-
-    // Tips are real income — they lift the effective pay and therefore the
-    // true rate. tipsAmount == null means not yet recorded (treated as 0),
-    // tipsAmount == 0.0 means explicitly "no tips."
     final double effectivePay =
         pay + (tipsAmount ?? 0.0) - (otherExpenses ?? 0.0);
-
     if (effectivePay <= 0 || totalHours <= 0) return 0.0;
     return effectivePay / totalHours;
   }
 
-  /// Returns true if this gig has ended (based on dateTime + gigLengthHours)
   bool get hasEnded {
     final endTime =
     dateTime.add(Duration(minutes: (gigLengthHours * 60).toInt()));
     return endTime.isBefore(DateTime.now());
   }
 
-  /// Returns true if this gig is eligible for retrospective
   bool get needsRetrospective {
     return hasEnded && !(retrospectiveCompleted ?? false) && !isJamOpenMic;
   }
 
-  /// Returns the rating for a specific dimension, or null if not rated
+  // ── Impact Event Intelligence helpers ───────────────────────────────────────
+
+  /// True if this gig has any medium or high impact events in its window.
+  bool get hasSignificantImpactEvents =>
+      impactEvents?.any((e) => e.impactLevel == 'high' || e.impactLevel == 'medium') ?? false;
+
+  /// Count of all impact events (for badge display).
+  int get impactEventCount => impactEvents?.length ?? 0;
+
+  /// Count of medium + high impact events only (for notification filtering).
+  int get significantImpactEventCount =>
+      impactEvents?.where((e) => e.impactLevel != 'low').length ?? 0;
+
+  // ── Retrospective helpers ────────────────────────────────────────────────────
+
   double? getRatingFor(String dimension) {
     if (gigRatings == null) return null;
     try {
@@ -164,7 +186,6 @@ class Gig {
     }
   }
 
-  /// Returns the average rating across all dimensions, or null if no ratings
   double? get averageRating {
     if (gigRatings == null || gigRatings!.isEmpty) return null;
     final total = gigRatings!.fold<double>(0, (sum, r) => sum + r.rating);
@@ -185,6 +206,8 @@ class Gig {
     }
     return id;
   }
+
+  // ── Serialization ────────────────────────────────────────────────────────────
 
   Map<String, dynamic> toJson() {
     return {
@@ -215,6 +238,10 @@ class Gig {
       recurrenceExceptions?.map((date) => date.toIso8601String()).toList(),
       'gigRatings': gigRatings?.map((r) => r.toJson()).toList(),
       'retrospectiveCompleted': retrospectiveCompleted,
+      // ← NEW: impact events stored in cache (SharedPreferences), not here.
+      // We do NOT persist impactEvents inside the gig JSON to keep gig storage
+      // lean. The ImpactEventService has its own cache keyed by gigId.
+      // lastAssessedAt is also managed by ImpactEventService.
     };
   }
 
@@ -258,7 +285,6 @@ class Gig {
       dateTime: DateTime.parse(json['dateTime'] as String),
       pay: (json['pay'] as num).toDouble(),
       otherExpenses: (json['otherExpenses'] as num?)?.toDouble() ?? 0.0,
-      // Backward compatible — existing gigs with no tipsAmount stay null
       tipsAmount: (json['tipsAmount'] as num?)?.toDouble(),
       gigLengthHours: (json['gigLengthHours'] as num).toDouble(),
       driveSetupTimeHours:
@@ -282,6 +308,10 @@ class Gig {
       parseRecurrenceExceptions(json['recurrenceExceptions']),
       gigRatings: parseGigRatings(json['gigRatings']),
       retrospectiveCompleted: json['retrospectiveCompleted'] as bool?,
+      // impactEvents and lastAssessedAt are not stored in gig JSON —
+      // they live in the ImpactEventService cache.
+      impactEvents: null,
+      lastAssessedAt: null,
     );
   }
 

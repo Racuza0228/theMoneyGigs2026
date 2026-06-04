@@ -10,7 +10,6 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart'; // Import TableCalendar
 import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the notifier
 import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHARED ENUMS
-
 import 'package:the_money_gigs/core/services/notification_service.dart';
 
 // Import your models
@@ -24,7 +23,6 @@ import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.dart';
 import 'package:the_money_gigs/features/notes/views/notes_page.dart';
-import 'package:the_money_gigs/core/services/gig_embed_service.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_details_page.dart';
 import 'package:the_money_gigs/features/profile/views/profile.dart';
 // <<< --- REFACTORING: ADD IMPORT FOR THE NEW VENUES TAB WIDGET --- >>>
@@ -35,6 +33,8 @@ import 'package:the_money_gigs/features/gigs/widgets/gig_insights_dialog.dart';
 import '../../app_demo/providers/demo_provider.dart';
 import 'package:the_money_gigs/features/app_demo/widgets/simple_demo_overlay.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
+import 'package:the_money_gigs/core/services/impact_event_service.dart';
+import 'package:the_money_gigs/features/gigs/models/impact_event.dart';
 
 enum GigsViewType { list, calendar }
 
@@ -73,6 +73,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   final GlobalKey _demoGigTileKey = GlobalKey();
   OverlayEntry? _overlayEntry; // 🎯 ADD THIS VARIABLE
+
+  final ImpactEventService _impactEventService = ImpactEventService();
+//   // gigId → list of impact events; populated after gigs load
+  Map<String, List<ImpactEvent>> _impactEventsByGigId = {};
 
   @override
   void initState() {
@@ -281,7 +285,28 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   Future<void> _loadAllDataForGigsPage() async {
     await Future.wait([_loadVenues(), _loadGigs()]);
     for (final gig in _allGigs) {
-      log('🎸 [GigsPage] Loaded gig: id=${gig.id} venue="${gig.venueName}" date=${gig.dateTime} retrospectiveCompleted=${gig.retrospectiveCompleted} isRecurring=${gig.isRecurring} isFromRecurring=${gig.isFromRecurring}');
+      log('🎸 [GigsPage] Loaded gig: id=${gig.id} venue="${gig.venueName}"...');
+    }
+    // Fire impact assessment after gigs are loaded. Non-blocking.
+    _runImpactAssessment();
+  }
+
+  Future<void> _runImpactAssessment() async {
+    final int lookahead = _gigListEndDate.difference(DateTime.now()).inDays + 1;
+    final results = await _impactEventService.reassessUpcomingGigs(
+      upcomingGigs: _displayedGigs,
+      lookAheadDays: lookahead,
+    );
+    if (mounted && results.isNotEmpty) {
+      setState(() {
+        _impactEventsByGigId = results;
+        // Attach events back onto displayedGigs so the tile badge renders.
+        _displayedGigs = _displayedGigs.map((gig) {
+          final events = results[gig.id];
+          if (events == null) return gig;
+          return gig.copyWith(impactEvents: events);
+        }).toList();
+      });
     }
   }
 
@@ -326,6 +351,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     // Extend the date range and regenerate the list
     _gigListEndDate = _gigListEndDate.add(const Duration(days: 14));
     _generateAndSetDisplayedGigs();
+
+    // Assess impact events for gigs now visible in the extended window.
+    _runImpactAssessment();
 
     if (mounted) {
       setState(() { _isMoreGigsLoading = false; });
@@ -725,41 +753,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
   }
 
-  Future<void> _launchNotesPageForGig(Gig gig) async {
-    if (gig.isJamOpenMic) return;
 
-    // 1. Pass the unique instance ID, not the Base ID
-    final String gigIdForNotes = gig.id;
-
-    final result = await Navigator.of(context).push<Gig>(
-      MaterialPageRoute(
-        builder: (context) => NotesPage(editingGigId: gigIdForNotes),
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        final index = _allGigs.indexWhere((g) => g.id == result.id);
-        if (index != -1) {
-          _allGigs[index] = result;
-        } else {
-          // Only materialize into _allGigs if actual data was saved
-          final bool hasActualData = (result.notes?.isNotEmpty ?? false) ||
-              (result.notesUrl?.isNotEmpty ?? false) ||
-              (result.gigRatings?.isNotEmpty ?? false) ||
-              (result.retrospectiveCompleted ?? false);
-          if (!hasActualData) return; // nothing was saved; skip write
-          _allGigs.add(result);
-        }
-        _generateAndSetDisplayedGigs();
-      });
-
-      // 3. Persist the change to disk immediately
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_keyGigsList, Gig.encode(_allGigs));
-      globalRefreshNotifier.notify();
-    }
-  }
 
   Future<void> _launchBookingDialogForGig(Gig gigToEdit) async {
     String originalGigId = gigToEdit.getBaseId();
@@ -906,7 +900,46 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       }
     } else if (result is Gig) {
       globalRefreshNotifier.notify();
+
+      // Assess the newly booked gig immediately
+      _impactEventService.fetchImpactEvents(
+        gig: result,
+      ).then((events) {
+        if (mounted && events.isNotEmpty) {
+          setState(() {
+            _impactEventsByGigId[result.id] = events;
+            final idx = _displayedGigs.indexWhere((g) => g.id == result.id);
+            if (idx != -1) {
+              _displayedGigs[idx] = _displayedGigs[idx].copyWith(impactEvents: events);
+            }
+          });
+        }
+      });
+
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('New gig "${result.venueName}" booked.'), backgroundColor: Colors.green));
+    }
+  }
+
+  Future<void> _openNotesPage(Gig gig, {bool scrollToImpact = false}) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NotesPage(
+          editingGigId: gig.id,
+          scrollToImpact: scrollToImpact, // ← new param on NotesPage
+          initialImpactEvents: gig.impactEvents ?? [],
+        ),
+      ),
+    );
+    if (result is Gig && mounted) {
+      final idx = _allGigs.indexWhere((g) => g.id == result.getBaseId());
+      if (idx != -1) {
+        setState(() {
+          _allGigs[idx] = result;
+        });
+        _generateAndSetDisplayedGigs();
+      }
+      globalRefreshNotifier.notify();
     }
   }
 
@@ -1206,68 +1239,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     );
   }
 
-  void _showEmbedCodeDialog() {
-    // Use _allGigs to export all future occurrences of public gigs
-    final publicGigs = _allGigs.where((gig) {
-      final sourceVenue = _allKnownVenues.firstWhere(
-            (v) => v.placeId == gig.placeId,
-        orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0,0)),
-      );
-      return !sourceVenue.isPrivate;
-    }).toList();
-    final String embedCode = GigEmbedService.generateEmbedCode(publicGigs);
 
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Embed Gigs on Your Website'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Copy the HTML code below and paste it into your website editor. This will display a list of your upcoming public gigs.',
-                  style: TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  color: Colors.grey[200],
-                  child: SelectableText(
-                    embedCode,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.black),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Copy to Clipboard'),
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: embedCode));
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Embed code copied to clipboard!'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              },
-            ),
-            TextButton(
-              child: const Text('Close'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
 
 
   @override
@@ -1514,8 +1486,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             gig: item,
             style: GigTileStyle.listView,
             onTap: () => _launchBookingDialogForGig(item),
-            onNotesTap: () => _launchNotesPageForGig(item),
-            onReviewTap: () => _launchNotesPageForGig(item), // ✅ ADD THIS
+            onNotesTap: () => _openNotesPage(item),
           );
         }
 
@@ -1631,8 +1602,7 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
               gig: gig,
               style: GigTileStyle.calendarView,
               onTap: () => _launchBookingDialogForGig(gig),
-              onNotesTap: () => _launchNotesPageForGig(gig),
-              onReviewTap: () => _launchNotesPageForGig(gig), // ✅ ADD THIS
+              onNotesTap: () => _openNotesPage(gig),
             );
           },
         )

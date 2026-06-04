@@ -12,16 +12,22 @@ import 'dart:convert';
 
 // Import the SetlistPage
 import 'package:the_money_gigs/features/setlists/views/setlist_page.dart';
+import 'package:the_money_gigs/features/gigs/widgets/impact_events_section.dart';
+import 'package:the_money_gigs/features/gigs/models/impact_event.dart';
 
 class NotesPage extends StatefulWidget {
   // Can edit notes for a gig OR a venue. One of these must be provided.
   final String? editingGigId;
   final String? editingVenueId;
+  final bool scrollToImpact;
+  final List<ImpactEvent> initialImpactEvents;
 
   const NotesPage({
     super.key,
     this.editingGigId,
     this.editingVenueId,
+    this.scrollToImpact = false,
+    this.initialImpactEvents = const [],
   }) : assert(editingGigId != null || editingVenueId != null,
   'Either editingGigId or editingVenueId must be provided.');
 
@@ -32,6 +38,8 @@ class NotesPage extends StatefulWidget {
 class _NotesPageState extends State<NotesPage> {
   late final TextEditingController _notesController;
   late final TextEditingController _urlController;
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _impactSectionKey = GlobalKey();
 
   Gig? _currentGig;
 
@@ -78,6 +86,22 @@ class _NotesPageState extends State<NotesPage> {
     _notesController = TextEditingController();
     _urlController = TextEditingController();
     _loadDetails();
+    if (widget.scrollToImpact) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+       _scrollToImpactSection();
+      });
+    }
+  }
+
+    void _scrollToImpactSection() {
+      final ctx = _impactSectionKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 400),
+          alignment: 0.1,
+      );
+    }
   }
 
   Future<void> _loadDetails() async {
@@ -177,6 +201,12 @@ class _NotesPageState extends State<NotesPage> {
       _initialUrl = null;
       _initialRatings = null;
       _currentRatings = [];
+    }
+
+    if (widget.initialImpactEvents.isNotEmpty) {
+      _currentGig = _currentGig?.copyWith(
+        impactEvents: widget.initialImpactEvents,
+      );
     }
   }
 
@@ -529,6 +559,14 @@ class _NotesPageState extends State<NotesPage> {
                 onTipsChanged: _onTipsChanged,
               ),
             ],
+
+              if (_isEditingGig && (_currentGig?.impactEventCount ?? 0) > 0) ...[
+                const SizedBox(height: 20),
+                KeyedSubtree(
+                  key: _impactSectionKey,
+                  child: ImpactEventsSection(gig: _currentGig!),
+                ),
+              ],
 
             // Notes text field
             const SizedBox(height: 20),
