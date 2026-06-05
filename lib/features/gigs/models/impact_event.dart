@@ -1,5 +1,5 @@
 // lib/features/gigs/models/impact_event.dart
-
+import 'package:flutter/material.dart';
 /// A single external event that may impact crowd size at a nearby gig.
 ///
 /// Populated by [ImpactEventService] from Bandsintown, Eventbrite,
@@ -61,22 +61,21 @@ class ImpactEvent {
     }
   }
 
-  /// Icon code point for the event type, using Material Icons.
-  /// Callers can do: Icon(IconData(event.iconCodePoint, fontFamily: 'MaterialIcons'))
-  int get iconCodePoint {
+  /// Returns a const-compatible IconData for tree-shaking safety.
+  IconData get icon {
     switch (eventType) {
       case 'festival':
-        return 0xe3f2; // festival
+        return Icons.festival;
       case 'concert':
-        return 0xe405; // music_note
+        return Icons.music_note;
       case 'sporting':
-        return 0xe559; // sports
+        return Icons.sports;
       case 'holiday':
-        return 0xe54f; // celebration
+        return Icons.celebration;
       case 'local_music':
-        return 0xe405; // music_note
+        return Icons.music_note;
       default:
-        return 0xe7ef; // event
+        return Icons.event;
     }
   }
 

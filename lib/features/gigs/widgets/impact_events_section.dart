@@ -163,7 +163,7 @@ class _ImpactEventRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 2.0, right: 10.0),
               child: Icon(
-                IconData(event.iconCodePoint, fontFamily: 'MaterialIcons'),
+                event.icon,
                 size: 20,
                 color: _levelColor(),
               ),
