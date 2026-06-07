@@ -7,9 +7,13 @@
 //   3. How to use search to add new venues
 //
 // Guarded by the 'map_tutorial_shown' SharedPreferences flag.
+// Writes session data to the 'mapTutorialSessions' Firestore collection.
 
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:uuid/uuid.dart';
 
 class MapTutorialOverlay extends StatefulWidget {
   /// Called when the user finishes or dismisses the tutorial.
@@ -45,6 +49,13 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
   late final Animation<double> _fade;
 
   static const int _totalSteps = 3;
+
+  // ── Tracking ──────────────────────────────────────────────────────────────
+  String? _sessionId;
+  DocumentReference? _sessionRef;
+  bool _trackingReady = false;
+
+  static const _stepNames = ['markers', 'tapMarker', 'addVenue'];
 
   // Per-step content
   static const _steps = [
@@ -83,6 +94,74 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
     );
     _fade = CurvedAnimation(parent: _fadeController, curve: Curves.easeIn);
     _fadeController.forward();
+    _initTracking();
+  }
+
+  // ── Tracking ──────────────────────────────────────────────────────────────
+
+  Future<void> _initTracking() async {
+    _sessionId = const Uuid().v4();
+    final ref = FirebaseFirestore.instance
+        .collection('mapTutorialSessions')
+        .doc(_sessionId);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isDeveloper = prefs.getBool('is_developer_device') ?? false;
+
+      await ref.set({
+        'sessionId':    _sessionId,
+        'startedAt':    FieldValue.serverTimestamp(),
+        'platform':     Platform.isAndroid ? 'android' : 'ios',
+        'osVersion':    Platform.operatingSystemVersion,
+        'isDeveloper':  isDeveloper,
+        'completed':    false,
+        'exitedOnStep': null,
+        'stepsViewed':  [_stepNames[0]],
+        'step1ViewedAt': FieldValue.serverTimestamp(),
+      });
+      _sessionRef = ref;
+      _trackingReady = true;
+    } catch (e) {
+      debugPrint('📋 MapTutorialTracking: init failed — $e');
+    }
+  }
+
+  Future<void> _trackStepView(int step) async {
+    if (!_trackingReady || _sessionRef == null) return;
+    try {
+      await _sessionRef!.update({
+        'stepsViewed':              FieldValue.arrayUnion([_stepNames[step]]),
+        'step${step + 1}ViewedAt':  FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('📋 MapTutorialTracking: step view failed — $e');
+    }
+  }
+
+  Future<void> _trackExit(int onStep) async {
+    if (!_trackingReady || _sessionRef == null) return;
+    try {
+      await _sessionRef!.update({
+        'exitedOnStep': _stepNames[onStep],
+        'exitedAt':     FieldValue.serverTimestamp(),
+        'completed':    false,
+      });
+    } catch (e) {
+      debugPrint('📋 MapTutorialTracking: exit failed — $e');
+    }
+  }
+
+  Future<void> _trackCompletion() async {
+    if (!_trackingReady || _sessionRef == null) return;
+    try {
+      await _sessionRef!.update({
+        'completed':    true,
+        'completedAt':  FieldValue.serverTimestamp(),
+        'exitedOnStep': null,
+      });
+    } catch (e) {
+      debugPrint('📋 MapTutorialTracking: completion failed — $e');
+    }
   }
 
   @override
@@ -96,12 +175,19 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
       await _fadeController.reverse();
       setState(() => _step++);
       _fadeController.forward();
+      await _trackStepView(_step);
     } else {
-      await _dismiss();
+      await _trackCompletion();
+      await Future.delayed(const Duration(milliseconds: 200));
+      await _dismiss(completed: true);
     }
   }
 
-  Future<void> _dismiss() async {
+  Future<void> _dismiss({bool completed = false}) async {
+    if (!completed) {
+      await _trackExit(_step);
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
     await MapTutorialOverlay.markShown();
     widget.onDismiss();
   }
@@ -118,11 +204,13 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
     final searchBox =
     widget.searchBarKey.currentContext?.findRenderObject() as RenderBox?;
 
-    // Global Y coordinate of the bottom of the search bar + a small gap.
+    // Global Y coordinate of the bottom of the search bar + a tight gap.
+    // 8px keeps the card visually connected to the search bar and maximises
+    // vertical space so all content is visible without scrolling.
     // Falls back to just below the AppBar if the search bar isn't laid out yet.
     final double cardTop = (searchBox != null && searchBox.hasSize)
-        ? searchBox.localToGlobal(Offset.zero).dy + searchBox.size.height + 16
-        : MediaQuery.of(context).padding.top + kToolbarHeight + 80;
+        ? searchBox.localToGlobal(Offset.zero).dy + searchBox.size.height + 8
+        : MediaQuery.of(context).padding.top + kToolbarHeight + 16;
 
     return Material(
       type: MaterialType.transparency,
@@ -130,26 +218,37 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
         children: [
           // Dimmed background — tapping it dismisses
           GestureDetector(
-            onTap: _dismiss,
+            onTap: () => _dismiss(completed: false),
             child: Container(
-              color: Colors.black.withOpacity(0.65),
+              color: Colors.black.withValues(alpha: 0.65),
             ),
           ),
 
-          // Tutorial card — anchored by its TOP edge below the search bar
+          // Tutorial card — sized to content, not stretched to fill screen.
+          // ConstrainedBox provides a safety-net maxHeight so the card never
+          // overflows the bottom nav bar on any phone size.
           Positioned(
             left: 20,
             right: 20,
             top: cardTop,
-            child: FadeTransition(
-              opacity: _fade,
-              child: _TutorialCard(
-                step: step,
-                currentStep: _step,
-                totalSteps: _totalSteps,
-                isLast: isLast,
-                onNext: _nextStep,
-                onSkip: _dismiss,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height
+                    - cardTop
+                    - MediaQuery.of(context).padding.bottom
+                    - kBottomNavigationBarHeight
+                    - 16,
+              ),
+              child: FadeTransition(
+                opacity: _fade,
+                child: _TutorialCard(
+                  step: step,
+                  currentStep: _step,
+                  totalSteps: _totalSteps,
+                  isLast: isLast,
+                  onNext: _nextStep,
+                  onSkip: () => _dismiss(completed: false),
+                ),
               ),
             ),
           ),
@@ -191,84 +290,78 @@ class _TutorialCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xF0111111),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.15), width: 1),
+        border: Border.all(color: Colors.white, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.5),
+            color: Colors.black.withValues(alpha: 0.5),
             blurRadius: 20,
             offset: const Offset(0, 6),
           ),
         ],
       ),
+      // Column wraps content — card height is driven by content, not Positioned bounds.
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Step dots
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(totalSteps, (i) {
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: i == currentStep ? 18 : 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: i == currentStep
-                      ? Colors.orange.shade400
-                      : Colors.white24,
-                  borderRadius: BorderRadius.circular(3),
+          // ── Content — scrollable on very small phones ──────────────────
+          SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // (Progress dots removed — step count conveyed by Next/Skip labels)
+
+                // Icon
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: step.iconColor.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: step.iconColor.withValues(alpha: 0.4),
+                        width: 1.5),
+                  ),
+                  child: Icon(step.icon, color: step.iconColor, size: 32),
                 ),
-              );
-            }),
-          ),
-          const SizedBox(height: 20),
+                const SizedBox(height: 16),
 
-          // Icon
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: step.iconColor.withOpacity(0.15),
-              shape: BoxShape.circle,
-              border:
-              Border.all(color: step.iconColor.withOpacity(0.4), width: 1.5),
-            ),
-            child: Icon(step.icon, color: step.iconColor, size: 32),
-          ),
-          const SizedBox(height: 16),
+                // Title
+                Text(
+                  step.title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 10),
 
-          // Title
-          Text(
-            step.title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Body
-          Text(
-            step.body,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 15,
-              color: Colors.white70,
-              height: 1.5,
+                // Body
+                Text(
+                  step.body,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    color: Colors.white,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
             ),
           ),
-          const SizedBox(height: 24),
 
-          // Buttons
+          // ── Buttons — always visible, never scrolled off ───────────────
+          const Divider(color: Colors.white60, height: 1),
+          const SizedBox(height: 12),
           Row(
             children: [
               TextButton(
                 onPressed: onSkip,
                 child: Text(
                   isLast ? 'Got it' : 'Skip',
-                  style: const TextStyle(color: Colors.white38, fontSize: 14),
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
                 ),
               ),
               const Spacer(),

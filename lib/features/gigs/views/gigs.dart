@@ -25,10 +25,12 @@ import 'package:the_money_gigs/features/map_venues/widgets/jam_open_mic_dialog.d
 import 'package:the_money_gigs/features/notes/views/notes_page.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_details_page.dart';
 import 'package:the_money_gigs/features/profile/views/profile.dart';
+
 // <<< --- REFACTORING: ADD IMPORT FOR THE NEW VENUES TAB WIDGET --- >>>
 import 'package:the_money_gigs/features/venues/views/venues_list_tab.dart';
 import 'package:the_money_gigs/features/gigs/widgets/gig_export_dialog.dart';
 import 'package:the_money_gigs/features/gigs/widgets/gig_insights_dialog.dart';
+import 'package:the_money_gigs/features/checklist/gig_checklist_page.dart';
 
 import '../../app_demo/providers/demo_provider.dart';
 import 'package:the_money_gigs/features/app_demo/widgets/simple_demo_overlay.dart';
@@ -45,13 +47,16 @@ class GigsPage extends StatefulWidget {
   State<GigsPage> createState() => _GigsPageState();
 }
 
-class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin {
+class _GigsPageState extends State<GigsPage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late ScrollController _scrollController;
   late DemoProvider _demoProvider;
 
-  List<Gig> _allGigs = []; // Raw data from SharedPreferences, including recurring templates
-  List<Gig> _displayedGigs = []; // Generated, displayable occurrences for the list view
+  List<Gig> _allGigs =
+      []; // Raw data from SharedPreferences, including recurring templates
+  List<Gig> _displayedGigs =
+      []; // Generated, displayable occurrences for the list view
   DateTime _gigListEndDate = DateTime.now().add(const Duration(days: 90));
   bool _isMoreGigsLoading = false;
 
@@ -75,14 +80,16 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   OverlayEntry? _overlayEntry; // 🎯 ADD THIS VARIABLE
 
   final ImpactEventService _impactEventService = ImpactEventService();
-//   // gigId → list of impact events; populated after gigs load
+
+  //   // gigId → list of impact events; populated after gigs load
   Map<String, List<ImpactEvent>> _impactEventsByGigId = {};
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _scrollController = ScrollController()..addListener(_scrollListener); // Initialize scroll controller
+    _scrollController = ScrollController()
+      ..addListener(_scrollListener); // Initialize scroll controller
     _selectedDay = _focusedDay;
     _tabController.addListener(_handleTabSelection);
     _loadAllDataForGigsPage();
@@ -91,7 +98,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     // 🎬 Listen to DemoProvider so we react when the step changes to gigListView.
     _demoProvider = Provider.of<DemoProvider>(context, listen: false);
     _demoProvider.addListener(_handleDemoStepChange);
-    log('🎬 [GigsPage] initState: DemoProvider listener registered. Current step = ${_demoProvider.currentStep}');
+    log(
+      '🎬 [GigsPage] initState: DemoProvider listener registered. Current step = ${_demoProvider.currentStep}',
+    );
   }
 
   @override
@@ -113,16 +122,21 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
     final OverlayState? rootOverlay = Navigator.of(context).overlay;
     if (rootOverlay == null) {
-      log('🎬 [GigsPage] _showGigListOverlay: ❌ rootOverlay is null — cannot insert.');
+      log(
+        '🎬 [GigsPage] _showGigListOverlay: ❌ rootOverlay is null — cannot insert.',
+      );
       return;
     }
 
     _overlayEntry = OverlayEntry(
       builder: (context) {
-        log('🎬 [GigsPage] OverlayEntry builder called — SimpleDemoOverlay is being built');
+        log(
+          '🎬 [GigsPage] OverlayEntry builder called — SimpleDemoOverlay is being built',
+        );
         return SimpleDemoOverlay(
           title: "Your Upcoming Gigs",
-          message: "Each card is a gig where you can edit details, schedule recurring dates, or view notes with that icon on the right. Click Next.",
+          message:
+              "Each card is a gig where you can edit details, schedule recurring dates, or view notes with that icon on the right. Click Next.",
           highlightKeys: [_demoGigTileKey],
           showNextButton: true,
           // 🎯 ADD THIS: Remove the overlay and end the demo when "Exit" is clicked.
@@ -138,7 +152,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       },
     );
     rootOverlay.insert(_overlayEntry!);
-    log('🎬 [GigsPage] _showGigListOverlay: ✅ Overlay inserted into rootOverlay');
+    log(
+      '🎬 [GigsPage] _showGigListOverlay: ✅ Overlay inserted into rootOverlay',
+    );
   }
 
   void _removeOverlay() {
@@ -153,43 +169,63 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       return;
     }
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
-    log('🎬 [GigsPage] _handleDemoStepChange: FIRED. currentStep = ${demoProvider.currentStep}, isDemoActive = ${demoProvider.isDemoModeActive}');
+    log(
+      '🎬 [GigsPage] _handleDemoStepChange: FIRED. currentStep = ${demoProvider.currentStep}, isDemoActive = ${demoProvider.isDemoModeActive}',
+    );
 
     if (demoProvider.currentStep == DemoStep.gigListView) {
-      log('🎬 [GigsPage] _handleDemoStepChange: ✅ Step IS gigListView — calling _tryShowGigListDemoOverlay');
+      log(
+        '🎬 [GigsPage] _handleDemoStepChange: ✅ Step IS gigListView — calling _tryShowGigListDemoOverlay',
+      );
       _tryShowGigListDemoOverlay(demoProvider);
     } else {
-      log('🎬 [GigsPage] _handleDemoStepChange: Step is NOT gigListView, skipping.');
+      log(
+        '🎬 [GigsPage] _handleDemoStepChange: Step is NOT gigListView, skipping.',
+      );
     }
   }
 
   Future<void> _tryShowGigListDemoOverlay(DemoProvider demoProvider) async {
-    log('🎬 [GigsPage] _tryShowGigListDemoOverlay: scheduling post-frame callback');
+    log(
+      '🎬 [GigsPage] _tryShowGigListDemoOverlay: scheduling post-frame callback',
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) {
-        log('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): not mounted, aborting.');
+        log(
+          '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): not mounted, aborting.',
+        );
         return;
       }
 
       // Check whether there are any real gigs to highlight at all.
       final hasRealGigs = _displayedGigs.any((g) => !g.isJamOpenMic);
-      log('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): _displayedGigs.length = ${_displayedGigs.length}, hasRealGigs = $hasRealGigs');
+      log(
+        '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): _displayedGigs.length = ${_displayedGigs.length}, hasRealGigs = $hasRealGigs',
+      );
 
       if (!hasRealGigs) {
-        log('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ❌ No real gigs in the list — nothing to highlight.');
+        log(
+          '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ❌ No real gigs in the list — nothing to highlight.',
+        );
         return;
       }
 
       final tileContext = _demoGigTileKey.currentContext;
-      log('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): _demoGigTileKey.currentContext = $tileContext');
+      log(
+        '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): _demoGigTileKey.currentContext = $tileContext',
+      );
 
       if (tileContext == null) {
-        log('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ❌ Key context is null — first gig tile not yet built by ListView. Aborting.');
+        log(
+          '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ❌ Key context is null — first gig tile not yet built by ListView. Aborting.',
+        );
         return;
       }
 
-      log('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ✅ tileContext is live, scrolling into view...');
+      log(
+        '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ✅ tileContext is live, scrolling into view...',
+      );
 
       await Scrollable.ensureVisible(
         tileContext,
@@ -200,30 +236,46 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       await Future.delayed(const Duration(milliseconds: 150));
 
       if (mounted) {
-        log('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): calling _showGigListOverlay');
+        log(
+          '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): calling _showGigListOverlay',
+        );
         _showGigListOverlay(demoProvider);
       } else {
-        log('🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ❌ no longer mounted after scroll, aborting.');
+        log(
+          '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ❌ no longer mounted after scroll, aborting.',
+        );
       }
     });
   }
 
   void _scrollListener() {
     // Load more when user is 200 pixels from the bottom of the list
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 &&
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
         !_isMoreGigsLoading) {
       _loadMoreGigs();
     }
   }
 
-  Future<void> _handleRecurringGigDeletion(Gig gigInstance, RecurringCancelChoice choice) async {
+  Future<void> _handleRecurringGigDeletion(
+    Gig gigInstance,
+    RecurringCancelChoice choice,
+  ) async {
     if (choice == RecurringCancelChoice.doNothing) return;
 
     final String baseGigId = gigInstance.getBaseId();
     final int index = _allGigs.indexWhere((g) => g.id == baseGigId);
 
     if (index == -1) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: Could not find the original recurring gig to modify.'), backgroundColor: Colors.red));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Error: Could not find the original recurring gig to modify.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
       return;
     }
 
@@ -231,25 +283,37 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     String message = '';
 
     if (choice == RecurringCancelChoice.allFutureInstances) {
-      DateTime newEndDate = gigInstance.dateTime.subtract(const Duration(days: 1));
+      DateTime newEndDate = gigInstance.dateTime.subtract(
+        const Duration(days: 1),
+      );
       if (newEndDate.isBefore(baseGig.dateTime)) {
         _allGigs.removeAt(index);
-        message = 'The entire recurring series for "${baseGig.venueName}" has been cancelled.';
+        message =
+            'The entire recurring series for "${baseGig.venueName}" has been cancelled.';
       } else {
         _allGigs[index] = baseGig.copyWith(recurrenceEndDate: newEndDate);
-        message = 'The recurring gig for "${gigInstance.venueName}" on and after ${DateFormat.yMMMEd().format(gigInstance.dateTime)} has been cancelled.';
+        message =
+            'The recurring gig for "${gigInstance.venueName}" on and after ${DateFormat.yMMMEd().format(gigInstance.dateTime)} has been cancelled.';
       }
-
     } else if (choice == RecurringCancelChoice.thisInstanceOnly) {
-      List<DateTime> updatedExceptions = List.from(baseGig.recurrenceExceptions ?? []);
-      DateTime exceptionDate = DateTime.utc(gigInstance.dateTime.year, gigInstance.dateTime.month, gigInstance.dateTime.day);
+      List<DateTime> updatedExceptions = List.from(
+        baseGig.recurrenceExceptions ?? [],
+      );
+      DateTime exceptionDate = DateTime.utc(
+        gigInstance.dateTime.year,
+        gigInstance.dateTime.month,
+        gigInstance.dateTime.day,
+      );
 
       if (!updatedExceptions.any((d) => isSameDay(d, exceptionDate))) {
         updatedExceptions.add(exceptionDate);
       }
 
-      _allGigs[index] = baseGig.copyWith(recurrenceExceptions: updatedExceptions);
-      message = 'The gig for "${gigInstance.venueName}" on ${DateFormat.yMMMEd().format(gigInstance.dateTime)} has been cancelled.';
+      _allGigs[index] = baseGig.copyWith(
+        recurrenceExceptions: updatedExceptions,
+      );
+      message =
+          'The gig for "${gigInstance.venueName}" on ${DateFormat.yMMMEd().format(gigInstance.dateTime)} has been cancelled.';
     }
 
     // --- Save the changes and refresh the UI ---
@@ -263,16 +327,21 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
       globalRefreshNotifier.notify();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.orange));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.orange),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error updating recurring gig: ${e.toString()}'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating recurring gig: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
-
-
 
   void _handleGlobalRefresh() {
     if (mounted) {
@@ -312,14 +381,18 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   void _handleTabSelection() {
     if (_tabController.indexIsChanging ||
-        (_tabController.animation != null && _tabController.animation!.value != _tabController.index.toDouble())) {
+        (_tabController.animation != null &&
+            _tabController.animation!.value !=
+                _tabController.index.toDouble())) {
       return;
     }
   }
 
   Future<void> _loadGigs() async {
     if (!mounted) return;
-    setState(() { _isLoadingGigs = true; });
+    setState(() {
+      _isLoadingGigs = true;
+    });
     final prefs = await SharedPreferences.getInstance();
 
     // --- ALWAYS load from the original, correct key ---
@@ -330,23 +403,32 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       try {
         loadedGigs = Gig.decode(gigsJsonString);
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading gigs: $e')));
+        if (mounted)
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Error loading gigs: $e')));
       }
     }
 
     if (mounted) {
       _allGigs = loadedGigs;
       _generateAndSetDisplayedGigs(); // This will handle generation, sorting, and setting state
-      setState(() { _isLoadingGigs = false; });
+      setState(() {
+        _isLoadingGigs = false;
+      });
     }
   }
 
   Future<void> _loadMoreGigs() async {
     if (!mounted || _isMoreGigsLoading) return;
 
-    setState(() { _isMoreGigsLoading = true; });
+    setState(() {
+      _isMoreGigsLoading = true;
+    });
 
-    await Future.delayed(const Duration(milliseconds: 500)); // Simulate network latency
+    await Future.delayed(
+      const Duration(milliseconds: 500),
+    ); // Simulate network latency
 
     // Extend the date range and regenerate the list
     _gigListEndDate = _gigListEndDate.add(const Duration(days: 14));
@@ -356,7 +438,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     _runImpactAssessment();
 
     if (mounted) {
-      setState(() { _isMoreGigsLoading = false; });
+      setState(() {
+        _isMoreGigsLoading = false;
+      });
     }
   }
 
@@ -387,8 +471,13 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     // 3. Map and process display logic (Venue names, Band names)
     List<Gig> processedGigs = allOccurrences.map((gig) {
       final sourceVenue = _allKnownVenues.firstWhere(
-            (v) => v.placeId == gig.placeId,
-        orElse: () => StoredLocation(placeId: '', name: gig.venueName, address: '', coordinates: const LatLng(0,0)),
+        (v) => v.placeId == gig.placeId,
+        orElse: () => StoredLocation(
+          placeId: '',
+          name: gig.venueName,
+          address: '',
+          coordinates: const LatLng(0, 0),
+        ),
       );
 
       String processedVenueName = gig.venueName;
@@ -397,7 +486,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       }
       if (gig.isJamOpenMic && !gig.venueName.contains('[JAM]')) {
         processedVenueName = '[JAM] $processedVenueName';
-        if(gig.notes != null && gig.notes!.isNotEmpty) processedVenueName += " (${gig.notes})";
+        if (gig.notes != null && gig.notes!.isNotEmpty)
+          processedVenueName += " (${gig.notes})";
       }
 
       return gig.copyWith(venueName: processedVenueName);
@@ -409,16 +499,19 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     // We want the PHYSICAL ones (the ones in the list first) to "win"
     // over the VIRTUAL generated ones.
     final Map<String, Gig> uniqueGigs = {};
-    for (var gig in processedGigs) {  // (or allCalendarGigs)
+    for (var gig in processedGigs) {
+      // (or allCalendarGigs)
       if (!uniqueGigs.containsKey(gig.id)) {
         uniqueGigs[gig.id] = gig;
       } else {
         // Only overwrite if incoming has real data the existing one lacks.
         // This ensures materialized instances (real data) always beat virtual ones.
         final existing = uniqueGigs[gig.id]!;
-        final incomingHasData = gig.retrospectiveCompleted == true ||
+        final incomingHasData =
+            gig.retrospectiveCompleted == true ||
             (gig.notes?.isNotEmpty ?? false);
-        final existingLacksData = existing.retrospectiveCompleted != true &&
+        final existingLacksData =
+            existing.retrospectiveCompleted != true &&
             (existing.notes?.isEmpty ?? true);
         if (incomingHasData && existingLacksData) {
           uniqueGigs[gig.id] = gig;
@@ -428,7 +521,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
     // 5. Filter for Upcoming list (Gigs that haven't ended yet)
     List<Gig> sortedGigs = uniqueGigs.values.where((gig) {
-      DateTime gigEndTime = gig.dateTime.add(Duration(minutes: (gig.gigLengthHours * 60).toInt()));
+      DateTime gigEndTime = gig.dateTime.add(
+        Duration(minutes: (gig.gigLengthHours * 60).toInt()),
+      );
       return !gigEndTime.isBefore(todayStart);
     }).toList();
 
@@ -442,7 +537,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
     }
   }
-
 
   List<Gig> _generateJamOpenMicGigs(DateTime rangeEndDate) {
     List<Gig> jamGigs = [];
@@ -464,19 +558,22 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
         // Create a temporary "Gig" template to use the common generator
         final baseJamGig = Gig(
-          id: 'jam_${venue.placeId}_${session.id}', // Base ID for the series
+          id: 'jam_${venue.placeId}_${session.id}',
+          // Base ID for the series
           venueName: venue.name,
           latitude: venue.coordinates.latitude,
           longitude: venue.coordinates.longitude,
           address: venue.address,
           placeId: venue.placeId,
-          dateTime: sessionStartDateTime, // The time of the session is the base time
+          dateTime: sessionStartDateTime,
+          // The time of the session is the base time
           pay: 0,
           gigLengthHours: 2,
           driveSetupTimeHours: 0,
           rehearsalLengthHours: 0,
           isJamOpenMic: true,
-          notes: session.style, // Use notes to pass the style for display
+          notes: session.style,
+          // Use notes to pass the style for display
           isRecurring: true,
           recurrenceFrequency: session.frequency,
           recurrenceDay: session.day,
@@ -492,7 +589,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
   List<Gig> _generateOccurrencesForGig(Gig baseGig, DateTime rangeEndDate) {
     List<Gig> occurrences = [];
-    if (!baseGig.isRecurring || baseGig.recurrenceFrequency == null || baseGig.recurrenceDay == null) {
+    if (!baseGig.isRecurring ||
+        baseGig.recurrenceFrequency == null ||
+        baseGig.recurrenceDay == null) {
       return occurrences;
     }
 
@@ -501,52 +600,85 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     DateTime recurrenceSeriesStart = baseGig.dateTime;
 
     // The calculation should not exceed the gig's own end date, if it exists.
-    DateTime calculationRangeEnd = baseGig.recurrenceEndDate != null && baseGig.recurrenceEndDate!.isBefore(rangeEndDate)
+    DateTime calculationRangeEnd =
+        baseGig.recurrenceEndDate != null &&
+            baseGig.recurrenceEndDate!.isBefore(rangeEndDate)
         ? baseGig.recurrenceEndDate!
         : rangeEndDate;
 
     int targetWeekday = baseGig.recurrenceDay!.index + 1;
 
     // Start the iterator from the day AFTER the base gig. This prevents duplicating the original instance.
-    DateTime iteratorDate = DateTime(recurrenceSeriesStart.year, recurrenceSeriesStart.month, recurrenceSeriesStart.day).add(const Duration(days: 1));
+    DateTime iteratorDate = DateTime(
+      recurrenceSeriesStart.year,
+      recurrenceSeriesStart.month,
+      recurrenceSeriesStart.day,
+    ).add(const Duration(days: 1));
 
     // --- START OF DEBUGGING PRINT ---
-    log("   - Calculation Range: ${DateFormat('yyyy-MM-dd').format(iteratorDate)} to ${DateFormat('yyyy-MM-dd').format(calculationRangeEnd)}");
+    log(
+      "   - Calculation Range: ${DateFormat('yyyy-MM-dd').format(iteratorDate)} to ${DateFormat('yyyy-MM-dd').format(calculationRangeEnd)}",
+    );
     // --- END OF DEBUGGING PRINT ---
 
     switch (baseGig.recurrenceFrequency) {
       case JamFrequencyType.weekly:
-      // Find the first valid occurrence on or after the iterator date.
-        DateTime testDate = _findNextDayOfWeek(iteratorDate, targetWeekday, sameDayOk: true);
-        while (testDate.isBefore(calculationRangeEnd) || isSameDay(testDate, calculationRangeEnd)) {
+        // Find the first valid occurrence on or after the iterator date.
+        DateTime testDate = _findNextDayOfWeek(
+          iteratorDate,
+          targetWeekday,
+          sameDayOk: true,
+        );
+        while (testDate.isBefore(calculationRangeEnd) ||
+            isSameDay(testDate, calculationRangeEnd)) {
           // --- START OF DEBUGGING PRINT ---
           //log("     - [Weekly] Found potential date: ${DateFormat('yyyy-MM-dd').format(testDate)}");
           // --- END OF DEBUGGING PRINT ---
           _addOccurrenceIfApplicable(occurrences, baseGig, testDate);
-          testDate = testDate.add(const Duration(days: 7)); // Simply jump to the next week.
+          testDate = testDate.add(
+            const Duration(days: 7),
+          ); // Simply jump to the next week.
         }
         break;
 
       case JamFrequencyType.biWeekly:
-      // The anchor is always the date of the original event.
-        DateTime cycleAnchorDate = _findNextDayOfWeek(baseGig.dateTime, targetWeekday, sameDayOk: true);
-        DateTime testDate = _findNextDayOfWeek(iteratorDate, targetWeekday, sameDayOk: true);
+        // The anchor is always the date of the original event.
+        DateTime cycleAnchorDate = _findNextDayOfWeek(
+          baseGig.dateTime,
+          targetWeekday,
+          sameDayOk: true,
+        );
+        DateTime testDate = _findNextDayOfWeek(
+          iteratorDate,
+          targetWeekday,
+          sameDayOk: true,
+        );
 
-        while(testDate.isBefore(calculationRangeEnd) || isSameDay(testDate, calculationRangeEnd)){
-          int weeksDifference = testDate.difference(cycleAnchorDate).inDays ~/ 7;
+        while (testDate.isBefore(calculationRangeEnd) ||
+            isSameDay(testDate, calculationRangeEnd)) {
+          int weeksDifference =
+              testDate.difference(cycleAnchorDate).inDays ~/ 7;
           // Generate an occurrence only for even-numbered week differences (2, 4, 6, etc.)
           if (weeksDifference > 0 && weeksDifference % 2 == 0) {
             _addOccurrenceIfApplicable(occurrences, baseGig, testDate);
           }
-          testDate = testDate.add(const Duration(days: 7)); // Always check the next week
+          testDate = testDate.add(
+            const Duration(days: 7),
+          ); // Always check the next week
         }
         break;
 
       case JamFrequencyType.customNthDay:
-        if (baseGig.recurrenceNthValue != null && baseGig.recurrenceNthValue! > 0) {
+        if (baseGig.recurrenceNthValue != null &&
+            baseGig.recurrenceNthValue! > 0) {
           int nth = baseGig.recurrenceNthValue!;
-          DateTime testDate = _findNextDayOfWeek(iteratorDate, targetWeekday, sameDayOk: true);
-          while (testDate.isBefore(calculationRangeEnd) || isSameDay(testDate, calculationRangeEnd)) {
+          DateTime testDate = _findNextDayOfWeek(
+            iteratorDate,
+            targetWeekday,
+            sameDayOk: true,
+          );
+          while (testDate.isBefore(calculationRangeEnd) ||
+              isSameDay(testDate, calculationRangeEnd)) {
             _addOccurrenceIfApplicable(occurrences, baseGig, testDate);
             testDate = testDate.add(Duration(days: 7 * nth)); // Jump by N weeks
           }
@@ -554,19 +686,37 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         break;
 
       case JamFrequencyType.monthlySameDay:
-        if (baseGig.recurrenceNthValue != null && baseGig.recurrenceNthValue! > 0) {
+        if (baseGig.recurrenceNthValue != null &&
+            baseGig.recurrenceNthValue! > 0) {
           int nthOccurrence = baseGig.recurrenceNthValue!;
           // Start iterating from the month of the start date
-          DateTime monthIterator = DateTime(iteratorDate.year, iteratorDate.month, 1);
+          DateTime monthIterator = DateTime(
+            iteratorDate.year,
+            iteratorDate.month,
+            1,
+          );
 
-          while (monthIterator.isBefore(calculationRangeEnd) || (monthIterator.year == calculationRangeEnd.year && monthIterator.month == calculationRangeEnd.month)) {
-            DateTime? nthDayInMonth = _findNthSpecificWeekdayOfMonth(monthIterator.year, monthIterator.month, targetWeekday, nthOccurrence);
+          while (monthIterator.isBefore(calculationRangeEnd) ||
+              (monthIterator.year == calculationRangeEnd.year &&
+                  monthIterator.month == calculationRangeEnd.month)) {
+            DateTime? nthDayInMonth = _findNthSpecificWeekdayOfMonth(
+              monthIterator.year,
+              monthIterator.month,
+              targetWeekday,
+              nthOccurrence,
+            );
             // Ensure the found day is within the allowed range
-            if (nthDayInMonth != null && !nthDayInMonth.isBefore(iteratorDate) && !nthDayInMonth.isAfter(calculationRangeEnd)) {
+            if (nthDayInMonth != null &&
+                !nthDayInMonth.isBefore(iteratorDate) &&
+                !nthDayInMonth.isAfter(calculationRangeEnd)) {
               _addOccurrenceIfApplicable(occurrences, baseGig, nthDayInMonth);
             }
             // Move to the next month
-            monthIterator = DateTime(monthIterator.year, monthIterator.month + 1, 1);
+            monthIterator = DateTime(
+              monthIterator.year,
+              monthIterator.month + 1,
+              1,
+            );
           }
         }
         break;
@@ -577,9 +727,15 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     return occurrences;
   }
 
-  void _addOccurrenceIfApplicable(List<Gig> occurrences, Gig baseGig, DateTime dateOfOccurrence) {
+  void _addOccurrenceIfApplicable(
+    List<Gig> occurrences,
+    Gig baseGig,
+    DateTime dateOfOccurrence,
+  ) {
     if (baseGig.recurrenceExceptions != null &&
-        baseGig.recurrenceExceptions!.any((exceptionDate) => isSameDay(exceptionDate, dateOfOccurrence))) {
+        baseGig.recurrenceExceptions!.any(
+          (exceptionDate) => isSameDay(exceptionDate, dateOfOccurrence),
+        )) {
       return;
     }
 
@@ -591,7 +747,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       baseGig.dateTime.minute,
     );
 
-    final String uniqueId = '${baseGig.id}_${DateFormat('yyyyMMdd').format(gigDateTime)}';
+    final String uniqueId =
+        '${baseGig.id}_${DateFormat('yyyyMMdd').format(gigDateTime)}';
 
     // ✅ USE FULL CONSTRUCTOR — copyWith cannot null out nullable fields
     occurrences.add(
@@ -606,12 +763,14 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         dateTime: gigDateTime,
         pay: baseGig.pay,
         otherExpenses: baseGig.otherExpenses,
-        tipsAmount: null,               // ✅ Reset — never inherit from template
+        tipsAmount: null,
+        // ✅ Reset — never inherit from template
         gigLengthHours: baseGig.gigLengthHours,
         driveSetupTimeHours: baseGig.driveSetupTimeHours,
         rehearsalLengthHours: baseGig.rehearsalLengthHours,
         isJamOpenMic: baseGig.isJamOpenMic,
-        notes: null,                    // ✅ Reset — notes are per-instance
+        notes: null,
+        // ✅ Reset — notes are per-instance
         notesUrl: baseGig.notesUrl,
         setlistId: baseGig.setlistId,
         isRecurring: false,
@@ -621,18 +780,24 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         recurrenceNthValue: baseGig.recurrenceNthValue,
         recurrenceEndDate: baseGig.recurrenceEndDate,
         recurrenceExceptions: [],
-        gigRatings: null,               // ✅ THE CRITICAL FIX
-        retrospectiveCompleted: null,   // ✅ THE CRITICAL FIX
+        gigRatings: null,
+        // ✅ THE CRITICAL FIX
+        retrospectiveCompleted: null, // ✅ THE CRITICAL FIX
       ),
     );
   }
 
-
-
   void _prepareCalendarEvents() {
-    final events = LinkedHashMap<DateTime, List<Gig>>(equals: isSameDay, hashCode: getHashCode);
+    final events = LinkedHashMap<DateTime, List<Gig>>(
+      equals: isSameDay,
+      hashCode: getHashCode,
+    );
     DateTime today = DateTime.now();
-    DateTime calendarRangeEnd = DateTime(today.year + 5, today.month, today.day);
+    DateTime calendarRangeEnd = DateTime(
+      today.year + 5,
+      today.month,
+      today.day,
+    );
 
     List<Gig> allCalendarGigs = [];
     for (var gig in _allGigs) {
@@ -641,7 +806,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       } else {
         // Virtualize the base date for the calendar
         _addOccurrenceIfApplicable(allCalendarGigs, gig, gig.dateTime);
-        allCalendarGigs.addAll(_generateOccurrencesForGig(gig, calendarRangeEnd));
+        allCalendarGigs.addAll(
+          _generateOccurrencesForGig(gig, calendarRangeEnd),
+        );
       }
     }
     allCalendarGigs.addAll(_generateJamOpenMicGigs(calendarRangeEnd));
@@ -655,9 +822,11 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         // Only overwrite if incoming has real data the existing one lacks.
         // This ensures materialized instances (real data) always beat virtual ones.
         final existing = uniqueGigs[gig.id]!;
-        final incomingHasData = gig.retrospectiveCompleted == true ||
+        final incomingHasData =
+            gig.retrospectiveCompleted == true ||
             (gig.notes?.isNotEmpty ?? false);
-        final existingLacksData = existing.retrospectiveCompleted != true &&
+        final existingLacksData =
+            existing.retrospectiveCompleted != true &&
             (existing.notes?.isEmpty ?? true);
         if (incomingHasData && existingLacksData) {
           uniqueGigs[gig.id] = gig;
@@ -666,14 +835,25 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     }
 
     for (var gig in uniqueGigs.values) {
-      final date = DateTime.utc(gig.dateTime.year, gig.dateTime.month, gig.dateTime.day);
+      final date = DateTime.utc(
+        gig.dateTime.year,
+        gig.dateTime.month,
+        gig.dateTime.day,
+      );
       events.putIfAbsent(date, () => []).add(gig);
     }
 
-    if (mounted) setState(() { _calendarEvents = events; });
+    if (mounted)
+      setState(() {
+        _calendarEvents = events;
+      });
   }
 
-  DateTime _findNextDayOfWeek(DateTime startDate, int targetWeekday, {bool sameDayOk = false}) {
+  DateTime _findNextDayOfWeek(
+    DateTime startDate,
+    int targetWeekday, {
+    bool sameDayOk = false,
+  }) {
     DateTime date = DateTime(startDate.year, startDate.month, startDate.day);
     if (sameDayOk && date.weekday == targetWeekday) {
       return date;
@@ -686,7 +866,12 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     return date;
   }
 
-  DateTime? _findNthSpecificWeekdayOfMonth(int year, int month, int targetWeekday, int nth) {
+  DateTime? _findNthSpecificWeekdayOfMonth(
+    int year,
+    int month,
+    int targetWeekday,
+    int nth,
+  ) {
     if (nth < 1 || nth > 5) return null;
     int occurrences = 0;
     int daysInMonth = DateTime(year, month + 1, 0).day;
@@ -702,7 +887,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     return null;
   }
 
-  int getHashCode(DateTime key) => key.day * 1000000 + key.month * 10000 + key.year;
+  int getHashCode(DateTime key) =>
+      key.day * 1000000 + key.month * 10000 + key.year;
 
   List<Gig> _getEventsForDay(DateTime day) {
     final normalizedDay = DateTime.utc(day.year, day.month, day.day);
@@ -710,8 +896,18 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   void _onDaySelected(DateTime selectedDay, DateTime focusedDay) {
-    final normalizedNewSelectedDay = DateTime.utc(selectedDay.year, selectedDay.month, selectedDay.day);
-    final normalizedCurrentSelectedDay = _selectedDay != null ? DateTime.utc(_selectedDay!.year, _selectedDay!.month, _selectedDay!.day) : null;
+    final normalizedNewSelectedDay = DateTime.utc(
+      selectedDay.year,
+      selectedDay.month,
+      selectedDay.day,
+    );
+    final normalizedCurrentSelectedDay = _selectedDay != null
+        ? DateTime.utc(
+            _selectedDay!.year,
+            _selectedDay!.month,
+            _selectedDay!.day,
+          )
+        : null;
     if (!isSameDay(normalizedCurrentSelectedDay, normalizedNewSelectedDay)) {
       if (!mounted) return;
       setState(() {
@@ -720,47 +916,61 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         _selectedDayGigs = _getEventsForDay(selectedDay);
       });
     } else {
-      if (mounted) setState(() { _selectedDayGigs = _getEventsForDay(selectedDay); });
+      if (mounted)
+        setState(() {
+          _selectedDayGigs = _getEventsForDay(selectedDay);
+        });
     }
   }
 
   Future<void> _loadVenues() async {
     if (!mounted) return;
-    setState(() { _isLoadingVenues = true; });
+    setState(() {
+      _isLoadingVenues = true;
+    });
     final prefs = await SharedPreferences.getInstance();
     final List<String>? venuesJson = prefs.getStringList(_keySavedLocations);
     List<StoredLocation> loadedFromPrefs = [];
     if (venuesJson != null) {
       try {
-        loadedFromPrefs = venuesJson.map((jsonString) {
-          try {
-            return StoredLocation.fromJson(jsonDecode(jsonString));
-          } catch (e) {
-            log("Error decoding a single venue: $jsonString. Error: $e");
-            return null;
-          }
-        }).whereType<StoredLocation>().toList();
+        loadedFromPrefs = venuesJson
+            .map((jsonString) {
+              try {
+                return StoredLocation.fromJson(jsonDecode(jsonString));
+              } catch (e) {
+                log("Error decoding a single venue: $jsonString. Error: $e");
+                return null;
+              }
+            })
+            .whereType<StoredLocation>()
+            .toList();
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading some venues: $e')));
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error loading some venues: $e')),
+          );
       }
     }
     if (mounted) {
       setState(() {
         _allKnownVenues = loadedFromPrefs;
-        _displayableVenues = _allKnownVenues.where((venue) => !venue.isArchived).toList();
+        _displayableVenues = _allKnownVenues
+            .where((venue) => !venue.isArchived)
+            .toList();
         _isLoadingVenues = false;
       });
     }
   }
-
-
 
   Future<void> _launchBookingDialogForGig(Gig gigToEdit) async {
     String originalGigId = gigToEdit.getBaseId();
 
     Gig? originalGig;
     if (!gigToEdit.isJamOpenMic) {
-      originalGig = _allGigs.firstWhere((g) => g.id == originalGigId, orElse: () => gigToEdit);
+      originalGig = _allGigs.firstWhere(
+        (g) => g.id == originalGigId,
+        orElse: () => gigToEdit,
+      );
     } else {
       originalGig = gigToEdit;
     }
@@ -771,14 +981,19 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       recurrenceDay: originalGig.recurrenceDay,
       recurrenceNthValue: originalGig.recurrenceNthValue,
       recurrenceEndDate: originalGig.recurrenceEndDate,
-      recurrenceExceptions: originalGig.recurrenceExceptions, // Pass exceptions too
+      recurrenceExceptions:
+          originalGig.recurrenceExceptions, // Pass exceptions too
     );
-
 
     if (originalGig.isJamOpenMic) {
       final sourceVenue = _allKnownVenues.firstWhere(
-            (v) => v.placeId == originalGig?.placeId,
-        orElse: () => StoredLocation(placeId: '', name: '', address: '', coordinates: const LatLng(0,0)),
+        (v) => v.placeId == originalGig?.placeId,
+        orElse: () => StoredLocation(
+          placeId: '',
+          name: '',
+          address: '',
+          coordinates: const LatLng(0, 0),
+        ),
       );
       if (sourceVenue.placeId.isEmpty) return;
       await showDialog(
@@ -800,14 +1015,23 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                 },
               ),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.errorContainer),
-                child: Text('HIDE FROM MY GIGS', style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                ),
+                child: Text(
+                  'HIDE FROM MY GIGS',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
                 onPressed: () async {
                   Navigator.of(dialogContext).pop();
                   if (originalGig == null) return;
 
                   // --- START OF DEFINITIVE FIX ---
-                  log("--- HIDE BUTTON TAPPED ---");  // 1. Get the base ID, which correctly removes the date suffix.
+                  log(
+                    "--- HIDE BUTTON TAPPED ---",
+                  ); // 1. Get the base ID, which correctly removes the date suffix.
                   final String baseGigId = originalGig.getBaseId();
                   log("1. Base Gig ID for processing: $baseGigId");
 
@@ -824,24 +1048,42 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                     final String sessionId = baseGigId.substring(prefix.length);
                     log("2. Extracted TRUE Session ID: $sessionId");
 
-                    final venueIndex = _allKnownVenues.indexWhere((v) => v.placeId == sourceVenue.placeId);
-                    final sessionIndex = sourceVenue.jamSessions.indexWhere((s) => s.id == sessionId);
+                    final venueIndex = _allKnownVenues.indexWhere(
+                      (v) => v.placeId == sourceVenue.placeId,
+                    );
+                    final sessionIndex = sourceVenue.jamSessions.indexWhere(
+                      (s) => s.id == sessionId,
+                    );
 
                     if (venueIndex != -1 && sessionIndex != -1) {
-                      log("3. Found Venue '${sourceVenue.name}' and Session. Proceeding to update.");
+                      log(
+                        "3. Found Venue '${sourceVenue.name}' and Session. Proceeding to update.",
+                      );
 
                       // Create a mutable copy of the venue list to modify in memory.
-                      List<StoredLocation> updatedAllVenues = List.from(_allKnownVenues);
-                      StoredLocation venueToUpdate = updatedAllVenues[venueIndex];
-                      List<JamSession> updatedSessions = List.from(venueToUpdate.jamSessions);
+                      List<StoredLocation> updatedAllVenues = List.from(
+                        _allKnownVenues,
+                      );
+                      StoredLocation venueToUpdate =
+                          updatedAllVenues[venueIndex];
+                      List<JamSession> updatedSessions = List.from(
+                        venueToUpdate.jamSessions,
+                      );
 
                       // 4. Update the session's visibility and save the venue.
-                      updatedSessions[sessionIndex] = updatedSessions[sessionIndex].copyWith(showInGigsList: false);
-                      final updatedVenue = venueToUpdate.copyWith(jamSessions: updatedSessions);
+                      updatedSessions[sessionIndex] =
+                          updatedSessions[sessionIndex].copyWith(
+                            showInGigsList: false,
+                          );
+                      final updatedVenue = venueToUpdate.copyWith(
+                        jamSessions: updatedSessions,
+                      );
                       updatedAllVenues[venueIndex] = updatedVenue;
                       await _updateVenueJamNightSettings(updatedVenue);
 
-                      log("4. Saved to SharedPreferences. Forcing immediate UI refresh.");
+                      log(
+                        "4. Saved to SharedPreferences. Forcing immediate UI refresh.",
+                      );
 
                       // 5. Force the UI to refresh with the updated in-memory data.
                       if (mounted) {
@@ -852,15 +1094,24 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                         // Now regenerate the gigs list using the corrected local data.
                         _generateAndSetDisplayedGigs();
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Jam session hidden.'), backgroundColor: Colors.blueAccent),
+                          const SnackBar(
+                            content: Text('Jam session hidden.'),
+                            backgroundColor: Colors.blueAccent,
+                          ),
                         );
-                        log("5. Refresh complete. The session should now be hidden.");
+                        log(
+                          "5. Refresh complete. The session should now be hidden.",
+                        );
                       }
                     } else {
-                      log("Error: Could not find Venue (index: $venueIndex) or Session (index: $sessionIndex). This indicates a logic bug.");
+                      log(
+                        "Error: Could not find Venue (index: $venueIndex) or Session (index: $sessionIndex). This indicates a logic bug.",
+                      );
                     }
                   } else {
-                    log("Error: Could not parse the baseGigId '$baseGigId' using the known placeId '$knownPlaceId'.");
+                    log(
+                      "Error: Could not parse the baseGigId '$baseGigId' using the known placeId '$knownPlaceId'.",
+                    );
                   }
                   // --- END OF DEFINITIVE FIX ---
                 },
@@ -886,37 +1137,58 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       },
     );
 
-    if (result is GigEditResult && result.action != GigEditResultAction.noChange) {
+    if (result is GigEditResult &&
+        result.action != GigEditResultAction.noChange) {
       if (result.action == GigEditResultAction.updated && result.gig != null) {
         await _updateGig(result.gig!);
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" updated.'), backgroundColor: Colors.green));
-      } else if (result.action == GigEditResultAction.deleted && result.gig != null) {
-        if (result.cancelChoice != null && result.cancelChoice != RecurringCancelChoice.doNothing) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gig "${result.gig!.venueName}" updated.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+      } else if (result.action == GigEditResultAction.deleted &&
+          result.gig != null) {
+        if (result.cancelChoice != null &&
+            result.cancelChoice != RecurringCancelChoice.doNothing) {
           await _handleRecurringGigDeletion(result.gig!, result.cancelChoice!);
         } else if (result.cancelChoice == null) {
           await _deleteGig(result.gig!);
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig "${result.gig!.venueName}" cancelled.'), backgroundColor: Colors.orange));
+          if (mounted)
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Gig "${result.gig!.venueName}" cancelled.'),
+                backgroundColor: Colors.orange,
+              ),
+            );
         }
       }
     } else if (result is Gig) {
       globalRefreshNotifier.notify();
 
       // Assess the newly booked gig immediately
-      _impactEventService.fetchImpactEvents(
-        gig: result,
-      ).then((events) {
+      _impactEventService.fetchImpactEvents(gig: result).then((events) {
         if (mounted && events.isNotEmpty) {
           setState(() {
             _impactEventsByGigId[result.id] = events;
             final idx = _displayedGigs.indexWhere((g) => g.id == result.id);
             if (idx != -1) {
-              _displayedGigs[idx] = _displayedGigs[idx].copyWith(impactEvents: events);
+              _displayedGigs[idx] = _displayedGigs[idx].copyWith(
+                impactEvents: events,
+              );
             }
           });
         }
       });
 
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('New gig "${result.venueName}" booked.'), backgroundColor: Colors.green));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('New gig "${result.venueName}" booked.'),
+            backgroundColor: Colors.green,
+          ),
+        );
     }
   }
 
@@ -942,7 +1214,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       globalRefreshNotifier.notify();
     }
   }
-
 
   Future<void> _updateGig(Gig updatedGig) async {
     try {
@@ -985,7 +1256,10 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       log("❌ Error in _updateGig: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating gig: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error updating gig: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -1005,13 +1279,14 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error cancelling gig: ${e.toString()}'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error cancelling gig: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
   }
-
-
 
   Future<void> _archiveVenue(StoredLocation venueToArchive) async {
     if (!mounted) return;
@@ -1019,44 +1294,80 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     DateTime futureRange = DateTime.now().add(const Duration(days: 365 * 5));
     List<Gig> upcomingActualGigsAtVenue = [];
     // Check non-recurring gigs
-    upcomingActualGigsAtVenue.addAll(_allGigs.where((g) => !g.isRecurring && g.placeId == venueToArchive.placeId && !g.isJamOpenMic && g.dateTime.isAfter(DateTime.now())));
+    upcomingActualGigsAtVenue.addAll(
+      _allGigs.where(
+        (g) =>
+            !g.isRecurring &&
+            g.placeId == venueToArchive.placeId &&
+            !g.isJamOpenMic &&
+            g.dateTime.isAfter(DateTime.now()),
+      ),
+    );
     // Check recurring gigs
-    for (var gig in _allGigs.where((g) => g.isRecurring && g.placeId == venueToArchive.placeId && !g.isJamOpenMic)) {
-      upcomingActualGigsAtVenue.addAll(_generateOccurrencesForGig(gig, futureRange));
+    for (var gig in _allGigs.where(
+      (g) =>
+          g.isRecurring &&
+          g.placeId == venueToArchive.placeId &&
+          !g.isJamOpenMic,
+    )) {
+      upcomingActualGigsAtVenue.addAll(
+        _generateOccurrencesForGig(gig, futureRange),
+      );
     }
 
-    String dialogMessage = 'Are you sure you want to archive "${venueToArchive.name}"?';
+    String dialogMessage =
+        'Are you sure you want to archive "${venueToArchive.name}"?';
     if (upcomingActualGigsAtVenue.isNotEmpty) {
-      dialogMessage += '\n\nThis will also DELETE all upcoming actual gig(s) scheduled here (including all recurring instances).';
+      dialogMessage +=
+          '\n\nThis will also DELETE all upcoming actual gig(s) scheduled here (including all recurring instances).';
     } else {
-      dialogMessage += '\nIt will be hidden from lists but not permanently deleted.';
+      dialogMessage +=
+          '\nIt will be hidden from lists but not permanently deleted.';
     }
 
-    final bool confirmArchive = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text('Confirm Archive: ${venueToArchive.name}'),
-          content: Text(dialogMessage),
-          actions: <Widget>[
-            TextButton(child: const Text('CANCEL'), onPressed: () => Navigator.of(dialogContext).pop(false)),
-            TextButton(
-                child: Text('ARCHIVE', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                onPressed: () => Navigator.of(dialogContext).pop(true)),
-          ],
-        );
-      },
-    ) ?? false;
+    final bool confirmArchive =
+        await showDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              title: Text('Confirm Archive: ${venueToArchive.name}'),
+              content: Text(dialogMessage),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('CANCEL'),
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                ),
+                TextButton(
+                  child: Text(
+                    'ARCHIVE',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
 
     if (confirmArchive) {
-      setState(() { _isLoadingVenues = true; _isLoadingGigs = true; });
+      setState(() {
+        _isLoadingVenues = true;
+        _isLoadingGigs = true;
+      });
       final prefs = await SharedPreferences.getInstance();
 
       // Delete the base gigs associated with the venue
       if (upcomingActualGigsAtVenue.isNotEmpty) {
         final String? gigsJsonString = prefs.getString(_keyGigsList);
-        List<Gig> currentAllActualGigs = (gigsJsonString != null) ? Gig.decode(gigsJsonString) : [];
-        currentAllActualGigs.removeWhere((gig) => gig.placeId == venueToArchive.placeId && !gig.isJamOpenMic);
+        List<Gig> currentAllActualGigs = (gigsJsonString != null)
+            ? Gig.decode(gigsJsonString)
+            : [];
+        currentAllActualGigs.removeWhere(
+          (gig) => gig.placeId == venueToArchive.placeId && !gig.isJamOpenMic,
+        );
         await prefs.setString(_keyGigsList, Gig.encode(currentAllActualGigs));
 
         final notificationService = NotificationService();
@@ -1064,11 +1375,17 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         await notificationService.updateAllGigNotifications();
       }
 
-      int index = _allKnownVenues.indexWhere((v) => v.placeId == venueToArchive.placeId);
+      int index = _allKnownVenues.indexWhere(
+        (v) => v.placeId == venueToArchive.placeId,
+      );
       if (index != -1) {
         List<StoredLocation> updatedAllVenues = List.from(_allKnownVenues);
-        updatedAllVenues[index] = updatedAllVenues[index].copyWith(isArchived: true);
-        final List<String> updatedVenuesJson = updatedAllVenues.map((v) => jsonEncode(v.toJson())).toList();
+        updatedAllVenues[index] = updatedAllVenues[index].copyWith(
+          isArchived: true,
+        );
+        final List<String> updatedVenuesJson = updatedAllVenues
+            .map((v) => jsonEncode(v.toJson()))
+            .toList();
         await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
       }
 
@@ -1079,17 +1396,20 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           snackbarMessage += ' All associated actual gigs deleted.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(snackbarMessage), backgroundColor: Colors.orange),
+          SnackBar(
+            content: Text(snackbarMessage),
+            backgroundColor: Colors.orange,
+          ),
         );
       }
     }
   }
 
-
-
   Future<void> _updateVenueJamNightSettings(StoredLocation updatedVenue) async {
     final prefs = await SharedPreferences.getInstance();
-    int index = _allKnownVenues.indexWhere((v) => v.placeId == updatedVenue.placeId);
+    int index = _allKnownVenues.indexWhere(
+      (v) => v.placeId == updatedVenue.placeId,
+    );
     if (index != -1) {
       List<StoredLocation> updatedAllVenuesList = List.from(_allKnownVenues);
       updatedAllVenuesList[index] = updatedVenue;
@@ -1097,8 +1417,11 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       // FILTER: Only save venues the user has actually interacted with
       // Don't persist read-only JSON jam venues unless user has modified them
       final List<StoredLocation> venuesToSave = updatedAllVenuesList.where((v) {
-        final hasVisibleJamSessions = v.jamSessions.any((s) => s.showInGigsList);
-        return v.placeId == updatedVenue.placeId || // Always save the venue being updated
+        final hasVisibleJamSessions = v.jamSessions.any(
+          (s) => s.showInGigsList,
+        );
+        return v.placeId ==
+                updatedVenue.placeId || // Always save the venue being updated
             hasVisibleJamSessions ||
             v.rating > 0 ||
             v.isArchived ||
@@ -1108,12 +1431,19 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             v.venueNotes != null;
       }).toList();
 
-      final List<String> updatedVenuesJson = venuesToSave.map((v) => jsonEncode(v.toJson())).toList();
+      final List<String> updatedVenuesJson = venuesToSave
+          .map((v) => jsonEncode(v.toJson()))
+          .toList();
       await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
       if (mounted) {
         globalRefreshNotifier.notify();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Jam/Open Mic settings updated for ${updatedVenue.name}.'), backgroundColor: Colors.green),
+          SnackBar(
+            content: Text(
+              'Jam/Open Mic settings updated for ${updatedVenue.name}.',
+            ),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     }
@@ -1122,13 +1452,16 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   Future<void> _showVenueDetailsDialog(StoredLocation venue) async {
     if (!mounted) return;
 
-    final upcomingGigs = _displayedGigs
-        .where((g) =>
-    g.placeId == venue.placeId &&
-        g.dateTime.isAfter(DateTime.now()) &&
-        !g.isJamOpenMic)
-        .toList()
-      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    final upcomingGigs =
+        _displayedGigs
+            .where(
+              (g) =>
+                  g.placeId == venue.placeId &&
+                  g.dateTime.isAfter(DateTime.now()) &&
+                  !g.isJamOpenMic,
+            )
+            .toList()
+          ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
     final nextUpcomingGig = upcomingGigs.isNotEmpty ? upcomingGigs.first : null;
 
     await Navigator.of(context).push(
@@ -1142,7 +1475,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           },
           onBook: (venueToSaveAndBook) async {
             await _updateAndSaveLocationReview(venueToSaveAndBook);
-            final newGig = await _launchBookingDialogForVenue(venueToSaveAndBook);
+            final newGig = await _launchBookingDialogForVenue(
+              venueToSaveAndBook,
+            );
             if (newGig != null) {
               await Future.delayed(const Duration(milliseconds: 100));
               if (mounted) {
@@ -1155,14 +1490,18 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             _updateAndSaveLocationReview(updatedVenue);
           },
           onContactSaved: (contact, bookingInfo) async {
-            final index = _allKnownVenues.indexWhere((v) => v.placeId == venue.placeId);
+            final index = _allKnownVenues.indexWhere(
+              (v) => v.placeId == venue.placeId,
+            );
             if (index != -1) {
               _allKnownVenues[index] = _allKnownVenues[index].copyWith(
                 contact: contact,
                 bookingInfo: bookingInfo,
               );
               final prefs = await SharedPreferences.getInstance();
-              final updatedJson = _allKnownVenues.map((v) => jsonEncode(v.toJson())).toList();
+              final updatedJson = _allKnownVenues
+                  .map((v) => jsonEncode(v.toJson()))
+                  .toList();
               await prefs.setStringList(_keySavedLocations, updatedJson);
               globalRefreshNotifier.notify();
               if (mounted) {
@@ -1181,25 +1520,31 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
               context: context,
               builder: (_) => JamOpenMicDialog(venue: venue),
             );
-            if (result != null && result.settingsChanged && result.updatedVenue != null) {
+            if (result != null &&
+                result.settingsChanged &&
+                result.updatedVenue != null) {
               await _updateVenueJamNightSettings(result.updatedVenue!);
             }
           },
           onDataChanged: () => _loadVenues(),
           onNavigateToProfile: () {
             Navigator.of(context).pop();
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ProfilePage()),
-            );
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ProfilePage()));
           },
         ),
       ),
     );
   }
 
-  Future<void> _updateAndSaveLocationReview(StoredLocation updatedLocation) async {
+  Future<void> _updateAndSaveLocationReview(
+    StoredLocation updatedLocation,
+  ) async {
     List<StoredLocation> updatedAllVenues = List.from(_allKnownVenues);
-    int index = updatedAllVenues.indexWhere((loc) => loc.placeId == updatedLocation.placeId);
+    int index = updatedAllVenues.indexWhere(
+      (loc) => loc.placeId == updatedLocation.placeId,
+    );
 
     if (index != -1) {
       updatedAllVenues[index] = updatedLocation;
@@ -1209,17 +1554,27 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final List<String> locationsJson = updatedAllVenues.map((loc) => jsonEncode(loc.toJson())).toList();
+      final List<String> locationsJson = updatedAllVenues
+          .map((loc) => jsonEncode(loc.toJson()))
+          .toList();
       await prefs.setStringList(_keySavedLocations, locationsJson);
       globalRefreshNotifier.notify();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${updatedLocation.name} saved!'), backgroundColor: Colors.green),
+          SnackBar(
+            content: Text('${updatedLocation.name} saved!'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving venue: $e'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving venue: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -1238,9 +1593,6 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
       },
     );
   }
-
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -1279,13 +1631,12 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     );
   }
 
-
   /// Merges public venue data with local user preferences for jam sessions
   /// Preserves showInGigsList setting from local version
   StoredLocation _mergeVenueJamPreferences(
-      StoredLocation publicVenue,
-      StoredLocation? localVenue,
-      ) {
+    StoredLocation publicVenue,
+    StoredLocation? localVenue,
+  ) {
     if (localVenue == null || localVenue.jamSessions.isEmpty) {
       return publicVenue; // No local preferences to preserve
     }
@@ -1310,7 +1661,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   }
 
   Widget _buildGigsTabContent() {
-    bool hasUpcomingGigs = _displayedGigs.any((gig) => !gig.isJamOpenMic && gig.dateTime.isAfter(DateTime.now()));
+    bool hasUpcomingGigs = _displayedGigs.any(
+      (gig) => !gig.isJamOpenMic && gig.dateTime.isAfter(DateTime.now()),
+    );
 
     if (_isLoadingGigs && _displayedGigs.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -1321,7 +1674,12 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 8.0, left: 8.0, right: 8.0, bottom: 8.0),
+          padding: const EdgeInsets.only(
+            top: 8.0,
+            left: 8.0,
+            right: 8.0,
+            bottom: 8.0,
+          ),
           child: Wrap(
             spacing: 8.0,
             runSpacing: 8.0,
@@ -1335,11 +1693,13 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                 onPressed: _allGigs.isEmpty
                     ? null
                     : () => showGigInsightsDialog(
-                  context: context,
-                  allGigs: _allGigs,
-                ),
+                        context: context,
+                        allGigs: _allGigs,
+                      ),
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Theme.of(context).colorScheme.primary),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
               ),
               OutlinedButton.icon(
@@ -1351,7 +1711,25 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
                   allKnownVenues: _allKnownVenues,
                 ),
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Theme.of(context).colorScheme.primary),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.checklist, size: 18),
+                label: const Text('Checklist'),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const GigChecklistPage(),
+                    ),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
               ),
             ],
@@ -1359,15 +1737,21 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
         ),
         if (_isLoadingGigs && _displayedGigs.isNotEmpty)
           const Padding(
-              padding: EdgeInsets.all(8.0),
-              child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)))
+            padding: EdgeInsets.all(8.0),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+            ),
           ),
 
         // This is now always accessible
         Expanded(
-            child: _gigsViewType == GigsViewType.list
-                ? _buildGigsListView()
-                : _buildGigsCalendarView()
+          child: _gigsViewType == GigsViewType.list
+              ? _buildGigsListView()
+              : _buildGigsCalendarView(),
         ),
 
         if (_isMoreGigsLoading)
@@ -1382,11 +1766,24 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
   Widget _buildGigsViewToggle() {
     return SegmentedButton<GigsViewType>(
       segments: const <ButtonSegment<GigsViewType>>[
-        ButtonSegment<GigsViewType>(value: GigsViewType.list, label: Text('List'), icon: Icon(Icons.list)),
-        ButtonSegment<GigsViewType>(value: GigsViewType.calendar, label: Text('Calendar'), icon: Icon(Icons.calendar_today)),
+        ButtonSegment<GigsViewType>(
+          value: GigsViewType.list,
+          label: Text('List'),
+          icon: Icon(Icons.list),
+        ),
+        ButtonSegment<GigsViewType>(
+          value: GigsViewType.calendar,
+          label: Text('Calendar'),
+          icon: Icon(Icons.calendar_today),
+        ),
       ],
       selected: <GigsViewType>{_gigsViewType},
-      onSelectionChanged: (Set<GigsViewType> newSelection) { if (!mounted) return; setState(() { _gigsViewType = newSelection.first; }); },
+      onSelectionChanged: (Set<GigsViewType> newSelection) {
+        if (!mounted) return;
+        setState(() {
+          _gigsViewType = newSelection.first;
+        });
+      },
     );
   }
 
@@ -1441,15 +1838,19 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
             sumOfTrueHourlyRates += gig.trueHourlyRate;
           }
         }
-        final averagePayPerHour = (gigCount > 0) ? sumOfTrueHourlyRates / gigCount : 0.0;
+        final averagePayPerHour = (gigCount > 0)
+            ? sumOfTrueHourlyRates / gigCount
+            : 0.0;
 
         // Add the separator with the CORRECT totals.
-        listItems.add(MonthlySeparator(
-          month: month,
-          gigCount: gigCount,
-          totalPay: totalPay,
-          averagePayPerHour: averagePayPerHour,
-        ));
+        listItems.add(
+          MonthlySeparator(
+            month: month,
+            gigCount: gigCount,
+            totalPay: totalPay,
+            averagePayPerHour: averagePayPerHour,
+          ),
+        );
 
         // Add the gigs for this month, ensuring they are sorted chronologically.
         gigsInMonth.sort((a, b) => a.dateTime.compareTo(b.dateTime));
@@ -1458,7 +1859,8 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
 
     // 3. Build the ListView.
     // The rest of this method remains the same as it correctly renders the items.
-    bool _firstGigKeyAssigned = false; // 🎬 Track whether we've assigned the key yet
+    bool _firstGigKeyAssigned =
+        false; // 🎬 Track whether we've assigned the key yet
 
     return ListView.builder(
       controller: _scrollController,
@@ -1478,7 +1880,9 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
           if (!_firstGigKeyAssigned && !item.isJamOpenMic) {
             assignKey = true;
             _firstGigKeyAssigned = true;
-            log('🎬 [GigsPage] ListView itemBuilder: ✅ Assigning _demoGigTileKey to FIRST gig: id="${item.id}" venue="${item.venueName}"');
+            log(
+              '🎬 [GigsPage] ListView itemBuilder: ✅ Assigning _demoGigTileKey to FIRST gig: id="${item.id}" venue="${item.venueName}"',
+            );
           }
 
           return GigListTile(
@@ -1496,141 +1900,179 @@ class _GigsPageState extends State<GigsPage> with SingleTickerProviderStateMixin
     );
   }
 
-
-
   Widget _buildGigsCalendarView() {
     if (_isLoadingGigs && _calendarEvents.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    return Column(children: [
-      Container(
-        color: Colors.white,
-        padding: const EdgeInsets.only(bottom: 8.0),
-        child: TableCalendar<Gig>(
-          firstDay: DateTime.utc(DateTime.now().year - 1, 1, 1),
-          lastDay: DateTime.utc(DateTime.now().year + 5, 12, 31),
-          focusedDay: _focusedDay,
-          calendarFormat: _calendarFormat,
-          selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-          eventLoader: _getEventsForDay,
-          startingDayOfWeek: StartingDayOfWeek.sunday,
-          calendarStyle: CalendarStyle(
-            defaultTextStyle: const TextStyle(color: Colors.black87),
-            weekendTextStyle: TextStyle(color: Colors.red.shade700),
-            outsideTextStyle: TextStyle(color: Colors.grey.shade400),
-            disabledTextStyle: TextStyle(color: Colors.grey.shade300),
-            todayDecoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer.withAlpha(128),
-                shape: BoxShape.circle),
-            todayTextStyle: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer),
-            selectedDecoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary, shape: BoxShape.circle),
-            selectedTextStyle: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
-            markerDecoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.secondary,
-              shape: BoxShape.circle,
+    return Column(
+      children: [
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: TableCalendar<Gig>(
+            firstDay: DateTime.utc(DateTime.now().year - 1, 1, 1),
+            lastDay: DateTime.utc(DateTime.now().year + 5, 12, 31),
+            focusedDay: _focusedDay,
+            calendarFormat: _calendarFormat,
+            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+            eventLoader: _getEventsForDay,
+            startingDayOfWeek: StartingDayOfWeek.sunday,
+            calendarStyle: CalendarStyle(
+              defaultTextStyle: const TextStyle(color: Colors.black87),
+              weekendTextStyle: TextStyle(color: Colors.red.shade700),
+              outsideTextStyle: TextStyle(color: Colors.grey.shade400),
+              disabledTextStyle: TextStyle(color: Colors.grey.shade300),
+              todayDecoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.primaryContainer.withAlpha(128),
+                shape: BoxShape.circle,
+              ),
+              todayTextStyle: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+              selectedDecoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                shape: BoxShape.circle,
+              ),
+              selectedTextStyle: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimary,
+              ),
+              markerDecoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondary,
+                shape: BoxShape.circle,
+              ),
+            ),
+            daysOfWeekStyle: DaysOfWeekStyle(
+              weekdayStyle: TextStyle(
+                color: Colors.black54,
+                fontWeight: FontWeight.bold,
+              ),
+              weekendStyle: TextStyle(
+                color: Colors.red.shade600,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            headerStyle: HeaderStyle(
+              titleTextStyle: const TextStyle(
+                color: Colors.black87,
+                fontSize: 17.0,
+                fontWeight: FontWeight.bold,
+              ),
+              formatButtonVisible: true,
+              titleCentered: true,
+              formatButtonShowsNext: false,
+              formatButtonTextStyle: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              formatButtonDecoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+              leftChevronIcon: Icon(Icons.chevron_left, color: Colors.black54),
+              rightChevronIcon: Icon(
+                Icons.chevron_right,
+                color: Colors.black54,
+              ),
+            ),
+            onDaySelected: _onDaySelected,
+            onFormatChanged: (format) {
+              if (_calendarFormat != format) {
+                if (!mounted) return;
+                setState(() {
+                  _calendarFormat = format;
+                });
+              }
+            },
+            onPageChanged: (focusedDay) {
+              if (!mounted) return;
+              setState(() {
+                _focusedDay = focusedDay;
+              });
+              _onDaySelected(focusedDay, focusedDay);
+            },
+            calendarBuilders: CalendarBuilders<Gig>(
+              markerBuilder: (context, date, events) {
+                if (events.isEmpty) return null;
+
+                final List<Gig> gigEvents = events.cast<Gig>();
+                bool hasActualGig = gigEvents.any(
+                  (gig) => !gig.isJamOpenMic && !gig.isRecurring,
+                ); // One-off gig
+                bool hasRecurringGig = gigEvents.any(
+                  (gig) => !gig.isJamOpenMic && gig.isRecurring,
+                ); // Recurring gig instance
+                bool hasJam = gigEvents.any((gig) => gig.isJamOpenMic);
+                List<Widget> markers = [];
+                if (hasActualGig) {
+                  markers.add(
+                    _buildEventsMarker(Theme.of(context).colorScheme.secondary),
+                  );
+                }
+                if (hasRecurringGig) {
+                  if (markers.isNotEmpty) markers.add(const SizedBox(width: 2));
+                  markers.add(
+                    _buildEventsMarker(Colors.blue),
+                  ); // Dot for recurring gigs
+                }
+                if (hasJam) {
+                  if (markers.isNotEmpty) markers.add(const SizedBox(width: 2));
+                  markers.add(
+                    _buildEventsMarker(Theme.of(context).colorScheme.tertiary),
+                  ); // Dot for jam sessions
+                }
+                if (markers.isEmpty) return null;
+                return Positioned(
+                  bottom: 1,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: markers,
+                  ),
+                );
+              },
             ),
           ),
-          daysOfWeekStyle: DaysOfWeekStyle(
-              weekdayStyle: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold),
-              weekendStyle: TextStyle(color: Colors.red.shade600, fontWeight: FontWeight.bold)),
-          headerStyle: HeaderStyle(
-            titleTextStyle: const TextStyle(
-                color: Colors.black87, fontSize: 17.0, fontWeight: FontWeight.bold),
-            formatButtonVisible: true,
-            titleCentered: true,
-            formatButtonShowsNext: false,
-            formatButtonTextStyle: TextStyle(color: Theme.of(context).colorScheme.primary),
-            formatButtonDecoration: BoxDecoration(
-                border: Border.all(color: Theme.of(context).colorScheme.primary),
-                borderRadius: BorderRadius.circular(12.0)),
-            leftChevronIcon: Icon(Icons.chevron_left, color: Colors.black54),
-            rightChevronIcon: Icon(Icons.chevron_right, color: Colors.black54),
-          ),
-          onDaySelected: _onDaySelected,
-          onFormatChanged: (format) {
-            if (_calendarFormat != format) {
-              if (!mounted) return;
-              setState(() { _calendarFormat = format; });
-            }
-          },
-          onPageChanged: (focusedDay) {
-            if (!mounted) return;
-            setState(() { _focusedDay = focusedDay; });
-            _onDaySelected(focusedDay, focusedDay);
-          },
-          calendarBuilders: CalendarBuilders<Gig>(
-            markerBuilder: (context, date, events) {
-              if (events.isEmpty) return null;
-
-              final List<Gig> gigEvents = events.cast<Gig>();
-              bool hasActualGig = gigEvents.any((gig) => !gig.isJamOpenMic && !gig.isRecurring); // One-off gig
-              bool hasRecurringGig = gigEvents.any((gig) => !gig.isJamOpenMic && gig.isRecurring); // Recurring gig instance
-              bool hasJam = gigEvents.any((gig) => gig.isJamOpenMic);
-              List<Widget> markers = [];
-              if (hasActualGig) {
-                markers.add(_buildEventsMarker(Theme.of(context).colorScheme.secondary));
-              }
-              if (hasRecurringGig) {
-                if (markers.isNotEmpty) markers.add(const SizedBox(width: 2));
-                markers.add(_buildEventsMarker(Colors.blue)); // Dot for recurring gigs
-              }
-              if (hasJam) {
-                if (markers.isNotEmpty) markers.add(const SizedBox(width: 2));
-                markers.add(_buildEventsMarker(Theme.of(context).colorScheme.tertiary)); // Dot for jam sessions
-              }
-              if (markers.isEmpty) return null;
-              return Positioned(
-                bottom: 1,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: markers,
+        ),
+        Expanded(
+          child: _selectedDayGigs.isNotEmpty
+              ? ListView.builder(
+                  itemCount: _selectedDayGigs.length,
+                  itemBuilder: (context, index) {
+                    final gig = _selectedDayGigs[index];
+                    return GigListTile(
+                      gig: gig,
+                      style: GigTileStyle.calendarView,
+                      onTap: () => _launchBookingDialogForGig(gig),
+                      onNotesTap: () => _openNotesPage(gig),
+                    );
+                  },
+                )
+              : Center(
+                  child: Text(
+                    _selectedDay != null
+                        ? 'No events for ${DateFormat.yMMMEd().format(_selectedDay!)}.'
+                        : 'Select a day to see events.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white70
+                          : Colors.black87,
+                    ),
+                  ),
                 ),
-              );
-            },
-          ),
         ),
-      ),
-      Expanded(
-        child: _selectedDayGigs.isNotEmpty
-            ? ListView.builder(
-          itemCount: _selectedDayGigs.length,
-          itemBuilder: (context, index) {
-            final gig = _selectedDayGigs[index];
-            return GigListTile(
-              gig: gig,
-              style: GigTileStyle.calendarView,
-              onTap: () => _launchBookingDialogForGig(gig),
-              onNotesTap: () => _openNotesPage(gig),
-            );
-          },
-        )
-            : Center(
-          child: Text(
-            _selectedDay != null
-                ? 'No events for ${DateFormat.yMMMEd().format(_selectedDay!)}.'
-                : 'Select a day to see events.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white70
-                    : Colors.black87),
-          ),
-        ),
-      ),
-    ]);
+      ],
+    );
   }
 
   Widget _buildEventsMarker(Color markerColor) {
     return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: markerColor,
-      ),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: markerColor),
       width: 7.0,
       height: 7.0,
       margin: const EdgeInsets.symmetric(horizontal: 0.5),
     );
   }
-
 }

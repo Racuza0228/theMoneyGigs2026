@@ -29,7 +29,6 @@ import 'features/gigs/widgets/booking_dialog.dart';
 import 'features/gigs/models/gig_model.dart';
 import 'features/gigs/services/gig_retrospective_service.dart';
 import 'features/gigs/widgets/retrospective_notification_banner.dart';
-import 'package:the_money_gigs/features/app_demo/services/demo_tracking_service.dart';
 import 'package:upgrader/upgrader.dart';
 import 'features/gigs/services/auto_backup_service.dart';
 
@@ -105,10 +104,6 @@ void main() {
     } catch (e, s) {
       log('❌ Firebase init failed — continuing without it: $e\n$s');
     }
-
-    DemoTrackingService().syncPendingData().catchError((e) {
-      log('⚠️ DemoTrackingService sync failed silently: $e');
-    });
 
     // ── PRIME SUSPECT ──────────────────────────────────────────────────
     // Runs only on the reinstall / cleared-data path — i.e. exactly the
@@ -518,6 +513,9 @@ class _MainPageState extends State<MainPage> {
             onComplete: () {
               log('🎬 Main: Onboarding complete — entering app');
               demoProvider.nextStep();
+              // Always land on the Map (Venues) tab after onboarding,
+              // regardless of which tab was active when replay was triggered.
+              setState(() => _selectedIndex = 0);
             },
           );
         }
@@ -586,9 +584,13 @@ class _MainPageState extends State<MainPage> {
                       final path = _pageBackgroundPaths[index];
                       final defaultPath = _defaultBackgroundImages[index];
                       if (path != null) {
-                        provider = path.startsWith('/')
-                            ? FileImage(File(path))
-                            : AssetImage(path);
+                        if (path == 'USE_STAGE_DEFAULT') {
+                          provider = const AssetImage('assets/background1.png');
+                        } else if (path.startsWith('/')) {
+                          provider = FileImage(File(path));
+                        } else {
+                          provider = AssetImage(path);
+                        }
                       } else if (defaultPath != null) {
                         provider = AssetImage(defaultPath);
                       }

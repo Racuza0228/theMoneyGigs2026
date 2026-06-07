@@ -296,14 +296,33 @@ class _MapPageState extends State<MapPage> {
         setState(() => _isFullyInitialized = true);
       }
 
+      // If a replay mapTutorial signal arrived before init completed,
+      // show the tutorial now that the map is ready and skip the
+      // normal first-launch shouldShow check.
+      if (mounted) {
+        final dp = Provider.of<DemoProvider>(context, listen: false);
+        if (dp.isDemoModeActive && dp.currentStep == DemoStep.mapTutorial) {
+          log('🗺️ MapTutorial: SHOWING — reason: mapTutorial step was pending during init');
+          await Future.delayed(const Duration(milliseconds: 800));
+          if (mounted) setState(() => _showMapTutorial = true);
+          return;
+        }
+      }
+
       // Check demo state once everything is ready.
       _onDemoStateChanged();
 
-      // Show the first-time tutorial after a short delay so the map markers
-      // have rendered and the user can see what we're explaining.
-      if (mounted && await MapTutorialOverlay.shouldShow()) {
+      // Show the map tutorial if it hasn't been seen yet.
+      // This path is for genuine first-time users only.
+      // Replay path goes through DemoProvider.mapTutorial step instead.
+      final tutorialNeeded = await MapTutorialOverlay.shouldShow();
+      log('🗺️ MapTutorial: _initializeAndLoadData check — shouldShow=$tutorialNeeded');
+      if (mounted && tutorialNeeded) {
+        log('🗺️ MapTutorial: SHOWING — reason: first launch, map_tutorial_shown not set');
         await Future.delayed(const Duration(milliseconds: 800));
         if (mounted) setState(() => _showMapTutorial = true);
+      } else {
+        log('🗺️ MapTutorial: suppressed — map_tutorial_shown already set');
       }
     } catch (e, s) {
       // Any unhandled throw inside map initialization lands here instead of
@@ -340,24 +359,46 @@ class _MapPageState extends State<MapPage> {
     if (!mounted) return;
 
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    final step = demoProvider.currentStep;
+    final active = demoProvider.isDemoModeActive;
+    log('🗺️ MapDemo: _onDemoStateChanged — active=$active step=$step');
 
-    // Onboarding just finished — initialize the map now that the user has
-    // seen the welcome screen and understands what the app does.
-    if (!demoProvider.isDemoModeActive && !_isFullyInitialized) {
+    // ── Replay map tutorial step ───────────────────────────────────────────
+    // DemoProvider signals this step when Replay App Demo reaches the map
+    // phase. Only show if map is already initialized; if not, the pending
+    // signal check inside _initializeAndLoadData will catch it instead.
+    if (active && step == DemoStep.mapTutorial) {
+      if (_isFullyInitialized) {
+        log('🗺️ MapTutorial: SHOWING — reason: replay demo reached mapTutorial step');
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted) setState(() => _showMapTutorial = true);
+        });
+      } else {
+        log('🗺️ MapTutorial: map not yet initialized — pending signal will be caught in _initializeAndLoadData');
+      }
+      return;
+    }
+
+    // ── First launch: onboarding just finished, map not yet initialized ────
+    if (!active && !_isFullyInitialized) {
+      log('🗺️ MapDemo: demo inactive + not initialized — running _initializeAndLoadData');
       _initializeAndLoadData().catchError((Object e, StackTrace s) {
         log('❌ Map init (demo state change) failed: $e\n$s');
       });
       return;
     }
 
-    if (!demoProvider.isDemoModeActive) return;
+    // ── All other cases: regular app use, do nothing ───────────────────────
+    log('🗺️ MapDemo: no action — active=$active initialized=$_isFullyInitialized step=$step');
 
     // Manage UI state for any legacy guided tour steps.
-    setState(() {
-      if (demoProvider.currentStep == DemoStep.mapVenueSearch) {
-        _isSearchVisible = true;
-      }
-    });
+    if (active) {
+      setState(() {
+        if (step == DemoStep.mapVenueSearch) {
+          _isSearchVisible = true;
+        }
+      });
+    }
   }
 
   // --- MARKERS & DATA LOADING ---
@@ -397,7 +438,7 @@ class _MapPageState extends State<MapPage> {
       _loadAllMapData();
       // Re-center in case the user just saved a new profile address.
       // This runs in parallel with the data reload — no blocking.
-      //_recenterMapFromProfile();
+      _recenterMapFromProfile();
     }
   }
 
@@ -1088,10 +1129,13 @@ class _MapPageState extends State<MapPage> {
           // so VisibilityDetector fires before the welcome screen appears,
           // which causes OS location dialogs to show before the user has
           // seen any context for why we need location access.
+          // Exception: mapTutorial step means onboarding is done and the
+          // map needs to initialize so it can show the tutorial overlay.
           // _onDemoStateChanged() will trigger initialization once done.
           final demoProvider =
           Provider.of<DemoProvider>(context, listen: false);
-          if (demoProvider.isDemoModeActive) return;
+          if (demoProvider.isDemoModeActive &&
+              demoProvider.currentStep != DemoStep.mapTutorial) return;
           _initializeAndLoadData().catchError((Object e, StackTrace s) {
             log('❌ Map init (VisibilityDetector) failed: $e\n$s');
           });
@@ -1304,11 +1348,21 @@ class _MapPageState extends State<MapPage> {
                 searchBarKey: _searchBarKey,
               ),
 
-            // First-time tutorial — shown once after map fully loads
+            // First-time tutorial — shown once after map fully loads,
+            // or on demand via Replay App Demo.
             if (_showMapTutorial && _isFullyInitialized)
               MapTutorialOverlay(
                 searchBarKey: _searchBarKey,
-                onDismiss: () => setState(() => _showMapTutorial = false),
+                onDismiss: () {
+                  log('🗺️ MapTutorial: dismissed by user');
+                  setState(() => _showMapTutorial = false);
+                  // If this was a replay, signal DemoProvider that the
+                  // map tutorial is done so it can clean up its state.
+                  final dp = Provider.of<DemoProvider>(context, listen: false);
+                  if (dp.currentStep == DemoStep.mapTutorial) {
+                    dp.completeMapTutorial();
+                  }
+                },
               ),
           ],
         );

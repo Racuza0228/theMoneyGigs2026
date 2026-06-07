@@ -744,7 +744,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   label: const Text('Replay App Demo'),
                   onPressed: () {
                     // 🎯 USE force: true to ensure it starts from the coaching intro
-                    context.read<DemoProvider>().startDemo(force: true);
+                    context.read<DemoProvider>().startDemo(force: true, replay: true);
 
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -793,8 +793,8 @@ class BackgroundSettingsDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> pageNames = ['Calculator', 'Gigs', 'Profile'];
-    final List<int> pageIndices = [0, 2, 3];
+    final List<String> pageNames = ['Gig Pay', 'My Gigs', 'Profile'];
+    final List<int> pageIndices = [1, 2, 3];
 
     return AlertDialog(
       title: const Text('Background Settings'),
