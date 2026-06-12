@@ -68,40 +68,99 @@ class GigListTile extends StatelessWidget {
     return _buildListTile(context);
   }
 
-  // ── Calendar view (unchanged from original) ───────────────────────────────
+  // ── Calendar view — split left/right matching list tile ─────────────────
 
   Widget _buildCalendarTile(BuildContext context) {
+    final bool showRightPanel = !_isJam && onNotesTap != null;
+
     return Card(
       elevation: _isPast ? 0.5 : (_isJam ? 1.5 : 2),
       color: _getCardColor(context),
       margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
-      child: ListTile(
-        leading: Icon(
-          _isJam ? Icons.music_note : Icons.event,
-          color: _isPast
-              ? Colors.grey.shade500
-              : (_isJam
-              ? Theme.of(context).colorScheme.tertiary
-              : Theme.of(context).colorScheme.primary),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+
+            // ── LEFT: main content — taps to edit ──────────────────────────
+            Expanded(
+              child: InkWell(
+                onTap: onTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12.0, vertical: 10.0),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _isJam ? Icons.music_note : Icons.event,
+                        color: _isPast
+                            ? Colors.grey.shade500
+                            : (_isJam
+                            ? Theme.of(context).colorScheme.tertiary
+                            : Theme.of(context).colorScheme.primary),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              gig.bandName != null &&
+                                  gig.bandName!.trim().isNotEmpty
+                                  ? '${gig.venueName} - ${gig.bandName}'
+                                  : gig.venueName,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: _isPast
+                                    ? Colors.grey.shade600
+                                    : Colors.white,
+                              ),
+                            ),
+                            Text(
+                              _isJam
+                                  ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic'
+                                  : '${DateFormat.jm().format(gig.dateTime)} - \$${gig.pay.toStringAsFixed(0)}',
+                              style: TextStyle(
+                                color: _isPast
+                                    ? Colors.grey.shade500
+                                    : Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // ── DIVIDER + RIGHT PANEL ──────────────────────────────────────
+            if (showRightPanel) ...[
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.12),
+              ),
+              InkWell(
+                onTap: onNotesTap,
+                child: Container(
+                  width: 64,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.04),
+                  child: _buildRightPanel(context),
+                ),
+              ),
+            ],
+          ],
         ),
-        title: Text(
-          gig.bandName != null && gig.bandName!.trim().isNotEmpty
-              ? '${gig.venueName} - ${gig.bandName}'
-              : gig.venueName,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: _isPast ? Colors.grey.shade600 : Colors.white,
-          ),
-        ),
-        subtitle: Text(
-          _isJam
-              ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic'
-              : '${DateFormat.jm().format(gig.dateTime)} - \$${gig.pay.toStringAsFixed(0)}',
-          style: TextStyle(
-            color: _isPast ? Colors.grey.shade500 : Colors.white,
-          ),
-        ),
-        onTap: onTap,
       ),
     );
   }

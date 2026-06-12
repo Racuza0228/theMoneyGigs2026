@@ -811,15 +811,36 @@ class _GeneralTabState extends State<_GeneralTab>
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
-            controller: widget.commentController,
-            decoration: const InputDecoration(
-              labelText: 'Your Comment',
-              hintText: 'e.g., Great sound, load-in info...',
-              border: OutlineInputBorder(),
+          Focus(
+            onFocusChange: (_) => setState(() {}),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                TextField(
+                  controller: widget.commentController,
+                  decoration: const InputDecoration(
+                    labelText: 'Your Comment',
+                    hintText: 'e.g., Great sound, load-in info...',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => FocusScope.of(context).unfocus(),
+                  onChanged: (_) => widget.onDirty(),
+                ),
+                if (FocusScope.of(context).hasFocus)
+                  TextButton(
+                    onPressed: () => FocusScope.of(context).unfocus(),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Done'),
+                  ),
+              ],
             ),
-            maxLines: 3,
-            textCapitalization: TextCapitalization.sentences,
           ),
 
           const Divider(height: 32),
