@@ -359,7 +359,7 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
                       width: 80,
                       height: 80,
                       decoration: BoxDecoration(
-                        color: Colors.green.shade900.withOpacity(0.4),
+                        color: Colors.green.shade900.withValues(alpha: 0.4),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
@@ -384,6 +384,15 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
                       style: TextStyle(
                         color: Colors.grey.shade400,
                         fontSize: 18,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      DateFormat('EEEE, MMM d, yyyy').format(widget.gig.dateTime),
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 13,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -575,7 +584,7 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
                               color: Theme.of(context)
                                   .colorScheme
                                   .primary
-                                  .withOpacity(0.2),
+                                  .withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -612,6 +621,15 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
                               color: Colors.grey.shade400, fontSize: 18),
                           textAlign: TextAlign.center,
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('EEEE, MMM d, yyyy').format(widget.gig.dateTime),
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
                       ],
                     ),
                   ),
@@ -624,7 +642,7 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
                     itemCount: 5,
                     itemSize: 56,
                     unratedColor: Colors.grey.shade700,
-                    glowColor: Colors.amber.withOpacity(0.3),
+                    glowColor: Colors.amber.withValues(alpha: 0.3),
                     itemBuilder: (context, _) =>
                     const Icon(Icons.star, color: Colors.amber),
                     onRatingUpdate: (rating) {
@@ -742,6 +760,15 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
                       TextStyle(color: Colors.grey.shade400, fontSize: 16),
                       textAlign: TextAlign.center,
                     ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${widget.gig.venueName} • ${DateFormat('MMM d, yyyy').format(widget.gig.dateTime)}',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 13,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: 24),
 
                     // Summary row — shows tips + avg rating
@@ -755,10 +782,10 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 10),
                             decoration: BoxDecoration(
-                              color: Colors.green.shade900.withOpacity(0.35),
+                              color: Colors.green.shade900.withValues(alpha: 0.35),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                  color: Colors.green.shade700.withOpacity(0.5)),
+                                  color: Colors.green.shade700.withValues(alpha: 0.5)),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -783,11 +810,11 @@ class _GigRetrospectiveWizardState extends State<GigRetrospectiveWizard>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 10),
                             decoration: BoxDecoration(
-                              color: Colors.green.shade900.withOpacity(0.3),
+                              color: Colors.green.shade900.withValues(alpha: 0.3),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                   color:
-                                  Colors.green.shade700.withOpacity(0.5)),
+                                  Colors.green.shade700.withValues(alpha: 0.5)),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,

@@ -20,22 +20,21 @@ class RetrospectiveNotificationBanner extends StatelessWidget {
     this.onComplete,
   });
 
-  String _getRelativeTime() {
+  /// Returns a human-readable date label with the explicit date in parens.
+  /// e.g. "Yesterday (Jun 12)" or "3 days ago (Jun 10)" or "Jun 1"
+  String _getRelativeTimeWithDate() {
     final now = DateTime.now();
     final difference = now.difference(gig.dateTime);
+    final formatted = DateFormat('MMM d').format(gig.dateTime);
 
-    if (difference.inDays == 0) {
-      return 'earlier today';
-    } else if (difference.inDays == 1) {
-      return 'yesterday';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays} days ago';
-    } else if (difference.inDays < 30) {
+    if (difference.inDays == 0) return 'Earlier today ($formatted)';
+    if (difference.inDays == 1) return 'Yesterday ($formatted)';
+    if (difference.inDays < 7) return '${difference.inDays} days ago ($formatted)';
+    if (difference.inDays < 30) {
       final weeks = (difference.inDays / 7).floor();
-      return weeks == 1 ? '1 week ago' : '$weeks weeks ago';
-    } else {
-      return DateFormat('MMM d').format(gig.dateTime);
+      return weeks == 1 ? '1 week ago ($formatted)' : '$weeks weeks ago ($formatted)';
     }
+    return formatted;
   }
 
   @override
@@ -43,7 +42,7 @@ class RetrospectiveNotificationBanner extends StatelessWidget {
     print("✅ BANNER_DEBUG: RetrospectiveNotificationBanner build() method CALLED for gig: '${gig.venueName}'");
 
     return SafeArea(
-      bottom: false, // We only care about the top safe area
+      bottom: false,
       child: Material(
         elevation: 4,
         color: Colors.transparent,
@@ -51,31 +50,28 @@ class RetrospectiveNotificationBanner extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Theme.of(context).colorScheme.primary.withOpacity(0.9),
-                Theme.of(context).colorScheme.primary.withOpacity(0.7),
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.9),
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            // The bottom border can remain as it is not affected by safe area
             border: Border(
               bottom: BorderSide(
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withValues(alpha: 0.2),
                 width: 1,
               ),
             ),
           ),
-          // The Padding is now the direct child of the Container, not SafeArea
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
-              // The rest of the row layout is correct and remains unchanged...
               children: [
                 // Icon
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -93,6 +89,7 @@ class RetrospectiveNotificationBanner extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Title row: "How'd it go?" + pending count badge
                       Row(
                         children: [
                           Flexible(
@@ -114,7 +111,7 @@ class RetrospectiveNotificationBanner extends StatelessWidget {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.3),
+                                color: Colors.white.withValues(alpha: 0.3),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
@@ -129,12 +126,25 @@ class RetrospectiveNotificationBanner extends StatelessWidget {
                           ],
                         ],
                       ),
+
                       const SizedBox(height: 2),
+
+                      // Date line — prominent so user knows which gig this is
                       Text(
-                        '${gig.venueName} • ${_getRelativeTime()}',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
+                        _getRelativeTimeWithDate(),
+                        style: const TextStyle(
+                          color: Colors.white,
                           fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+
+                      // Venue name — secondary, truncated if needed
+                      Text(
+                        gig.venueName,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 12,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -194,7 +204,7 @@ class RetrospectiveNotificationBanner extends StatelessWidget {
                       onPressed: onDismiss,
                       icon: Icon(
                         Icons.close,
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                         size: 20,
                       ),
                       padding: EdgeInsets.zero,

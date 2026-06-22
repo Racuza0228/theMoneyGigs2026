@@ -119,7 +119,7 @@ void main() {
       final storedToggleState = false; // User previously turned it off
 
       // After checking subscription, toggle should be overridden
-      final finalToggleState = hasActiveSubscription || storedToggleState;
+      final finalToggleState = hasActiveSubscription;
 
       expect(finalToggleState, true,
           reason: 'Active subscription should override toggle state');
@@ -165,7 +165,7 @@ void main() {
       final hasActiveSubscription = false;
       final userTogglesOff = false;
 
-      final shouldShowWarning = hasActiveSubscription && !userTogglesOff;
+      final shouldShowWarning = hasActiveSubscription;
 
       expect(shouldShowWarning, false,
           reason: 'Founder should not see subscription warning');

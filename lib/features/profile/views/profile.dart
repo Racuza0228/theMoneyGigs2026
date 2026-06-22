@@ -44,9 +44,12 @@ class _ProfilePageState extends State<ProfilePage> {
   final _cityController = TextEditingController();
   final _zipCodeController = TextEditingController();
   final _minHourlyRateController = TextEditingController();
+  final _musicLinkController = TextEditingController();
+  final _musicLinkFocusNode = FocusNode();
   String? _selectedState;
   bool _isEditingAddress = false;
   bool _isEditingRate = false;
+  bool _isEditingMusicLink = false;
   bool _profileDataLoaded = false;
   bool _isExporting = false;
   static const String _keyAddress1 = 'profile_address1';
@@ -55,6 +58,7 @@ class _ProfilePageState extends State<ProfilePage> {
   static const String _keyState = 'profile_state';
   static const String _keyZipCode = 'profile_zip_code';
   static const String _keyMinHourlyRate = 'profile_min_hourly_rate';
+  static const String _keyMusicLink = 'musician_profile_music_link';
   final List<String> _usStates = [ 'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY' ];
 
   @override
@@ -70,6 +74,8 @@ class _ProfilePageState extends State<ProfilePage> {
     _cityController.dispose();
     _zipCodeController.dispose();
     _minHourlyRateController.dispose();
+    _musicLinkController.dispose();
+    _musicLinkFocusNode.dispose();
     super.dispose();
   }
 
@@ -107,6 +113,7 @@ class _ProfilePageState extends State<ProfilePage> {
         _selectedState = state;
         _zipCodeController.text = zip;
         _minHourlyRateController.text = minRateString;
+        _musicLinkController.text = prefs.getString(_keyMusicLink) ?? '';
 
         bool hasCoreAddressInfo = address1.isNotEmpty ||
             city.isNotEmpty ||
@@ -114,6 +121,7 @@ class _ProfilePageState extends State<ProfilePage> {
             zip.isNotEmpty;
         _isEditingAddress = !hasCoreAddressInfo;
         _isEditingRate = minRateString.isEmpty;
+        _isEditingMusicLink = false;
         _profileDataLoaded = true;
       });
 
@@ -155,6 +163,7 @@ class _ProfilePageState extends State<ProfilePage> {
       } else {
         await prefs.remove(_keyMinHourlyRate);
       }
+      await prefs.setString(_keyMusicLink, _musicLinkController.text.trim());
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -163,6 +172,7 @@ class _ProfilePageState extends State<ProfilePage> {
         setState(() {
           _isEditingAddress = false;
           _isEditingRate = false;
+          _isEditingMusicLink = false;
         });
         // Notify the map to re-center on the new address
         globalRefreshNotifier.notify();
@@ -410,18 +420,19 @@ class _ProfilePageState extends State<ProfilePage> {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 // ── Community Edition connect ─────────────────────────────
-                Container(
+                Material(
+                  color: Colors.transparent,
                   child: ConnectWidget(
-                    // ADD THIS property to pass the key down
                     demoHighlightKey: _connectWidgetKey,
                   ),
                 ),
 
                 // ── Notifications ─────────────────────────────────────────
-                // Permission tile: lets the user enable OS-level notifications.
-                // The timing button below opens the scheduling preferences.
                 _buildSectionTitle('Notifications'),
-                const NotificationPermissionTile(),
+                Material(
+                  color: Colors.transparent,
+                  child: const NotificationPermissionTile(),
+                ),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
@@ -438,6 +449,92 @@ class _ProfilePageState extends State<ProfilePage> {
                   padding: EdgeInsets.symmetric(horizontal: 8.0),
                   child: TagsWidget(),
                 ),
+
+                // ── Music Link ────────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Music Link',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (!_isEditingMusicLink && _musicLinkController.text.isNotEmpty)
+                            IconButton(
+                              icon: Icon(Icons.edit_outlined, color: Colors.orangeAccent.shade100, size: 18),
+                              onPressed: () => setState(() => _isEditingMusicLink = true),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              tooltip: 'Edit Music Link',
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Link to your promo video or EPK — included automatically in booking emails.',
+                        style: TextStyle(color: Color(0xFFB3B3B3), fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_isEditingMusicLink || _musicLinkController.text.isEmpty)
+                        TextFormField(
+                          controller: _musicLinkController,
+                          focusNode: _musicLinkFocusNode,
+                          keyboardType: TextInputType.url,
+                          autocorrect: false,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: 'https://',
+                            hintStyle: TextStyle(color: Colors.white38),
+                            prefixIcon: Icon(Icons.link, color: Colors.orangeAccent.shade100, size: 18),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: Colors.grey.shade600),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
+                            ),
+                            errorBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: Colors.redAccent.shade200),
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) return null;
+                            final uri = Uri.tryParse(value.trim());
+                            if (uri == null || !uri.hasScheme) {
+                              return 'Enter a valid URL (e.g. https://yoursite.com)';
+                            }
+                            return null;
+                          },
+                          onChanged: (_) => setState(() => _isEditingMusicLink = true),
+                        )
+                      else
+                        GestureDetector(
+                          onTap: () => setState(() => _isEditingMusicLink = true),
+                          child: Text(
+                            _musicLinkController.text,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              decoration: TextDecoration.underline,
+                              fontSize: 14,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+
                 _buildSectionTitle(
                   'Background Settings',
                   showSettingsIcon: true,
@@ -498,7 +595,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
                 // Save Changes button
                 ElevatedButton(
-                  onPressed: (_isEditingAddress || _isEditingRate) && !_isExporting ? _saveProfile : null,
+                  onPressed: (_isEditingAddress || _isEditingRate || _isEditingMusicLink) && !_isExporting ? _saveProfile : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -514,7 +611,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       },
                     ),
                   ),
-                  child: Text((_isEditingAddress || _isEditingRate) ? 'Save Changes' : 'Profile Saved'),
+                  child: Text((_isEditingAddress || _isEditingRate || _isEditingMusicLink) ? 'Save Changes' : 'Profile Saved'),
                 ),
                 const SizedBox(height: 20.0),
 

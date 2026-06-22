@@ -80,6 +80,7 @@ class _MapPageState extends State<MapPage> {
   late final PlacesService _placesService;
 
   // Status flags
+  bool _permissionResolved = false;
   bool _isFullyInitialized = false;
   bool _isLoading = false;
   bool _showMapTutorial = false;
@@ -123,8 +124,32 @@ class _MapPageState extends State<MapPage> {
     super.initState();
     // Initialize services that don't depend on context or build.
     _placesService = PlacesService(apiKey: _googleApiKey);
-    //_setInitialCameraPosition(); // Start fetching the map center immediately.
+
+    // Pre-resolve permission state immediately for returning users.
+    // New users go through _resolvePermissionBeforeMapInit() via
+    // _onDemoStateChanged, but returning users hit _onDemoStateChanged
+    // with _isFullyInitialized already true — so that path never runs
+    // and _permissionResolved would stay false, hanging the map forever.
+    // A checkPermission() call (no dialog) is safe here; it just reads
+    // the current grant status and unblocks the GoogleMap widget.
+    Geolocator.checkPermission().then((permission) {
+      if (mounted) {
+        setState(() {
+          _permissionResolved = true;
+          _locationPermissionGranted =
+              permission == LocationPermission.whileInUse ||
+                  permission == LocationPermission.always;
+        });
+      }
+    }).catchError((Object e) {
+      // Permission check failed — unblock map with safe defaults.
+      log('⚠️ initState permission pre-check failed: $e');
+      if (mounted) setState(() => _permissionResolved = true);
+    });
   }
+
+
+
 
   /// Shows a brief explanation dialog the very first time we are about to
   /// ask for location permission. After dismissal the OS dialog appears with
@@ -172,6 +197,19 @@ class _MapPageState extends State<MapPage> {
       ),
     );
   }
+  Future<void> _resolvePermissionBeforeMapInit() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        await _showLocationRationaleIfNeeded();
+        permission = await Geolocator.requestPermission();
+      }
+    } catch (e) {
+      log('⚠️ Pre-flight permission check failed: $e');
+    } finally {
+      if (mounted) setState(() => _permissionResolved = true);
+    }
+  }
 
   Future<void> _setInitialCameraPosition() async {
     // Hard fallback: if location fails for ANY reason (permission denied,
@@ -179,6 +217,37 @@ class _MapPageState extends State<MapPage> {
     // give the map a valid starting position rather than leaving
     // _initialCameraPosition null and hanging on the loading spinner forever.
     const LatLng fallback = LatLng(39.1031, -84.5120); // Cincinnati default
+
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        // Set fallback and return — never touch LocationService
+        if (mounted) {
+          setState(() {
+            _initialCameraPosition = CameraPosition(target: fallback, zoom: 12.0);
+            _locationPermissionGranted = false;
+          });
+        }
+        return;
+      }
+      // Permission confirmed — safe to proceed
+      if (mounted) {
+        setState(() => _locationPermissionGranted = true);
+      }
+    } catch (e) {
+      log('⚠️ Permission pre-check failed: $e');
+      if (mounted) {
+        setState(() {
+          _initialCameraPosition = CameraPosition(target: fallback, zoom: 12.0);
+        });
+      }
+      return;
+    }
+
     try {
       final locationService = LocationService();
       final LatLng center = await locationService.getInitialMapCenter();
@@ -382,8 +451,10 @@ class _MapPageState extends State<MapPage> {
     // ── First launch: onboarding just finished, map not yet initialized ────
     if (!active && !_isFullyInitialized) {
       log('🗺️ MapDemo: demo inactive + not initialized — running _initializeAndLoadData');
-      _initializeAndLoadData().catchError((Object e, StackTrace s) {
-        log('❌ Map init (demo state change) failed: $e\n$s');
+      _resolvePermissionBeforeMapInit().then((_) {
+        _initializeAndLoadData().catchError((Object e, StackTrace s) {
+          log('❌ Map init (demo state change) failed: $e\n$s');
+        });
       });
       return;
     }
@@ -1125,13 +1196,6 @@ class _MapPageState extends State<MapPage> {
       key: const Key('map_page_visibility_detector'),
       onVisibilityChanged: (visibilityInfo) {
         if (visibilityInfo.visibleFraction > 0 && !_isFullyInitialized) {
-          // Don't initialize while onboarding is active. The map is tab 0
-          // so VisibilityDetector fires before the welcome screen appears,
-          // which causes OS location dialogs to show before the user has
-          // seen any context for why we need location access.
-          // Exception: mapTutorial step means onboarding is done and the
-          // map needs to initialize so it can show the tutorial overlay.
-          // _onDemoStateChanged() will trigger initialization once done.
           final demoProvider =
           Provider.of<DemoProvider>(context, listen: false);
           if (demoProvider.isDemoModeActive &&
@@ -1170,40 +1234,39 @@ class _MapPageState extends State<MapPage> {
 
         return Stack(
           children: [
-            GoogleMap(
-              mapType: MapType.normal,
-              initialCameraPosition: _initialCameraPosition!,
-              onMapCreated: (GoogleMapController controller) {
-                if (!_controller.isCompleted) {
-                  _controller.complete(controller);
-                  // ✅ FIX: Re-center after the controller is ready.
-                  // This covers the race where _setInitialCameraPosition ran
-                  // before the OS returned the real GPS fix, and ensures the
-                  // user always lands on their actual location.
-                  _recenterOnActualLocation(controller);
-                }
-              },
-              markers: _markers,
-              onTap: (tappedPoint) {
-                if (_isSearchVisible) {
-                  setState(() {
-                    _isSearchVisible = false;
-                    _autocompleteResults = [];
-                    _searchController.clear();
-                    _placesService.endSession();
-                    FocusScope.of(context).unfocus();
-                  });
-                } else {
-                  _handleMapTap(tappedPoint);
-                }
-              },
-              myLocationButtonEnabled: _locationPermissionGranted,
-              myLocationEnabled: _locationPermissionGranted,
-              padding: EdgeInsets.only(
-                top: _isSearchVisible ? 120 : 70,
-                bottom: Theme.of(context).platform == TargetPlatform.iOS ? 90 : 60,
+            if (!_permissionResolved || _initialCameraPosition == null)
+              const Center(child: CircularProgressIndicator())
+            else
+              GoogleMap(
+                mapType: MapType.normal,
+                initialCameraPosition: _initialCameraPosition!,
+                onMapCreated: (GoogleMapController controller) {
+                  if (!_controller.isCompleted) {
+                    _controller.complete(controller);
+                    _recenterOnActualLocation(controller);
+                  }
+                },
+                markers: _markers,
+                onTap: (tappedPoint) {
+                  if (_isSearchVisible) {
+                    setState(() {
+                      _isSearchVisible = false;
+                      _autocompleteResults = [];
+                      _searchController.clear();
+                      _placesService.endSession();
+                      FocusScope.of(context).unfocus();
+                    });
+                  } else {
+                    _handleMapTap(tappedPoint);
+                  }
+                },
+                myLocationButtonEnabled: _locationPermissionGranted,
+                myLocationEnabled: _locationPermissionGranted,
+                padding: EdgeInsets.only(
+                  top: _isSearchVisible ? 120 : 70,
+                  bottom: Theme.of(context).platform == TargetPlatform.iOS ? 90 : 60,
+                ),
               ),
-            ),
             Positioned(
               top: 12.0,
               left: 12.0,

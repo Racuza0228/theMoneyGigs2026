@@ -19,6 +19,8 @@ import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/venue_tags_widget.dart';
+import 'package:the_money_gigs/core/widgets/email_venue_button.dart';
+import 'package:the_money_gigs/core/services/email_template_builder.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VenueDetailPage
@@ -121,7 +123,10 @@ class _VenueDetailPageState extends State<VenueDetailPage>
 
   Future<void> _initializePage() async {
     await _checkConnectionStatus();
-    if (mounted) _loadUserRating();
+    if (mounted) {
+      _loadUserRating();
+      _loadCommunityVenueData();
+    }
     // Dirty tracking for notes + URL fields
     _notesController.addListener(() => setState(() => _isDirty = true));
     _urlController.addListener(() => setState(() => _isDirty = true));
@@ -159,6 +164,29 @@ class _VenueDetailPageState extends State<VenueDetailPage>
     }
   }
 
+  Future<void> _loadCommunityVenueData() async {
+    if (!widget.venue.isPublic || !_isConnected) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('venues')
+          .doc(widget.venue.placeId)
+          .get();
+      if (doc.exists && mounted) {
+        final data = doc.data()!;
+        setState(() {
+          if (data.containsKey('contact')) {
+            _localContact = VenueContact.fromJson(data['contact'] as Map<String, dynamic>);
+          }
+          if (data.containsKey('bookingInfo')) {
+            _localBookingInfo = BookingInfo.fromJson(data['bookingInfo'] as Map<String, dynamic>);
+          }
+        });
+      }
+    } catch (e) {
+      log('❌ Error loading community venue data: $e');
+    }
+  }
+
   // ── Venue helpers ─────────────────────────────────────────────────────────
 
   StoredLocation _buildUpdatedVenue() {
@@ -173,6 +201,7 @@ class _VenueDetailPageState extends State<VenueDetailPage>
       actFormatTags: _actFormatTags,
       paymentMethodTags: _paymentMethodTags,
       taxArrangementTags: _taxArrangementTags,
+      contact: _localContact,
       bookingInfo: _localBookingInfo,
       venueNotes: () => _notesController.text.trim().isEmpty
           ? null : _notesController.text.trim(),
@@ -232,9 +261,12 @@ class _VenueDetailPageState extends State<VenueDetailPage>
           _venueRepository.saveVenueRating(
             userId: userId,
             placeId: updatedVenue.placeId,
-            rating: updatedVenue.rating,   // may be 0 for comment-only; repo guards the average
+            rating: updatedVenue.rating,
             comment: updatedVenue.comment,
-          ).catchError((e) => log('❌ Error saving rating: $e'));
+          ).catchError((e) {
+            log('❌ Error saving rating: $e');
+            return false;
+          });
         }
 
         // Tag sync is independent of the rating — always push if tags exist.
@@ -1427,6 +1459,10 @@ class _BookingTabState extends State<_BookingTab>
   bool _confirmationLoading = false;
   int _liveConfirmationCount = 0;
 
+  // ── Profile data (for email template) ────────────────────────────────────
+  String? _profileMusicLink;
+  String? _profileCity;
+
   final VenueRepository _venueRepository = VenueRepository();
 
   // ── Init / dispose ────────────────────────────────────────────────────────
@@ -1437,6 +1473,17 @@ class _BookingTabState extends State<_BookingTab>
     _initControllers();
     _liveConfirmationCount = widget.localContact?.confirmationCount ?? 0;
     _loadContactConfirmationState();
+    _loadProfileData();
+  }
+
+  Future<void> _loadProfileData() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _profileMusicLink = prefs.getString('musician_profile_music_link');
+        _profileCity = prefs.getString('profile_city');
+      });
+    }
   }
 
   void _initControllers() {
@@ -1743,7 +1790,7 @@ class _BookingTabState extends State<_BookingTab>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (contact!.name.isNotEmpty)
+                    if (contact.name.isNotEmpty)
                       Text(contact.name,
                           style: const TextStyle(
                               fontWeight: FontWeight.w500, fontSize: 15)),
@@ -1925,6 +1972,27 @@ class _BookingTabState extends State<_BookingTab>
                 textCapitalization: TextCapitalization.sentences,
               ),
             ],
+
+            const SizedBox(height: 16),
+
+            // ── Email Venue button ────────────────────────────────────────
+            EmailVenueButton(
+              venue: VenueEmailData(
+                name: widget.venue.name,
+                bookingEmail: _emailController.text.trim().isEmpty
+                    ? null
+                    : _emailController.text.trim(),
+                bookingContactName: _nameController.text.trim().isEmpty
+                    ? null
+                    : _nameController.text.trim(),
+                preferredContact: _preferredMethod,
+              ),
+              profile: ProfileEmailData(
+                musicLink: _profileMusicLink,
+                city: _profileCity,
+              ),
+              onAddBookingEmail: () => setState(() => _isEditingContact = true),
+            ),
 
             const Divider(height: 32),
 
