@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
 import 'package:flutter/services.dart' show rootBundle, Uint8List, ByteData;
 import 'package:flutter/material.dart';
@@ -85,6 +86,10 @@ class _MapPageState extends State<MapPage> {
   bool _isLoading = false;
   bool _showMapTutorial = false;
   bool _locationPermissionGranted = false;
+  // Drives the Google Maps location layer. Starts false and is only flipped
+  // true AFTER onMapCreated + a confirmed grant, so the SDK never spins up
+  // CLLocationManager during widget construction (the iOS 26 crash).
+  bool _myLocationEnabled = false;
 
   // Search UI state
   final TextEditingController _searchController = TextEditingController();
@@ -133,6 +138,7 @@ class _MapPageState extends State<MapPage> {
     // A checkPermission() call (no dialog) is safe here; it just reads
     // the current grant status and unblocks the GoogleMap widget.
     Geolocator.checkPermission().then((permission) {
+      FirebaseCrashlytics.instance.log('map: initState perm=$permission');
       if (mounted) {
         setState(() {
           _permissionResolved = true;
@@ -207,11 +213,13 @@ class _MapPageState extends State<MapPage> {
     } catch (e) {
       log('⚠️ Pre-flight permission check failed: $e');
     } finally {
+      FirebaseCrashlytics.instance.log('map: resolvePermBeforeInit done');
       if (mounted) setState(() => _permissionResolved = true);
     }
   }
 
   Future<void> _setInitialCameraPosition() async {
+    FirebaseCrashlytics.instance.log('map: setInitialCamera start');
     // Hard fallback: if location fails for ANY reason (permission denied,
     // PlatformException, geolocator throwing on a fresh install), we still
     // give the map a valid starting position rather than leaving
@@ -235,6 +243,7 @@ class _MapPageState extends State<MapPage> {
         return;
       }
       // Permission confirmed — safe to proceed
+      FirebaseCrashlytics.instance.log('map: setInitialCamera perm ok');
       if (mounted) {
         setState(() => _locationPermissionGranted = true);
       }
@@ -294,6 +303,14 @@ class _MapPageState extends State<MapPage> {
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
         return;
+      }
+
+      // Permission confirmed AND the map controller now exists. Turning the
+      // layer on here — one step after onMapCreated, not at build time — is
+      // what prevents the iOS 26 native assertion crashing Dad and Iqui.
+      FirebaseCrashlytics.instance.log('map: enabling myLocation layer');
+      if (mounted) {
+        setState(() => _myLocationEnabled = true);
       }
 
       final locationService = LocationService();
@@ -729,7 +746,7 @@ class _MapPageState extends State<MapPage> {
 
   // --- UI & INTERACTION ---
 
-  void _updateMarkers() {
+  Future<void> _updateMarkers() async {
     if (!mounted || _gigMarkerIcon == null) return;
 
     final Set<Marker> newMarkers = {};
@@ -751,6 +768,28 @@ class _MapPageState extends State<MapPage> {
         return v.isPublic || _userSavedPlaceIds.contains(v.placeId);
       }).toList();
     }
+
+    // ── Viewport culling ────────────────────────────────────────────────
+    // Rendering all ~2000+ venues at once overflows the Google Maps texture
+    // atlas ("Failed to allocate texture space for marker"). Only build
+    // markers for venues in the visible region, with a hard cap as a
+    // backstop for zoomed-way-out views and for calls before the map exists.
+    const int markerHardCap = 300;
+    if (_controller.isCompleted) {
+      try {
+        final controller = await _controller.future;
+        final LatLngBounds bounds = await controller.getVisibleRegion();
+        venuesToShow =
+            venuesToShow.where((v) => bounds.contains(v.coordinates)).toList();
+      } catch (e) {
+        log('⚠️ Viewport cull skipped (bounds unavailable): $e');
+      }
+    }
+    if (venuesToShow.length > markerHardCap) {
+      venuesToShow = venuesToShow.sublist(0, markerHardCap);
+    }
+
+    if (!mounted) return;
 
     for (var loc in venuesToShow) {
       final bool hasUpcomingGig = upcomingGigVenuePlaceIds.contains(loc.placeId);
@@ -1241,11 +1280,15 @@ class _MapPageState extends State<MapPage> {
                 mapType: MapType.normal,
                 initialCameraPosition: _initialCameraPosition!,
                 onMapCreated: (GoogleMapController controller) {
+                  FirebaseCrashlytics.instance.log('map: onMapCreated');
                   if (!_controller.isCompleted) {
                     _controller.complete(controller);
                     _recenterOnActualLocation(controller);
+                    // Controller exists now — run the first viewport cull.
+                    _updateMarkers();
                   }
                 },
+                onCameraIdle: () => _updateMarkers(),
                 markers: _markers,
                 onTap: (tappedPoint) {
                   if (_isSearchVisible) {
@@ -1260,8 +1303,8 @@ class _MapPageState extends State<MapPage> {
                     _handleMapTap(tappedPoint);
                   }
                 },
-                myLocationButtonEnabled: _locationPermissionGranted,
-                myLocationEnabled: _locationPermissionGranted,
+                myLocationButtonEnabled: _myLocationEnabled,
+                myLocationEnabled: _myLocationEnabled,
                 padding: EdgeInsets.only(
                   top: _isSearchVisible ? 120 : 70,
                   bottom: Theme.of(context).platform == TargetPlatform.iOS ? 90 : 60,

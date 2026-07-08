@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:url_launcher/url_launcher.dart'; // ✅ Added for email support
 import 'package:the_money_gigs/core/utils/logger.dart';
@@ -84,6 +85,11 @@ void main() {
       '${details.exceptionAsString()}\n\n${details.stack ?? ''}';
       FlutterError.presentError(details);
       log('🔥 FlutterError: ${details.exceptionAsString()}');
+      // Ship it off-device. Guarded so a pre-Firebase-init error can't throw
+      // here and defeat your keep-alive design.
+      try {
+        FirebaseCrashlytics.instance.recordFlutterError(details);
+      } catch (_) {}
     };
 
     // Engine/platform + uncaught async errors. Returning true = "handled,
@@ -91,6 +97,9 @@ void main() {
     binding.platformDispatcher.onError = (Object error, StackTrace stack) {
       lastCapturedError = '$error\n\n$stack';
       log('🔥 Platform error (handled, not crashing): $error\n$stack');
+      try {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: false);
+      } catch (_) {}
       return true;
     };
 
@@ -101,6 +110,10 @@ void main() {
       await Firebase.initializeApp(
           options: DefaultFirebaseOptions.currentPlatform);
       log('✅ Firebase Initialized');
+      // Collect on every build, debug included, so you can test the wiring
+      // now and still get Dad's and Iqui's real crashes in production.
+      await FirebaseCrashlytics.instance
+          .setCrashlyticsCollectionEnabled(true);
     } catch (e, s) {
       log('❌ Firebase init failed — continuing without it: $e\n$s');
     }
@@ -150,6 +163,9 @@ void main() {
     // root-cause error once Iqui (or you) runs the new build.
     lastCapturedError = '$error\n\n$stack';
     log('🔥🔥 UNCAUGHT (zone) — app kept alive: $error\n$stack');
+    try {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    } catch (_) {}
   });
 }
 

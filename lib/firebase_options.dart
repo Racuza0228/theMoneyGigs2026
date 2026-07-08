@@ -39,23 +39,29 @@ class DefaultFirebaseOptions {
   }
 
   // ANDROID CONFIGURATION
-  // Get these values from google-services.json
+
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAaeUyThBtTn3mDT8mcGOP40Ijpk1Ay_H8',           // From "api_key" -> "current_key"
-    appId: '1:759371429570:android:bbd3987121d4ed1b906d5b',             // From "client" -> "mobilesdk_app_id"
-    messagingSenderId: '759371429570"',      // From "project_number"
-    projectId: 'moneygigs-cf2c5',              // From "project_id"
-    storageBucket: 'moneygigs-cf2c5.firebasestorage.app',     // From "storage_bucket"
+    apiKey: 'AIzaSyAaeUyThBtTn3mDT8mcGOP40Ijpk1Ay_H8',
+    appId: '1:759371429570:android:bbd3987121d4ed1b906d5b',
+    messagingSenderId: '759371429570',
+    projectId: 'moneygigs-cf2c5',
+    storageBucket: 'moneygigs-cf2c5.firebasestorage.app',
   );
 
+  // Get these values from google-services.json
+
   // IOS CONFIGURATION
-  // Get these values from GoogleService-Info.plist
+
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyDGOOP9LMEafCMaCa2EKKeAJeuWlwIQ-kM',               // From API_KEY
-    appId: '1:759371429570:ios:335da0f5618697d2906d5b',                 // From GOOGLE_APP_ID
-    messagingSenderId: '759371429570',      // From GCM_SENDER_ID
-    projectId: 'moneygigs-cf2c5',              // From PROJECT_ID
-    storageBucket: 'moneygigs-cf2c5.firebasestorage.app',     // From STORAGE_BUCKET
-    iosBundleId: 'com.themoneygigs.moneygigs',            // From BUNDLE_ID
+    apiKey: 'AIzaSyDGOOP9LMEafCMaCa2EKKeAJeuWlwIQ-kM',
+    appId: '1:759371429570:ios:335da0f5618697d2906d5b',
+    messagingSenderId: '759371429570',
+    projectId: 'moneygigs-cf2c5',
+    storageBucket: 'moneygigs-cf2c5.firebasestorage.app',
+    androidClientId: '759371429570-274rmvoc8peabfr7m673vpgdkjvs0r86.apps.googleusercontent.com',
+    iosClientId: '759371429570-9h1qrfqbcmoolte84q4nht0fddget2q3.apps.googleusercontent.com',
+    iosBundleId: 'com.themoneygigs.moneygigs',
   );
+
+  // Get these values from GoogleService-Info.plist
 }

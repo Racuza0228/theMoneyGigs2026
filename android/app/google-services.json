@@ -7,6 +7,43 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:759371429570:android:3ecce8ab02235979906d5b",
+        "android_client_info": {
+          "package_name": "com.moneygigs.money_gigs_admin"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "759371429570-aqmt0q5dvj5l8vajkoeuosplr6u4spkn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaeUyThBtTn3mDT8mcGOP40Ijpk1Ay_H8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "759371429570-aqmt0q5dvj5l8vajkoeuosplr6u4spkn.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "759371429570-9h1qrfqbcmoolte84q4nht0fddget2q3.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.themoneygigs.moneygigs",
+                "app_store_id": "6752310856"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:759371429570:android:bbd3987121d4ed1b906d5b",
         "android_client_info": {
           "package_name": "com.themoneygigs.moneygigs"
@@ -19,6 +56,14 @@
           "android_info": {
             "package_name": "com.themoneygigs.moneygigs",
             "certificate_hash": "268c48cb6321716b5d7f09d557c75a90572ff3ff"
+          }
+        },
+        {
+          "client_id": "759371429570-7skn2ec327cq0trveqggml2gibgspa6s.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.themoneygigs.moneygigs",
+            "certificate_hash": "db3292db7181474f9fd0f0a0974f4acc2e594f60"
           }
         },
         {
