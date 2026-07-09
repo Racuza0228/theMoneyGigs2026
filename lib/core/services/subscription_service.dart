@@ -2,6 +2,7 @@
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:flutter/services.dart'; // ← ADD THIS for PlatformException
 import 'package:the_money_gigs/core/utils/logger.dart';
+import 'package:the_money_gigs/core/services/revenuecat_gate.dart';
 
 class SubscriptionService {
   static const String _entitlementId = 'network_access';
@@ -10,6 +11,7 @@ class SubscriptionService {
   /// Check if user has active subscription
   Future<bool> hasActiveSubscription() async {
     try {
+      await ensureRevenueCatConfigured();
       final customerInfo = await Purchases.getCustomerInfo();
 
       // Check if user has the network_access entitlement
@@ -26,6 +28,7 @@ class SubscriptionService {
   /// Get available subscription products
   Future<List<StoreProduct>> getProducts() async {
     try {
+      await ensureRevenueCatConfigured();
       final offerings = await Purchases.getOfferings();
 
       if (offerings.current == null) {
@@ -50,6 +53,7 @@ class SubscriptionService {
   Future<bool> purchaseMonthlySubscription() async {
     try {
       log('💳 Starting purchase...');
+      await ensureRevenueCatConfigured();
 
       // Get offerings
       final offerings = await Purchases.getOfferings();
@@ -110,6 +114,7 @@ class SubscriptionService {
   Future<bool> restorePurchases() async {
     try {
       log('🔄 Restoring purchases...');
+      await ensureRevenueCatConfigured();
 
       final customerInfo = await Purchases.restorePurchases();
       final hasEntitlement = customerInfo.entitlements.all[_entitlementId]?.isActive ?? false;
@@ -130,6 +135,7 @@ class SubscriptionService {
   /// Get subscription details (for display)
   Future<SubscriptionInfo?> getSubscriptionInfo() async {
     try {
+      await ensureRevenueCatConfigured();
       final customerInfo = await Purchases.getCustomerInfo();
       final entitlement = customerInfo.entitlements.all[_entitlementId];
 
@@ -153,6 +159,7 @@ class SubscriptionService {
   /// User must cancel through App Store/Play Store settings
   Future<void> manageSubscription() async {
     try {
+      await ensureRevenueCatConfigured();
       // This opens the platform's subscription management
       final customerInfo = await Purchases.getCustomerInfo();
       final managementURL = customerInfo.managementURL;

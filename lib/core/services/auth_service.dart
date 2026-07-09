@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
+import 'package:the_money_gigs/core/services/revenuecat_gate.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -47,16 +48,21 @@ class AuthService {
       log("✅ Signed in to Firebase: ${userCredential.user?.email}");
 
       // Identify user to RevenueCat — wrapped in its own try-catch because
-      // RevenueCat may not be initialized yet (standalone users). A failure
-      // here must NOT cancel a successful Firebase sign-in.
+      // a failure here must NOT cancel a successful Firebase sign-in.
+      //
+      // FIX (7/9/26): this used to assume RevenueCat was already configured
+      // by the time sign-in happened, which is false for a brand-new install
+      // redeeming an invite code for the first time — that path crashed with
+      // "Purchases has not been configured." ensureRevenueCatConfigured()
+      // guarantees configure() has run (or just ran) before logIn() fires,
+      // regardless of what happened earlier in the session.
       if (userCredential.user != null) {
         try {
+          await ensureRevenueCatConfigured();
           await Purchases.logIn(userCredential.user!.uid);
           log('✅ User identified to RevenueCat: ${userCredential.user!.uid}');
         } catch (e) {
-          // RevenueCat not configured yet — harmless. initializeNetworkServices()
-          // will be called before any subscription check is needed.
-          log('⚠️ RevenueCat logIn skipped (not yet configured): $e');
+          log('⚠️ RevenueCat logIn failed (non-fatal, sign-in still succeeds): $e');
         }
       }
 

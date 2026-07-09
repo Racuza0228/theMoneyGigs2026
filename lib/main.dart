@@ -9,13 +9,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:url_launcher/url_launcher.dart'; // ✅ Added for email support
 import 'package:the_money_gigs/core/utils/logger.dart';
 
 import 'firebase_options.dart';
 import 'core/services/app_update_service.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/revenuecat_gate.dart';
 import 'features/app_demo/providers/demo_provider.dart';
 // ✅ NEW: Use the simplified onboarding flow
 import 'features/app_demo/widgets/onboarding_flow.dart';
@@ -36,33 +36,6 @@ import 'features/gigs/services/auto_backup_service.dart';
 /// Holds the most recent captured error + stack so the in-app crash screen
 /// can offer to email it to Cliff. Set by the global error handlers in main().
 String? lastCapturedError;
-
-bool _areNetworkServicesInitialized = false;
-
-String _getRevenueCatApiKey() {
-  if (kDebugMode) {
-    return 'test_sFBpSvZPjpQyWyuLyPobraUtyfL';
-  } else {
-    if (Platform.isIOS) {
-      return 'appl_epUaEdlDadBKMraKrhAnthTlRen';
-    } else {
-      return 'goog_yRlYImMZVYNNvyxpsoGSDNsaaaJ';
-    }
-  }
-}
-
-Future<void> initializeNetworkServices() async {
-  if (_areNetworkServicesInitialized) return;
-  log("🚀 Initializing Network Services...");
-  try {
-    String apiKey = _getRevenueCatApiKey();
-    await Purchases.configure(PurchasesConfiguration(apiKey));
-    log('✅ RevenueCat initialized (${kDebugMode ? 'TEST' : 'PRODUCTION'})');
-  } catch (e) {
-    log('❌ Error initializing RevenueCat: $e');
-  }
-  _areNetworkServicesInitialized = true;
-}
 
 void main() {
   // Run the entire startup inside a guarded zone. Any error that would
@@ -142,10 +115,14 @@ void main() {
     }
 
     if (hasEverConnected) {
-      log("👤 Network user — initializing RevenueCat at startup.");
-      await initializeNetworkServices();
+      log("👤 Network user — configuring RevenueCat at startup.");
+      await ensureRevenueCatConfigured();
     } else {
-      log("👤 Standalone user — skipping RevenueCat initialization.");
+      // Not configured here on purpose — a brand-new install has nothing
+      // to check yet. auth_service.dart and subscription_service.dart
+      // each call ensureRevenueCatConfigured() themselves before touching
+      // Purchases, so first-time invite code redemption is covered too.
+      log("👤 Standalone user — RevenueCat will configure on first network action.");
     }
 
     runApp(
