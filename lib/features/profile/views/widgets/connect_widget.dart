@@ -6,7 +6,7 @@ import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
 import 'package:the_money_gigs/core/services/network_service.dart';
 import 'package:the_money_gigs/core/services/subscription_service.dart';
-import 'package:the_money_gigs/main.dart';
+import 'package:the_money_gigs/core/services/revenuecat_gate.dart';
 
 class ConnectWidget extends StatefulWidget {
   final GlobalKey? demoHighlightKey;
@@ -156,8 +156,10 @@ class _ConnectWidgetState extends State<ConnectWidget> {
   Future<void> _toggleConnection(bool value) async {
 
     if (value) {
-      // ...ensure network services are initialized FIRST.
-      await initializeNetworkServices();
+      // ...ensure RevenueCat is configured FIRST — this is the exact path
+      // that crashed with "Purchases has not been configured" for a
+      // brand-new install redeeming a code for the first time. (7/9/26)
+      await ensureRevenueCatConfigured();
     }
 
     final prefs = await SharedPreferences.getInstance();

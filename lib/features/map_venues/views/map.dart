@@ -33,7 +33,7 @@ import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
-import 'package:the_money_gigs/main.dart';
+import 'package:the_money_gigs/core/services/revenuecat_gate.dart';
 import 'package:the_money_gigs/features/app_demo/widgets/map_demo_overlay.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/map_tutorial_overlay.dart';
 
@@ -603,7 +603,7 @@ class _MapPageState extends State<MapPage> {
     if (isConnected) {
       log("🔌 Network connection detected. Fetching public data to merge...");
       try {
-        await initializeNetworkServices();
+        await ensureRevenueCatConfigured();
 
         if (!mounted) return;
 
