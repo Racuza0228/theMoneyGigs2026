@@ -30,7 +30,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
 import 'package:the_money_gigs/core/services/network_service.dart';
 import 'package:the_money_gigs/core/services/subscription_service.dart';
-import 'package:the_money_gigs/main.dart'; // initializeNetworkServices()
+import 'package:the_money_gigs/core/services/revenuecat_gate.dart'; // ensureRevenueCatConfigured()
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 // ── Page name constants (Firestore tracking) ──────────────────────────────
 abstract class _Page {
@@ -276,15 +277,26 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       'mailto:cliff@themoneygigs.com?subject=$subject&body=$body',
     );
 
+    // Persist intent immediately — this reflects that the user WANTS a
+    // code, independent of whether this device can actually open a mail
+    // composer. A missing mail app (common on emulators, not unheard of
+    // on real devices either) shouldn't silently swallow that intent.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('invite_code_requested', true);
+    await _trackCodeRequested();
+
     try {
       if (await canLaunchUrl(uri)) {
+        log('📧 _requestCode: mailto launched');
         await launchUrl(uri);
-        await _trackCodeRequested();
         setState(() => _codeRequested = true);
         // Brief pause to show confirmation state, then advance to Map Tutorial
         await Future.delayed(const Duration(milliseconds: 1200));
         if (mounted) _finish(userCompleted: true);
       } else {
+        log('📧 _requestCode: canLaunchUrl(mailto) returned false — '
+            'no mail client on this device; flag still persisted, '
+            'advancing standalone');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -294,6 +306,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               duration: Duration(seconds: 6),
             ),
           );
+          setState(() => _codeRequested = true);
+          await Future.delayed(const Duration(milliseconds: 1200));
+          if (mounted) _finish(userCompleted: true);
         }
       }
     } catch (e) {
@@ -449,7 +464,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       if (mounted) _nextPage();
 
     } else {
-      await initializeNetworkServices();
+      await ensureRevenueCatConfigured();
 
       final subscriptionService = SubscriptionService();
       final hasSubscription = await subscriptionService.hasActiveSubscription();

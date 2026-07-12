@@ -32,6 +32,7 @@ import 'features/gigs/services/gig_retrospective_service.dart';
 import 'features/gigs/widgets/retrospective_notification_banner.dart';
 import 'package:upgrader/upgrader.dart';
 import 'features/gigs/services/auto_backup_service.dart';
+import 'package:the_money_gigs/features/app_demo/widgets/invite_code_reentry_dialog.dart';
 
 /// Holds the most recent captured error + stack so the in-app crash screen
 /// can offer to email it to Cliff. Set by the global error handlers in main().
@@ -174,7 +175,7 @@ class MainPage extends StatefulWidget {
   State<MainPage> createState() => _MainPageState();
 }
 
-class _MainPageState extends State<MainPage> {
+class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   // ✅ Start on Venues (Map) tab — index 0
   int _selectedIndex = 0;
   bool _isInitializingLocalServices = true;
@@ -208,6 +209,7 @@ class _MainPageState extends State<MainPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeAppServices();
 
     Provider.of<GlobalRefreshNotifier>(context, listen: false)
@@ -216,6 +218,37 @@ class _MainPageState extends State<MainPage> {
         .addListener(_onDemoStateChanged);
 
     _checkFirstLaunch();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _maybeCheckInviteCodeReentry();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Covers the realistic path: tap "Request a Code" → switch to Mail
+    // to send it → come back. Android rarely actually kills a
+    // backgrounded app, so relying on cold boot alone means this
+    // almost never fires for real users. maybeShowInviteCodeReentry()
+    // is still self-guarding (only shows once, ever), so it's safe to
+    // check on every resume.
+    if (state == AppLifecycleState.resumed) {
+      _maybeCheckInviteCodeReentry();
+    }
+  }
+
+  Future<void> _maybeCheckInviteCodeReentry() async {
+    if (!mounted) return;
+    final demoProvider = Provider.of<DemoProvider>(context, listen: false);
+    if (!demoProvider.isDemoModeActive) {
+      await maybeShowInviteCodeReentry(context);
+    }
   }
 
   Future<void> _checkFirstLaunch() async {

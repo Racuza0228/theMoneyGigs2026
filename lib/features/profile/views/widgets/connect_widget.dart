@@ -38,6 +38,26 @@ class _ConnectWidgetState extends State<ConnectWidget> {
     super.initState();
     _loadConnectionStatus();
     _checkSubscriptionStatus();  // NEW: Check subscription on load
+
+    // NEW: This widget is built once and kept alive by MainPage's
+    // IndexedStack, so it never re-reads SharedPreferences on its own
+    // after a connection change made elsewhere (e.g. the invite code
+    // reentry dialog on the map screen). Without this listener the
+    // toggle can silently go stale even though the underlying prefs
+    // are correct.
+    globalRefreshNotifier.addListener(_onGlobalRefresh);
+  }
+
+  @override
+  void dispose() {
+    globalRefreshNotifier.removeListener(_onGlobalRefresh);
+    super.dispose();
+  }
+
+  void _onGlobalRefresh() {
+    if (!mounted) return;
+    _loadConnectionStatus();
+    _checkSubscriptionStatus();
   }
 
   /// NEW: Computed property for actual network access
@@ -609,6 +629,16 @@ class _ConnectWidgetState extends State<ConnectWidget> {
   }
 
   Future<void> _promptForReconciliation() async {
+    if (!mounted) return;
+
+    // Nothing to reconcile if the device has no locally-saved venues at
+    // all. Skip the prompt (and the Firestore round-trip inside
+    // ReconciliationScreen) entirely rather than showing a screen that's
+    // just going to say "No new venues to reconcile."
+    final prefs = await SharedPreferences.getInstance();
+    final hasSavedVenues =
+        (prefs.getStringList(_venuesKey) ?? []).isNotEmpty;
+    if (!hasSavedVenues) return;
     if (!mounted) return;
 
     final shouldReconcile = await showDialog<bool>(

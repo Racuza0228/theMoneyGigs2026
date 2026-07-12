@@ -16,8 +16,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 
 class MapTutorialOverlay extends StatefulWidget {
-  /// Called when the user finishes or dismisses the tutorial.
-  final VoidCallback onDismiss;
+  /// Called when the user finishes or dismisses the tutorial. Receives
+  /// this session's sessionId (or null if tracking init failed) so the
+  /// caller can attribute any follow-up events, like the empty-area
+  /// populate prompt, to the same mapTutorialSessions document.
+  final void Function(String? sessionId) onDismiss;
   final GlobalKey searchBarKey;
 
   const MapTutorialOverlay({
@@ -36,6 +39,33 @@ class MapTutorialOverlay extends StatefulWidget {
   static Future<void> markShown() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('map_tutorial_shown', true);
+  }
+
+  /// Called from map.dart after this tutorial dismisses, if the viewport
+  /// was found empty and the "let's get you some venues" prompt was shown.
+  /// map.dart doesn't hold a Firestore reference of its own — this keeps
+  /// all mapTutorialSessions writes in one place, matching the pattern
+  /// above. Safe to call even after the widget itself is disposed, since
+  /// it addresses the document by sessionId rather than an instance ref.
+  static Future<void> trackPopulateOutcome(
+      String sessionId, {
+        required bool accepted,
+        required int addedCount,
+      }) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('mapTutorialSessions')
+          .doc(sessionId)
+          .update({
+        'areaWasEmpty':        true,
+        'populateOffered':     true,
+        'populateAccepted':    accepted,
+        'venuesAddedCount':    addedCount,
+        'populateRespondedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('📋 MapTutorialTracking: populate outcome write failed — $e');
+    }
   }
 
   @override
@@ -118,6 +148,13 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
         'exitedOnStep': null,
         'stepsViewed':  [_stepNames[0]],
         'step1ViewedAt': FieldValue.serverTimestamp(),
+        // Populated later, by map.dart, if the viewport is found empty
+        // right after this tutorial dismisses. Defaulted here so every
+        // session document has a predictable shape.
+        'areaWasEmpty':     false,
+        'populateOffered':  false,
+        'populateAccepted': null,
+        'venuesAddedCount': 0,
       });
       _sessionRef = ref;
       _trackingReady = true;
@@ -189,7 +226,7 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
       await Future.delayed(const Duration(milliseconds: 200));
     }
     await MapTutorialOverlay.markShown();
-    widget.onDismiss();
+    widget.onDismiss(_sessionId);
   }
 
   @override

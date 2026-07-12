@@ -36,6 +36,7 @@ import 'package:the_money_gigs/features/map_venues/repositories/venue_repository
 import 'package:the_money_gigs/core/services/revenuecat_gate.dart';
 import 'package:the_money_gigs/features/app_demo/widgets/map_demo_overlay.dart';
 import 'package:the_money_gigs/features/map_venues/widgets/map_tutorial_overlay.dart';
+import 'package:the_money_gigs/core/utils/add_venues.dart';
 
 import '../../../core/services/auth_service.dart';
 
@@ -85,6 +86,7 @@ class _MapPageState extends State<MapPage> {
   bool _isFullyInitialized = false;
   bool _isLoading = false;
   bool _showMapTutorial = false;
+  bool _isPopulatingVenues = false;
   bool _locationPermissionGranted = false;
   // Drives the Google Maps location layer. Starts false and is only flipped
   // true AFTER onMapCreated + a confirmed grant, so the SDK never spins up
@@ -1459,7 +1461,7 @@ class _MapPageState extends State<MapPage> {
             if (_showMapTutorial && _isFullyInitialized)
               MapTutorialOverlay(
                 searchBarKey: _searchBarKey,
-                onDismiss: () {
+                onDismiss: (sessionId) {
                   log('🗺️ MapTutorial: dismissed by user');
                   setState(() => _showMapTutorial = false);
                   // If this was a replay, signal DemoProvider that the
@@ -1468,11 +1470,150 @@ class _MapPageState extends State<MapPage> {
                   if (dp.currentStep == DemoStep.mapTutorial) {
                     dp.completeMapTutorial();
                   }
+                  _checkAndOfferVenuePopulationIfEmpty(sessionId);
                 },
               ),
           ],
         );
       },
     );
+  }
+
+  // Onboarding-only: checked once, right when the tutorial dismisses.
+  // Deliberately does NOT rely on _updateMarkers()/onCameraIdle having
+  // fired at the right moment — the camera often settles once, before
+  // the tutorial even shows, and never moves again during a tutorial
+  // that requires no panning. Checking fresh here removes that race.
+  Future<void> _checkAndOfferVenuePopulationIfEmpty(String? sessionId) async {
+    if (!mounted || !_controller.isCompleted) return;
+
+    try {
+      final controller = await _controller.future;
+      final LatLngBounds bounds = await controller.getVisibleRegion();
+      final hasVenuesInView = _allKnownMapVenues
+          .where((v) => !v.isArchived)
+          .any((v) => bounds.contains(v.coordinates));
+
+      if (!hasVenuesInView) {
+        await _offerVenuePopulationForEmptyArea(sessionId);
+      }
+    } catch (e) {
+      log('⚠️ Empty-area check skipped (bounds unavailable): $e');
+    }
+  }
+
+  // Onboarding-only: offers to pull in a starting set of venues when the
+  // user's viewport had none after the tutorial finished. Never runs
+  // outside onboarding — only reachable via the tutorial's onDismiss above.
+  Future<void> _offerVenuePopulationForEmptyArea(String? sessionId) async {
+    if (!mounted) return;
+
+    final shouldPopulate = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Let's get you some venues"),
+        content: const Text(
+          "Hey, there aren't any venues here yet. Want us to pull in a "
+              "starting set for your area?\n\n"
+              "If you don't see a venue you play, just search for it and add "
+              "it yourself — you become the reason it exists in the system. "
+              "Crowdsourcing in action!",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No thanks'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Populate 20 Locations'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldPopulate != true || !mounted) {
+      if (sessionId != null) {
+        MapTutorialOverlay.trackPopulateOutcome(
+          sessionId,
+          accepted: false,
+          addedCount: 0,
+        );
+      }
+      return;
+    }
+
+    final controller = await _controller.future;
+    final bounds = await controller.getVisibleRegion();
+    final centerLat =
+        (bounds.northeast.latitude + bounds.southwest.latitude) / 2;
+    final centerLng =
+        (bounds.northeast.longitude + bounds.southwest.longitude) / 2;
+
+    setState(() => _isPopulatingVenues = true);
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Finding venues near you…'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    int addedCount = 0;
+    try {
+      addedCount = await VenueDiscoveryService().syncVenuesNearCoordinates(
+        latitude: centerLat,
+        longitude: centerLng,
+      );
+    } catch (e) {
+      log('❌ Error populating venues for empty area: $e');
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // close loading dialog
+    setState(() => _isPopulatingVenues = false);
+
+    if (sessionId != null) {
+      MapTutorialOverlay.trackPopulateOutcome(
+        sessionId,
+        accepted: true,
+        addedCount: addedCount,
+      );
+    }
+
+    if (addedCount > 0) {
+      // Reuses the same refresh path venue edits already trigger — pulls
+      // the newly-added venues in and re-renders markers.
+      globalRefreshNotifier.notify();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Added $addedCount venue${addedCount == 1 ? '' : 's'} near you!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Didn't find any nearby venues this time — search and add "
+                "the ones you play!",
+          ),
+        ),
+      );
+    }
   }
 }
