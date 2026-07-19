@@ -23,6 +23,7 @@ import 'dart:convert';
 import 'package:the_money_gigs/features/setlists/views/setlist_page.dart';
 import 'package:the_money_gigs/features/gigs/widgets/impact_events_section.dart';
 import 'package:the_money_gigs/features/gigs/models/impact_event.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class NotesPage extends StatefulWidget {
   final String? editingGigId;
@@ -80,7 +81,6 @@ class _NotesPageState extends State<NotesPage>
       _isEditingGig && _currentGig != null && _currentGig!.hasEnded;
   int get _tabCount => _isEditingGig ? 3 : 1;
   int get _eventsTabIndex => 1;
-  int get _setlistTabIndex => 2;
 
   // ── Init / dispose ────────────────────────────────────────────────────────
 
@@ -119,7 +119,7 @@ class _NotesPageState extends State<NotesPage>
       } else {
         await _loadVenueDetails();
       }
-      if (mounted) {
+      if (context.mounted) {
         setState(() {
           _notesController.text = _initialNotes ?? '';
           _urlController.text = _initialUrl ?? '';
@@ -130,7 +130,7 @@ class _NotesPageState extends State<NotesPage>
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         setState(() {
           _errorMessage = 'Error loading details: $e';
           _isLoading = false;
@@ -187,7 +187,7 @@ class _NotesPageState extends State<NotesPage>
               template.dateTime.minute,
             );
           } catch (e) {
-            debugPrint('Error parsing instance date: $e');
+            log('Error parsing instance date: $e');
           }
         }
       }
@@ -198,6 +198,14 @@ class _NotesPageState extends State<NotesPage>
         isRecurring: false,
         isFromRecurring: true,
       );
+      // ⚠️ copyWith() can't null a field — any param you omit falls back to
+      // the template's existing value, never to null. If the template ever
+      // carries retrospective data (see gigs.dart _openNotesPage bug), every
+      // freshly-materialized occurrence would silently inherit it. Force a
+      // clean slate explicitly since these fields are mutable, not final.
+      _currentGig!.gigRatings = null;
+      _currentGig!.tipsAmount = null;
+      _currentGig!.retrospectiveCompleted = null;
       _displayName = template.venueName;
       _displaySubtext =
           DateFormat.yMMMEd().add_jm().format(instanceDate);
@@ -266,7 +274,7 @@ class _NotesPageState extends State<NotesPage>
             _urlController.text.trim() != (_initialUrl ?? '') ||
             _hasRatingsChanged() ||
             _currentTipsAmount != _initialTipsAmount;
-    if (mounted && hasChanges != _hasChanges) {
+    if (context.mounted && hasChanges != _hasChanges) {
       setState(() => _hasChanges = hasChanges);
     }
   }
@@ -284,7 +292,9 @@ class _NotesPageState extends State<NotesPage>
     for (final i in _initialRatings!) {
       if (_currentRatings
           .where((r) => r.dimension == i.dimension)
-          .isEmpty) return true;
+          .isEmpty) {
+        return true;
+      }
     }
     return false;
   }
@@ -292,7 +302,9 @@ class _NotesPageState extends State<NotesPage>
   // ── Save ──────────────────────────────────────────────────────────────────
 
   Future<void> _saveNotesAndClose() async {
-    if (!mounted) return;
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     setState(() => _isSaving = true);
     try {
       Gig? gigToReturn;
@@ -301,22 +313,20 @@ class _NotesPageState extends State<NotesPage>
       } else {
         await _saveVenueNotes();
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Notes saved successfully!'),
-              backgroundColor: Colors.green),
-        );
-        Navigator.of(context).pop(gigToReturn ?? _currentGig);
-      }
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+            content: Text('Notes saved successfully!'),
+            backgroundColor: Colors.green),
+      );
+      navigator.pop(gigToReturn ?? _currentGig);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error saving notes: $e'),
-              backgroundColor: Colors.red),
-        );
-      }
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+            content: Text('Error saving notes: $e'),
+            backgroundColor: Colors.red),
+      );
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -404,7 +414,7 @@ class _NotesPageState extends State<NotesPage>
     if (widget.editingVenueId == null) return;
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_taxDocKey(_taxDocYear));
-    if (mounted) {
+    if (context.mounted) {
       setState(() {
         _taxDocType = raw != null
             ? (jsonDecode(raw) as Map<String, dynamic>)['type'] as String?
@@ -431,12 +441,13 @@ class _NotesPageState extends State<NotesPage>
   Future<void> _launchUrl() async {
     final urlString = _urlController.text.trim();
     if (urlString.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context);
     final Uri? uri = Uri.tryParse(
         urlString.startsWith('http') ? urlString : 'https://$urlString');
     if (uri != null && await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
             content: Text('Could not open link: $urlString'),
             backgroundColor: Colors.red),
@@ -464,8 +475,6 @@ class _NotesPageState extends State<NotesPage>
 
   @override
   Widget build(BuildContext context) {
-    final String appBarTitle = _isEditingGig ? 'GIG NOTES' : 'VENUE NOTES';
-
     return Scaffold(
       appBar: AppBar(
         title: Column(

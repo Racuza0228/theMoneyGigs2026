@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class MapTutorialOverlay extends StatefulWidget {
   /// Called when the user finishes or dismisses the tutorial. Receives
@@ -64,7 +65,7 @@ class MapTutorialOverlay extends StatefulWidget {
         'populateRespondedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      debugPrint('📋 MapTutorialTracking: populate outcome write failed — $e');
+      log('📋 MapTutorialTracking: populate outcome write failed — $e');
     }
   }
 
@@ -159,7 +160,7 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
       _sessionRef = ref;
       _trackingReady = true;
     } catch (e) {
-      debugPrint('📋 MapTutorialTracking: init failed — $e');
+      log('📋 MapTutorialTracking: init failed — $e');
     }
   }
 
@@ -171,7 +172,7 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
         'step${step + 1}ViewedAt':  FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      debugPrint('📋 MapTutorialTracking: step view failed — $e');
+      log('📋 MapTutorialTracking: step view failed — $e');
     }
   }
 
@@ -184,7 +185,7 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
         'completed':    false,
       });
     } catch (e) {
-      debugPrint('📋 MapTutorialTracking: exit failed — $e');
+      log('📋 MapTutorialTracking: exit failed — $e');
     }
   }
 
@@ -197,7 +198,7 @@ class _MapTutorialOverlayState extends State<MapTutorialOverlay>
         'exitedOnStep': null,
       });
     } catch (e) {
-      debugPrint('📋 MapTutorialTracking: completion failed — $e');
+      log('📋 MapTutorialTracking: completion failed — $e');
     }
   }
 

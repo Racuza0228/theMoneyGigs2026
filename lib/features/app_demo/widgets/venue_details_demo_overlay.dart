@@ -42,7 +42,7 @@ class VenueDetailsDemoOverlay extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.85),
+                color: Colors.black.withValues(alpha: 0.85),
                 border: Border.all(color: Colors.white, width: 2),
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -125,7 +125,7 @@ class _HighlightPainter extends CustomPainter {
 
     final overlayPath = Path.combine(PathOperation.difference, fullScreenPath, highlightPath);
 
-    canvas.drawPath(overlayPath, Paint()..color = Colors.black.withOpacity(0.7));
+    canvas.drawPath(overlayPath, Paint()..color = Colors.black.withValues(alpha: 0.7));
   }
 
   @override

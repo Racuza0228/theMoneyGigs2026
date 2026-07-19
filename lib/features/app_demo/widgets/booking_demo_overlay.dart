@@ -51,7 +51,7 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
     _calculateLayout();
     // 🎯 2. Re-measure after the dialog finishes its entry animation
     Future.delayed(const Duration(milliseconds: 600), () {
-      if (mounted) _calculateLayout();
+      if (context.mounted) _calculateLayout();
     });
   }
 
@@ -71,10 +71,10 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
   }
 
   void _calculateLayout() {
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!context.mounted) return;
 
       final demoStep = widget.demoStep;
       if (demoStep == null) return;
@@ -173,7 +173,7 @@ class _BookingDemoOverlayState extends State<BookingDemoOverlay> {
                 right: 0,
                 child: Material(
                   elevation: 8,
-                  color: Colors.black.withOpacity(0.95),
+                  color: Colors.black.withValues(alpha: 0.95),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     decoration: BoxDecoration(
@@ -251,7 +251,7 @@ class _MultiHighlightPainter extends CustomPainter {
 
     // 🎯 Safety: If the parent is gone, just draw a solid overlay and exit
     if (pageRenderBox == null || !pageRenderBox!.attached) {
-      canvas.drawPath(fullScreenPath, Paint()..color = Colors.black.withOpacity(0.8));
+      canvas.drawPath(fullScreenPath, Paint()..color = Colors.black.withValues(alpha: 0.8));
       return;
     }
 
@@ -287,7 +287,7 @@ class _MultiHighlightPainter extends CustomPainter {
     }
 
     final overlayPath = Path.combine(PathOperation.difference, fullScreenPath, combinedHighlightPath);
-    canvas.drawPath(overlayPath, Paint()..color = Colors.black.withOpacity(0.8));
+    canvas.drawPath(overlayPath, Paint()..color = Colors.black.withValues(alpha: 0.8));
   }
 
   @override

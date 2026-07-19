@@ -92,7 +92,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   Future<void> _initTracking() async {
     _sessionId = const Uuid().v4();
-    debugPrint('📋 OnboardingTracking: init — session=$_sessionId');
+    log('📋 OnboardingTracking: init — session=$_sessionId');
     final ref = FirebaseFirestore.instance
         .collection('onboardingSessions')
         .doc(_sessionId);
@@ -118,34 +118,34 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       });
       _sessionRef = ref;
       _trackingReady = true;
-      debugPrint('📋 OnboardingTracking: session document written ✅');
+      log('📋 OnboardingTracking: session document written ✅');
       for (final update in _pendingUpdates) {
         try {
           await _sessionRef!.update(update);
-          debugPrint('📋 OnboardingTracking: flushed pending update ✅');
+          log('📋 OnboardingTracking: flushed pending update ✅');
         } catch (e) {
-          debugPrint('📋 OnboardingTracking: flush error ❌ $e');
+          log('📋 OnboardingTracking: flush error ❌ $e');
         }
       }
       _pendingUpdates.clear();
       _trackPageView(_Page.welcome);
     } catch (e, stack) {
-      debugPrint('📋 OnboardingTracking: init FAILED ❌ $e');
-      debugPrint('📋 OnboardingTracking: stack — $stack');
+      log('📋 OnboardingTracking: init FAILED ❌ $e');
+      log('📋 OnboardingTracking: stack — $stack');
     }
   }
 
   Future<void> _safeUpdate(Map<String, dynamic> data) async {
     if (!_trackingReady || _sessionRef == null) {
-      debugPrint('📋 OnboardingTracking: queuing update (not ready) — ${data.keys}');
+      log('📋 OnboardingTracking: queuing update (not ready) — ${data.keys}');
       _pendingUpdates.add(data);
       return;
     }
     try {
       await _sessionRef!.update(data);
-      debugPrint('📋 OnboardingTracking: update written ✅ — ${data.keys}');
+      log('📋 OnboardingTracking: update written ✅ — ${data.keys}');
     } catch (e) {
-      debugPrint('📋 OnboardingTracking: update FAILED ❌ $e — ${data.keys}');
+      log('📋 OnboardingTracking: update FAILED ❌ $e — ${data.keys}');
     }
   }
 
@@ -231,7 +231,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   // ─────────────────────────────────────────────────────────────────────────
 
   void _showLoading([String message = 'Connecting…']) {
-    if (_loadingDialogOpen || !mounted) return;
+    if (_loadingDialogOpen || !context.mounted) return;
     _loadingDialogOpen = true;
     showDialog(
       context: context,
@@ -255,7 +255,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   void _hideLoading() {
-    if (!_loadingDialogOpen || !mounted) return;
+    if (!_loadingDialogOpen || !context.mounted) return;
     _loadingDialogOpen = false;
     Navigator.of(context, rootNavigator: true).pop();
   }
@@ -292,12 +292,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         setState(() => _codeRequested = true);
         // Brief pause to show confirmation state, then advance to Map Tutorial
         await Future.delayed(const Duration(milliseconds: 1200));
-        if (mounted) _finish(userCompleted: true);
+        if (context.mounted) _finish(userCompleted: true);
       } else {
         log('📧 _requestCode: canLaunchUrl(mailto) returned false — '
             'no mail client on this device; flag still persisted, '
             'advancing standalone');
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -308,11 +308,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           );
           setState(() => _codeRequested = true);
           await Future.delayed(const Duration(milliseconds: 1200));
-          if (mounted) _finish(userCompleted: true);
+          if (context.mounted) _finish(userCompleted: true);
         }
       }
     } catch (e) {
-      debugPrint('mailto launch error: $e');
+      log('mailto launch error: $e');
     }
   }
 
@@ -340,7 +340,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     try {
       await _runConnectSequence(code, prefs);
     } finally {
-      if (mounted) setState(() => _isConnecting = false);
+      if (context.mounted) setState(() => _isConnecting = false);
     }
   }
 
@@ -349,7 +349,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
     // ── 1. Google Sign-In ─────────────────────────────────────────────────
     if (!authService.isSignedIn) {
-      if (!mounted) return;
+      if (!context.mounted) return;
 
       final shouldSignIn = await showDialog<bool>(
         context: context,
@@ -377,7 +377,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         setState(() => _codeStatus = 'sign_in_declined');
         await _trackCodeResult('sign_in_declined');
         await Future.delayed(const Duration(milliseconds: 900));
-        if (mounted) _nextPage();
+        if (context.mounted) _nextPage();
         return;
       }
 
@@ -385,7 +385,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       final result = await authService.signInWithGoogle();
       _hideLoading();
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       if (result == null) {
         setState(() => _codeStatus = 'auth_failed');
         await _trackCodeResult('auth_failed');
@@ -399,7 +399,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     final userId          = authService.currentUserId;
     final existingMember  = await networkService.getMember(userId);
     _hideLoading();
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     if (existingMember != null) {
       final codeDoc   = await networkService.validateInviteCode(existingMember.inviteCodeUsed);
@@ -415,7 +415,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       });
       await _trackCodeResult(status, connected: true);
       await Future.delayed(const Duration(milliseconds: 1400));
-      if (mounted) _nextPage();
+      if (context.mounted) _nextPage();
       return;
     }
 
@@ -423,7 +423,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _showLoading('Validating code…');
     final inviteCodeDoc = await networkService.validateInviteCode(code);
     _hideLoading();
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     if (inviteCodeDoc == null) {
       setState(() => _codeStatus = 'invalid');
@@ -439,7 +439,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       inviteCode: code,
     );
     _hideLoading();
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     if (!success) {
       setState(() => _codeStatus = 'invalid');
@@ -461,7 +461,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       });
       await _trackCodeResult('connected_founder', connected: true);
       await Future.delayed(const Duration(milliseconds: 1400));
-      if (mounted) _nextPage();
+      if (context.mounted) _nextPage();
 
     } else {
       await ensureRevenueCatConfigured();
@@ -482,10 +482,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         });
         await _trackCodeResult('connected_member', connected: true);
         await Future.delayed(const Duration(milliseconds: 1400));
-        if (mounted) _nextPage();
+        if (context.mounted) _nextPage();
 
       } else {
-        if (!mounted) return;
+        if (!context.mounted) return;
         final shouldPurchase = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -513,14 +513,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           setState(() => _codeStatus = 'needs_subscription');
           await _trackCodeResult('subscription_declined');
           await Future.delayed(const Duration(milliseconds: 900));
-          if (mounted) _nextPage();
+          if (context.mounted) _nextPage();
           return;
         }
 
         _showLoading('Processing subscription…');
         final purchased = await subscriptionService.purchaseMonthlySubscription();
         _hideLoading();
-        if (!mounted) return;
+        if (!context.mounted) return;
 
         if (purchased) {
           final member = await networkService.getMember(userId);
@@ -535,14 +535,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           });
           await _trackCodeResult('connected_member', connected: true);
           await Future.delayed(const Duration(milliseconds: 1400));
-          if (mounted) _nextPage();
+          if (context.mounted) _nextPage();
 
         } else {
           await networkService.deleteMember(userId);
           setState(() => _codeStatus = 'needs_subscription');
           await _trackCodeResult('subscription_failed');
           await Future.delayed(const Duration(milliseconds: 900));
-          if (mounted) _nextPage();
+          if (context.mounted) _nextPage();
         }
       }
     }

@@ -10,6 +10,7 @@ import 'package:the_money_gigs/features/profile/views/widgets/reconciliation_dia
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 
 import '../../../core/services/auth_service.dart';
+import '../../../core/utils/logger.dart';
 
 class ReconciliationScreen extends StatefulWidget {
   const ReconciliationScreen({super.key});
@@ -36,7 +37,7 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
   }
 
   Future<void> _loadAndProcessVenues() async {
-    if (!mounted) return;
+    if (!context.mounted) return;
     setState(() => _isLoading = true);
 
     // 1. Fetch all public venue IDs from Firestore first.
@@ -49,7 +50,7 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
         .map((jsonString) => StoredLocation.fromJson(jsonDecode(jsonString)))
         .toList();
 
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     // 3. Filter the local venues.
     // A venue needs reconciliation if it's NOT marked as private on the device
@@ -129,7 +130,7 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
 
     // 3. Sync local tags to Firebase (NEW!)
     if (publicVenue.genreTags.isNotEmpty || publicVenue.instrumentTags.isNotEmpty) {
-      print('🏷️ Syncing ${publicVenue.genreTags.length} genre tags and ${publicVenue.instrumentTags.length} instrument tags');
+      log('🏷️ Syncing ${publicVenue.genreTags.length} genre tags and ${publicVenue.instrumentTags.length} instrument tags');
       await _venueRepository.syncLocalTagsToFirebase(
         placeId: publicVenue.placeId,
         userId: userId,
@@ -153,7 +154,7 @@ class _ReconciliationScreenState extends State<ReconciliationScreen> {
   }
 
   void _finishReconciliation({bool showNoVenuesMessage = false}) {
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     context.read<GlobalRefreshNotifier>().notify();
 

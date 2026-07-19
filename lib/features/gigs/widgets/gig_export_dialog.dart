@@ -299,9 +299,11 @@ class GigExportDialog extends StatelessWidget {
             action: SnackBarAction(
               label: 'Share Instead',
               onPressed: () async {
-                await Share.shareXFiles(
-                  [XFile(file.path, mimeType: 'text/calendar', name: 'my_gigs.ics')],
-                  subject: 'My Upcoming Gigs',
+                await SharePlus.instance.share(
+                  ShareParams(
+                    files: [XFile(file.path, mimeType: 'text/calendar', name: 'my_gigs.ics')],
+                    subject: 'My Upcoming Gigs',
+                  ),
                 );
               },
             ),
@@ -659,10 +661,10 @@ class GigExportDialog extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.deepOrange.withOpacity(0.12),
+                      color: Colors.deepOrange.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                          color: Colors.deepOrange.withOpacity(0.4)),
+                          color: Colors.deepOrange.withValues(alpha: 0.4)),
                     ),
                     child: Row(
                       children: [
@@ -803,7 +805,7 @@ class _SectionHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Expanded(child: Divider(color: color.withOpacity(0.3))),
+        Expanded(child: Divider(color: color.withValues(alpha: 0.3))),
       ],
     );
   }
@@ -867,7 +869,7 @@ class _ExportTile extends StatelessWidget {
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: iconColor.withOpacity(0.12),
+                      color: iconColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(icon, color: iconColor, size: 20),

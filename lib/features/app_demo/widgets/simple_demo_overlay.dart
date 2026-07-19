@@ -53,7 +53,7 @@ class _SimpleDemoOverlayState extends State<SimpleDemoOverlay> {
   }
 
   void _calculateLayout() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {if (!context.mounted) return;
 
     final RenderBox? pageRenderBox = context.findRenderObject() as RenderBox?;
     if (pageRenderBox == null || !pageRenderBox.hasSize) {
@@ -140,7 +140,7 @@ class _SimpleDemoOverlayState extends State<SimpleDemoOverlay> {
                 margin: const EdgeInsets.symmetric(horizontal: 24.0),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.85),
+                  color: Colors.black.withValues(alpha: 0.85),
                   border: Border.all(color: Colors.white, width: 2),
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -225,7 +225,7 @@ class _SimpleHighlightPainter extends CustomPainter {
     }
 
     final overlayPath = Path.combine(PathOperation.difference, fullScreenPath, combinedHighlightPath);
-    canvas.drawPath(overlayPath, Paint()..color = Colors.black.withOpacity(0.8));
+    canvas.drawPath(overlayPath, Paint()..color = Colors.black.withValues(alpha: 0.8));
   }
 
   @override

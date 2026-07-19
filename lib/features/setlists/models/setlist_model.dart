@@ -1,6 +1,7 @@
 // lib/features/setlists/models/setlist_model.dart
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 /// Represents a single group of songs, like "Set 1" or "Encore".
 class SongSet {
@@ -90,7 +91,7 @@ class Setlist {
             return Setlist.fromJson(item as Map<String, dynamic>);
           } catch (e) {
             // Safely skip items that fail to parse
-            print("Error decoding a single setlist item: $e");
+            log("Error decoding a single setlist item: $e");
             return null;
           }
         })
@@ -99,7 +100,7 @@ class Setlist {
       }
       return []; // Return empty if the decoded JSON is not a list
     } catch (e) {
-      print("Error decoding setlist string: $e");
+      log("Error decoding setlist string: $e");
       return []; // Return empty on a general decoding error
     }
   }

@@ -163,7 +163,7 @@ class _BookingDialogState extends State<BookingDialog> {
 
       if (isBookingDemo && mounted) {
         Future.delayed(const Duration(milliseconds: 150), () {
-          if (mounted) {
+          if (context.mounted) {
             setState(() {
               _showDemoOverlay = true;
             });
@@ -176,7 +176,7 @@ class _BookingDialogState extends State<BookingDialog> {
 
   void _onDemoStatusChanged() {
     //🎯 CRITICAL: Check mounted BEFORE accessing context or calling setState
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
 
@@ -263,7 +263,7 @@ class _BookingDialogState extends State<BookingDialog> {
     await _loadProfileAddress();
     await _loadAllKnownVenuesInternal();
     await _loadAllKnownBands();
-    if (!mounted) return;
+    if (!context.mounted) return;
     if (_isEditingMode) {
       log("Editing Mode: Gig has bandName = '${widget.editingGig?.bandName}'");
 
@@ -338,7 +338,7 @@ class _BookingDialogState extends State<BookingDialog> {
         }
       }
     }
-    if (mounted) {
+    if (context.mounted) {
       setState(() {
         // This is where the dropdown UI gets its value
         _selectedBand = _editableGig?.bandName;
@@ -377,7 +377,7 @@ class _BookingDialogState extends State<BookingDialog> {
       setState(() => _isFetchingDriveTime = true);
       final driveTimeService = _createDriveTimeService();
       final updatedVenue = await driveTimeService.fetchAndCacheDriveTime(venue);
-      if (mounted) {
+      if (context.mounted) {
         setState(() {
           if (updatedVenue != null) {
             final index = _allKnownVenuesInternal.indexWhere((v) => v.placeId == updatedVenue.placeId);
@@ -399,14 +399,14 @@ class _BookingDialogState extends State<BookingDialog> {
       final tempVenue = StoredLocation(name: 'temp', address: address, coordinates: coords, placeId: 'temp_manual_place_id_${DateTime.now().millisecondsSinceEpoch}', instrumentTags: [], genreTags: []);
       final driveTimeService = _createDriveTimeService();
       final resultVenue = await driveTimeService.fetchAndCacheDriveTime(tempVenue);
-      if (mounted) {
+      if (context.mounted) {
         setState(() {
           _manualDriveDurationString = resultVenue?.driveDuration;
           _manualDriveDistance = resultVenue?.driveDistance;
         });
       }
     }
-    if (mounted) {
+    if (context.mounted) {
       setState(() => _isFetchingDriveTime = false);
     }
   }
@@ -437,13 +437,13 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     if (!_formKey.currentState!.validate()) return;
     if (_selectedDate == null || _selectedTime == null) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Please select a date and time.')));
       }
       return;
     }
-    if (mounted) setState(() => _isProcessing = true);
+    if (context.mounted) setState(() => _isProcessing = true);
 
     final DateTime selectedFullDateTime = DateTime(
         _selectedDate!.year,
@@ -467,7 +467,7 @@ class _BookingDialogState extends State<BookingDialog> {
       String newVenueName = _newVenueNameController.text.trim();
       String newVenueAddress = _newVenueAddressController.text.trim();
       if (newVenueName.isEmpty || newVenueAddress.isEmpty) {
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content:
               Text('New venue name and address are required.')));
@@ -477,7 +477,7 @@ class _BookingDialogState extends State<BookingDialog> {
       }
       LatLng? coords = await _geocodeAddress(newVenueAddress);
       if (coords == null) {
-        if (mounted) setState(() => _isProcessing = false);
+        if (context.mounted) setState(() => _isProcessing = false);
         return;
       }
       finalVenueDetails = StoredLocation(
@@ -497,7 +497,7 @@ class _BookingDialogState extends State<BookingDialog> {
       }
     }
 
-    if (!mounted) {
+    if (!context.mounted) {
       setState(() => _isProcessing = false);
       return;
     }
@@ -580,7 +580,7 @@ class _BookingDialogState extends State<BookingDialog> {
                         Navigator.of(dialogContext).pop(true))
               ]));
       if (bookAnyway != true) {
-        if (mounted) setState(() => _isProcessing = false);
+        if (context.mounted) setState(() => _isProcessing = false);
         return;
       }
     }
@@ -597,8 +597,8 @@ class _BookingDialogState extends State<BookingDialog> {
       log("⚠️ Error rescheduling notifications, but continuing. Error: $e");
     }
 
-    if (mounted) setState(() => _isProcessing = false);
-    if (mounted && Navigator.canPop(context)) {
+    if (context.mounted) setState(() => _isProcessing = false);
+    if (context.mounted && Navigator.canPop(context)) {
       Navigator.of(context).pop(
           GigEditResult(action: GigEditResultAction.updated, gig: newOrUpdatedGigData));
     }
@@ -643,7 +643,7 @@ class _BookingDialogState extends State<BookingDialog> {
   }
 
   void _calculateDynamicRate() {
-    if (!mounted || _isCalculatorMode) return;
+    if (!context.mounted || _isCalculatorMode) return;
     final double pay = double.tryParse(_payController.text) ?? 0;
     final double otherExpenses = double.tryParse(_otherExpensesController.text) ?? 0;
     final double gigTime = double.tryParse(_gigLengthController.text) ?? 0;
@@ -667,7 +667,7 @@ class _BookingDialogState extends State<BookingDialog> {
       newRateString = "Rate: N/A";
       newColor = Colors.grey;
     }
-    if (mounted) setState(() { _dynamicRateString = newRateString; _dynamicRateResultColor = newColor; });
+    if (context.mounted) setState(() { _dynamicRateString = newRateString; _dynamicRateResultColor = newColor; });
   }
 
   Future<void> _loadSelectableVenuesForDropdown({bool defaultToAddVenue = false}) async {
@@ -700,7 +700,7 @@ class _BookingDialogState extends State<BookingDialog> {
       }
     } catch (e) {
       log("Error filtering/setting up venues for dropdown: $e");
-      if (mounted) {
+      if (context.mounted) {
         setState(() {
           _selectableVenuesForDropdown = [_addNewVenuePlaceholder];
           _selectedVenue = _addNewVenuePlaceholder;
@@ -708,7 +708,7 @@ class _BookingDialogState extends State<BookingDialog> {
         });
       }
     } finally {
-      if (mounted) setState(() { _isLoadingVenues = false; });
+      if (context.mounted) setState(() { _isLoadingVenues = false; });
     }
   }
 
@@ -730,7 +730,7 @@ class _BookingDialogState extends State<BookingDialog> {
 
   Future<LatLng?> _geocodeAddress(String address) async {
     if (widget.googleApiKey.isEmpty || widget.googleApiKey == "YOUR_GOOGLE_PLACES_API_KEY_HERE") {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Geocoding failed: API Key not configured.'), backgroundColor: Colors.red));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Geocoding failed: API Key not configured.'), backgroundColor: Colors.red));
       return null;
     }
     final String encodedAddress = Uri.encodeComponent(address);
@@ -738,25 +738,25 @@ class _BookingDialogState extends State<BookingDialog> {
     if(mounted) setState(() => _isGeocoding = true);
     try {
       final response = await http.get(Uri.parse(url));
-      if (!mounted) return null;
+      if (!context.mounted) return null;
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['status'] == 'OK' && data['results'] != null && (data['results'] as List).isNotEmpty) {
           final location = data['results'][0]['geometry']['location'];
           return LatLng(location['lat'], location['lng']);
         } else {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not find coordinates: ${data['status']} ${data['error_message'] ?? ''}')));
+          if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not find coordinates: ${data['status']} ${data['error_message'] ?? ''}')));
           return null;
         }
       } else {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error contacting Geocoding service: ${response.statusCode}')));
+        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error contacting Geocoding service: ${response.statusCode}')));
         return null;
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred while finding coordinates: $e')));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred while finding coordinates: $e')));
       return null;
     } finally {
-      if (mounted) setState(() => _isGeocoding = false);
+      if (context.mounted) setState(() => _isGeocoding = false);
     }
   }
 
@@ -842,7 +842,7 @@ class _BookingDialogState extends State<BookingDialog> {
 
       if (choice == null || choice == RecurringCancelChoice.doNothing) return;
 
-      if (mounted) setState(() => _isProcessing = true);
+      if (context.mounted) setState(() => _isProcessing = true);
 
       // 🎯 CRITICAL: Pop the choice back to GigsPage
       Navigator.of(context).pop(GigEditResult(
@@ -1049,7 +1049,7 @@ class _BookingDialogState extends State<BookingDialog> {
                   ),
                 ),
                 if (isDialogProcessing)
-                  Positioned.fill(child: Container(color: Colors.black.withOpacity(0.3), child: const Center(child: CircularProgressIndicator()))),
+                  Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.3), child: const Center(child: CircularProgressIndicator()))),
               ],
             ),
           ),

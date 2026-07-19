@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class VenueTagsWidget extends StatefulWidget {
   final StoredLocation venue;
@@ -76,7 +77,7 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
       _authService = AuthService();
       await _loadFirebaseTags();
     } catch (e) {
-      print('⚠️ Could not initialize auth: $e');
+      log('⚠️ Could not initialize auth: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -108,7 +109,7 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
         ),
       ]);
 
-      if (mounted) {
+      if (context.mounted) {
         setState(() {
           _firebaseGenreTags = results[0];
           _firebaseInstrumentTags = results[1];
@@ -117,8 +118,8 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
         });
       }
     } catch (e) {
-      print('❌ Error loading Firebase tags: $e');
-      if (mounted) setState(() => _isLoading = false);
+      log('❌ Error loading Firebase tags: $e');
+      if (context.mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -346,8 +347,8 @@ class _VenueTagsWidgetState extends State<VenueTagsWidget> {
                 ? Theme.of(context)
                 .colorScheme
                 .primary
-                .withOpacity(0.8)
-                : Colors.orangeAccent.shade100.withOpacity(0.6);
+                .withValues(alpha: 0.8)
+                : Colors.orangeAccent.shade100.withValues(alpha: 0.6);
 
             return InputChip(
               label: Text(

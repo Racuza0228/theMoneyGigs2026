@@ -60,7 +60,7 @@ class _TaxYearSummaryCardState extends State<TaxYearSummaryCard> {
       }
     }
 
-    if (mounted) setState(() => _taxDocs = docs);
+    if (context.mounted) setState(() => _taxDocs = docs);
   }
 
   /// Payable, completed gigs for the selected year.

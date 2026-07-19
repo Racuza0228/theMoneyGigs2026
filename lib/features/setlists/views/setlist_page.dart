@@ -6,6 +6,7 @@ import 'package:the_money_gigs/features/setlists/views/widgets/song_editor_dialo
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class SetlistPage extends StatefulWidget {
   final Gig gig;
@@ -67,7 +68,7 @@ class _SetlistPageState extends State<SetlistPage> {
           if (gigIndex != -1) {
             final updatedGig = allGigs[gigIndex].copyWith(setlistId: _setlist.id);
             allGigs[gigIndex] = updatedGig;
-            print("MIGRATING: Linked setlist ${_setlist.id} to gig ${_currentGig.id}");
+            log("MIGRATING: Linked setlist ${_setlist.id} to gig ${_currentGig.id}");
             await prefs.setString(_gigsPrefsKey, Gig.encode(allGigs));
 
             // Update the local state to reflect the migration
@@ -489,7 +490,7 @@ class _SetlistPageState extends State<SetlistPage> {
 
     return Container(
       padding: const EdgeInsets.only(left: 16),
-      color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [

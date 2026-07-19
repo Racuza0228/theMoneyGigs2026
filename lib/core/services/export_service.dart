@@ -139,6 +139,7 @@ class ExportService {
 
       if (await canLaunchUrl(emailLaunchUri)) {
         await launchUrl(emailLaunchUri);
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✉️ Feedback email opened. Please send when ready.'),

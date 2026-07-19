@@ -51,7 +51,7 @@ class DriveTimeDisplay extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: Colors.yellow.withOpacity(0.15),
+            color: Colors.yellow.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Colors.yellow.shade700, width: 1),
           ),

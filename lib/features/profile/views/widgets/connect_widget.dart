@@ -7,6 +7,7 @@ import 'package:the_money_gigs/core/services/auth_service.dart';
 import 'package:the_money_gigs/core/services/network_service.dart';
 import 'package:the_money_gigs/core/services/subscription_service.dart';
 import 'package:the_money_gigs/core/services/revenuecat_gate.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class ConnectWidget extends StatefulWidget {
   final GlobalKey? demoHighlightKey;
@@ -55,7 +56,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
   }
 
   void _onGlobalRefresh() {
-    if (!mounted) return;
+    if (!context.mounted) return;
     _loadConnectionStatus();
     _checkSubscriptionStatus();
   }
@@ -110,7 +111,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
         });
       }
     } catch (e) {
-      print('Error fetching invite codes: $e');
+      log('Error fetching invite codes: $e');
     }
   }
 
@@ -165,7 +166,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
         });
       }
     } catch (e) {
-      print('Error checking subscription status: $e');
+      log('Error checking subscription status: $e');
       setState(() {
         _hasActiveSubscription = false;
         _isFounder = false;
@@ -183,17 +184,18 @@ class _ConnectWidgetState extends State<ConnectWidget> {
     }
 
     final prefs = await SharedPreferences.getInstance();
+    if (!context.mounted) return;
     final authService = AuthService();
     final networkService = NetworkService();
 
     if (value) {
       // STEP 1: Ensure user is signed in with Google
       if (!authService.isSignedIn) {
-        if (!mounted) return;
+        if (!context.mounted) return;
 
         final shouldSignIn = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (_) => AlertDialog(
             title: const Text('Sign In Required'),
             content: const Text(
                 'Community Edition requires a Google account to submit ratings and comments.\n\n'
@@ -216,18 +218,18 @@ class _ConnectWidgetState extends State<ConnectWidget> {
         if (shouldSignIn != true) return;
 
         // Show loading
-        if (!mounted) return;
+        if (!context.mounted) return;
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => const Center(child: CircularProgressIndicator()),
+          builder: (_) => const Center(child: CircularProgressIndicator()),
         );
 
         // Attempt Google sign-in
         final result = await authService.signInWithGoogle();
 
         // Close loading
-        if (!mounted) return;
+        if (!context.mounted) return;
         Navigator.pop(context);
 
         if (result == null) {
@@ -279,7 +281,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
           });
         }
 
-        if (!mounted) return;
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Community Edition enabled!'),
@@ -299,11 +301,11 @@ class _ConnectWidgetState extends State<ConnectWidget> {
       }
 
       // STEP 4: Validate invite code and create member
-      if (!mounted) return;
+      if (!context.mounted) return;
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
+        builder: (_) => const Center(child: CircularProgressIndicator()),
       );
 
       final success = await networkService.createMemberWithInviteCode(
@@ -313,7 +315,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
       );
 
       // Close loading
-      if (!mounted) return;
+      if (!context.mounted) return;
       Navigator.pop(context);
 
       if (!success) {
@@ -331,7 +333,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
       // STEP 5: Check if founder code (free) or requires subscription
       final inviteCodeDoc = await networkService.validateInviteCode(code);
       if (inviteCodeDoc == null) {
-        if (!mounted) return;
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('❌ Invite code is no longer valid or has been deactivated.'),
@@ -362,7 +364,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
           _hasActiveSubscription = false;
         });
 
-        if (!mounted) return;
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('🎉 Founder access granted - FREE forever!'),
@@ -395,7 +397,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
             _isFounder = false;
           });
 
-          if (!mounted) return;
+          if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('✅ Community Edition enabled!'),
@@ -409,7 +411,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
           // Need to purchase subscription
           final shouldPurchase = await showDialog<bool>(
             context: context,
-            builder: (context) => AlertDialog(
+            builder: (_) => AlertDialog(
               title: const Text('Start Subscription'),
               content: const Text(
                   'Community Edition \$2/month.\n\n'
@@ -434,11 +436,11 @@ class _ConnectWidgetState extends State<ConnectWidget> {
           if (shouldPurchase != true) return;
 
           // Start purchase flow
-          if (!mounted) return;
+          if (!context.mounted) return;
           showDialog(
             context: context,
             barrierDismissible: false,
-            builder: (context) => const Center(child: CircularProgressIndicator()),
+            builder: (_) => const Center(child: CircularProgressIndicator()),
           );
 
           bool purchased = false;
@@ -448,11 +450,11 @@ class _ConnectWidgetState extends State<ConnectWidget> {
             purchased = await subscriptionService.purchaseMonthlySubscription();
           } catch (e) {
             errorMessage = e.toString();
-            print('❌ Purchase exception: $e');
+            log('❌ Purchase exception: $e');
           }
 
 // Close loading
-          if (!mounted) return;
+          if (!context.mounted) return;
           Navigator.pop(context);
 
           if (purchased) {
@@ -513,7 +515,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
       if (_hasActiveSubscription) {
         final shouldContinue = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (_) => AlertDialog(
             title: const Text('Active Subscription'),
             content: const Text(
                 'You have an active subscription.\n\n'
@@ -544,7 +546,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
           _isConnected = false;
         });
 
-        if (!mounted) return;
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Toggle disabled (subscription still active - you still have access)'),
@@ -560,7 +562,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
       // Original logic for non-paid users (founders, etc.)
       final confirm = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (_) => AlertDialog(
           title: const Text('Disable Community Edition?'),
           content: const Text(
               'Your subscription will be cancelled, but you\'ll keep access until the end of your current billing period.\n\n'
@@ -591,7 +593,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
         _isConnected = false;
       });
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Community Edition disabled. Access continues until end of billing period.'),
@@ -608,7 +610,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
     final controller = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text('Enter Invite Code'),
         content: TextField(
           controller: controller,
@@ -629,7 +631,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
   }
 
   Future<void> _promptForReconciliation() async {
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     // Nothing to reconcile if the device has no locally-saved venues at
     // all. Skip the prompt (and the Firestore round-trip inside
@@ -639,11 +641,11 @@ class _ConnectWidgetState extends State<ConnectWidget> {
     final hasSavedVenues =
         (prefs.getStringList(_venuesKey) ?? []).isNotEmpty;
     if (!hasSavedVenues) return;
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final shouldReconcile = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text('Reconcile Venues'),
         content: const Text('Do you want to reconcile the venues on your device with those in the MoneyGigs system?'),
         actions: [
@@ -660,9 +662,9 @@ class _ConnectWidgetState extends State<ConnectWidget> {
     );
 
     // If "Yes", navigate to the new screen.
-    if (shouldReconcile == true && mounted) {
+    if (shouldReconcile == true && context.mounted) {
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (context) => const ReconciliationScreen()),
+        MaterialPageRoute(builder: (_) => const ReconciliationScreen()),
       );
     }
   }

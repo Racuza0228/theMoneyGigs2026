@@ -2,7 +2,7 @@
 
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 // 🎯 1. IMPORT BOTH PACKAGES
 import 'package:geolocator/geolocator.dart'; // For getting current device position
@@ -38,24 +38,24 @@ class LocationService {
       }
 
       if (addressString != null) {
-        if (kDebugMode) print('📍 LocationService: Geocoding profile address: "$addressString"');
+        log('📍 LocationService: Geocoding profile address: "$addressString"');
 
         // 🎯 2. USE THE CORRECT METHOD from the `geocoding` package
         List<Location> locations = await locationFromAddress(addressString);
 
         if (locations.isNotEmpty) {
-          if (kDebugMode) print('✅ LocationService: Found coordinates from profile address.');
+          log('✅ LocationService: Found coordinates from profile address.');
           // The `geocoding` package returns a `Location` object.
           return LatLng(locations.first.latitude, locations.first.longitude);
         }
       }
     } catch (e) {
-      if (kDebugMode) print('⚠️ LocationService: Could not geocode profile address. Reason: $e');
+      log('⚠️ LocationService: Could not geocode profile address. Reason: $e');
     }
 
     // Priority 2: Try to use the device's current location (using `geolocator`).
     try {
-      if (kDebugMode) print('📍 LocationService: Trying to get current device location...');
+      log('📍 LocationService: Trying to get current device location...');
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -67,18 +67,18 @@ class LocationService {
           desiredAccuracy: LocationAccuracy.high,
           timeLimit: const Duration(seconds: 10),
         );
-        if (kDebugMode) print('✅ LocationService: Found coordinates from device location.');
+        log('✅ LocationService: Found coordinates from device location.');
         // The `geolocator` package returns a `Position` object.
         return LatLng(position.latitude, position.longitude);
       } else {
-        if (kDebugMode) print('⚠️ LocationService: Location permission denied.');
+        log('⚠️ LocationService: Location permission denied.');
       }
     } catch (e) {
-      if (kDebugMode) print('⚠️ LocationService: Could not get device location. Reason: $e');
+      log('⚠️ LocationService: Could not get device location. Reason: $e');
     }
 
     // Priority 3: Fallback to the default coordinates.
-    if (kDebugMode) print('📍 LocationService: Falling back to default coordinates.');
+    log('📍 LocationService: Falling back to default coordinates.');
     return _defaultCenter;
   }
 }

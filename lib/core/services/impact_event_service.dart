@@ -2,7 +2,7 @@
 //
 // Fetches nearby events that may impact gig crowd size.
 //
-// LAYER 1 — Holidays (this update): zero-cost, zero-API, pure Dart.
+// LAYER 1 — Holidays: zero-cost, zero-API, pure Dart.
 //   Uses HolidayCalendar to detect public holidays in the gig window.
 //   Country derived automatically from gig.address.
 //
@@ -20,7 +20,7 @@ import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
-import 'package:the_money_gigs/core/services/holiday_calendar.dart'; // ← NEW
+import 'package:the_money_gigs/core/services/holiday_calendar.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/gigs/models/impact_event.dart';
 
@@ -32,6 +32,16 @@ const double kImpactRadiusMiles = 5.0;  // API fetch radius
 const double kImpactFilterMiles = 5.0;   // Client-side filter — drop anything beyond this
 const Duration kImpactCacheTtl = Duration(hours: 24);
 
+enum ImpactStatusType { loading, success, failure }
+
+class ImpactStatus {
+  final String message;
+  final ImpactStatusType type;
+  ImpactStatus(this.message, this.type);
+}
+
+typedef ImpactStatusCallback = void Function(ImpactStatus status);
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 class ImpactEventService {
@@ -42,13 +52,18 @@ class ImpactEventService {
 
   final http.Client _httpClient;
   final String _apiKey;
+  final ImpactStatusCallback? onStatusUpdate;
 
   ImpactEventService({
     http.Client? httpClient,
     String? apiKey,
+    this.onStatusUpdate,
   })  : _httpClient = httpClient ?? http.Client(),
         _apiKey = apiKey ??
-            const String.fromEnvironment('TICKETMASTER_API_KEY');
+            const String.fromEnvironment(
+              'TICKETMASTER_API_KEY',
+              defaultValue: 'mAWK8jZgwr0rp9JAT0rBEpO1J6kr6FtX',
+            );
 
   bool get _isConfigured => _apiKey.isNotEmpty;
 
@@ -198,29 +213,53 @@ class ImpactEventService {
 
       log('⚡ [ImpactEventService] Ticketmaster GET (key redacted)');
 
+      onStatusUpdate?.call(ImpactStatus(
+        'Accessing Ticketmaster Discovery API...',
+        ImpactStatusType.loading,
+      ));
+
       final response = await _httpClient
           .get(uri)
           .timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 401) {
         log('⚡ [ImpactEventService] 401 — invalid API key.');
+        onStatusUpdate?.call(ImpactStatus(
+          'Ticketmaster Error: Invalid API Key',
+          ImpactStatusType.failure,
+        ));
         return [];
       }
       if (response.statusCode == 429) {
         log('⚡ [ImpactEventService] 429 — rate limited.');
+        onStatusUpdate?.call(ImpactStatus(
+          'Ticketmaster: Rate limit exceeded',
+          ImpactStatusType.failure,
+        ));
         return [];
       }
       if (response.statusCode != 200) {
         log('⚡ [ImpactEventService] HTTP ${response.statusCode}.');
+        onStatusUpdate?.call(ImpactStatus(
+          'Ticketmaster: Server Error (${response.statusCode})',
+          ImpactStatusType.failure,
+        ));
         return [];
       }
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       final embedded = body['_embedded'] as Map<String, dynamic>?;
-      if (embedded == null) return [];
+
+      if (embedded == null) {
+        onStatusUpdate?.call(ImpactStatus(
+          'Ticketmaster: No nearby events found.',
+          ImpactStatusType.success,
+        ));
+        return [];
+      }
 
       final rawEvents = embedded['events'] as List<dynamic>? ?? [];
-      return rawEvents
+      final results = rawEvents
           .map((e) => _normalizeTicketmasterEvent(
         e as Map<String, dynamic>,
         gigLat: gigLat,
@@ -228,8 +267,19 @@ class ImpactEventService {
       ))
           .whereType<ImpactEvent>()
           .toList();
+
+      onStatusUpdate?.call(ImpactStatus(
+        'Ticketmaster: Found ${results.length} events.',
+        ImpactStatusType.success,
+      ));
+
+      return results;
     } catch (e) {
       log('⚡ [ImpactEventService] Ticketmaster fetch failed: $e');
+      onStatusUpdate?.call(ImpactStatus(
+        'Ticketmaster: Connection failed.',
+        ImpactStatusType.failure,
+      ));
       return [];
     }
   }
@@ -441,31 +491,6 @@ class ImpactEventService {
       '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 
   // ── Dev Mock Data ─────────────────────────────────────────────────────────
-  //
-  // Returned when no API key is set.
-  // NOTE: The holiday layer always runs even in mock mode.
-  // So on a real gig date near a US holiday, you will see holiday events
-  // in the badge even before you have a Ticketmaster key.
 
   List<ImpactEvent> _mockEvents(DateTime gigDate) => [];
-// List<ImpactEvent> _mockEvents(DateTime gigDate) => [
-//   ImpactEvent(
-//     eventName: 'Taste of Cincinnati',
-//     eventDate: gigDate.subtract(const Duration(days: 2)),
-//     eventType: 'festival',
-//     distanceMiles: 2.1,
-//     sourceUrl: 'https://tasteofcincinnati.com',
-//     impactLevel: 'high',
-//     apiSource: 'mock',
-//   ),
-//   ImpactEvent(
-//     eventName: 'FC Cincinnati vs Columbus Crew',
-//     eventDate: gigDate.subtract(const Duration(days: 1)),
-//     eventType: 'sporting',
-//     distanceMiles: 3.8,
-//     sourceUrl: 'https://fccincinnati.com',
-//     impactLevel: 'medium',
-//     apiSource: 'mock',
-//   ),
-// ];
 }

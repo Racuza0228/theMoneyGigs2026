@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
 import 'package:the_money_gigs/features/gigs/widgets/gig_retrospective_wizard.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 /// A banner that appears at the top of the app to prompt users to review past gigs
 class RetrospectiveNotificationBanner extends StatelessWidget {
@@ -39,7 +40,7 @@ class RetrospectiveNotificationBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print("✅ BANNER_DEBUG: RetrospectiveNotificationBanner build() method CALLED for gig: '${gig.venueName}'");
+    log("✅ BANNER_DEBUG: RetrospectiveNotificationBanner build() method CALLED for gig: '${gig.venueName}'");
 
     return SafeArea(
       bottom: false,

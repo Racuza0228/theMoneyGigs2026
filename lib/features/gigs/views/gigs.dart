@@ -1,7 +1,6 @@
 // lib/gigs.dart
 import 'dart:collection'; // For LinkedHashMap (used by TableCalendar for events)
 import 'dart:convert';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
@@ -54,9 +53,9 @@ class _GigsPageState extends State<GigsPage>
   late DemoProvider _demoProvider;
 
   List<Gig> _allGigs =
-      []; // Raw data from SharedPreferences, including recurring templates
+  []; // Raw data from SharedPreferences, including recurring templates
   List<Gig> _displayedGigs =
-      []; // Generated, displayable occurrences for the list view
+  []; // Generated, displayable occurrences for the list view
   DateTime _gigListEndDate = DateTime.now().add(const Duration(days: 90));
   bool _isMoreGigsLoading = false;
 
@@ -79,7 +78,7 @@ class _GigsPageState extends State<GigsPage>
   final GlobalKey _demoGigTileKey = GlobalKey();
   OverlayEntry? _overlayEntry; // 🎯 ADD THIS VARIABLE
 
-  final ImpactEventService _impactEventService = ImpactEventService();
+  late final ImpactEventService _impactEventService;
 
   //   // gigId → list of impact events; populated after gigs load
   Map<String, List<ImpactEvent>> _impactEventsByGigId = {};
@@ -87,6 +86,53 @@ class _GigsPageState extends State<GigsPage>
   @override
   void initState() {
     super.initState();
+    _impactEventService = ImpactEventService(
+      onStatusUpdate: (ImpactStatus status) {
+        if (!mounted) return;
+        final message = status.message;
+        final isError = status.type == ImpactStatusType.failure;
+        final isLoading = status.type == ImpactStatusType.loading;
+
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                if (isLoading)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                else
+                  Icon(
+                    isError ? Icons.error : Icons.check_circle,
+                    color: isError ? Colors.redAccent : Colors.greenAccent,
+                    size: 20,
+                  ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            duration: Duration(seconds: isLoading ? 2 : 3),
+            backgroundColor: isError ? Colors.red.shade900 : null,
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.only(bottom: 70, left: 20, right: 20),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      },
+    );
     _tabController = TabController(length: 2, vsync: this);
     _scrollController = ScrollController()
       ..addListener(_scrollListener); // Initialize scroll controller
@@ -136,7 +182,7 @@ class _GigsPageState extends State<GigsPage>
         return SimpleDemoOverlay(
           title: "Your Upcoming Gigs",
           message:
-              "Each card is a gig where you can edit details, schedule recurring dates, or view notes with that icon on the right. Click Next.",
+          "Each card is a gig where you can edit details, schedule recurring dates, or view notes with that icon on the right. Click Next.",
           highlightKeys: [_demoGigTileKey],
           showNextButton: true,
           // 🎯 ADD THIS: Remove the overlay and end the demo when "Exit" is clicked.
@@ -164,7 +210,7 @@ class _GigsPageState extends State<GigsPage>
 
   // 🎬 Called every time DemoProvider calls notifyListeners (every nextStep / skipToStep).
   void _handleDemoStepChange() {
-    if (!mounted) {
+    if (!context.mounted) {
       log('🎬 [GigsPage] _handleDemoStepChange: not mounted, ignoring.');
       return;
     }
@@ -191,7 +237,7 @@ class _GigsPageState extends State<GigsPage>
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) {
+      if (!context.mounted) {
         log(
           '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): not mounted, aborting.',
         );
@@ -235,47 +281,47 @@ class _GigsPageState extends State<GigsPage>
 
       await Future.delayed(const Duration(milliseconds: 150));
 
-      if (mounted) {
-        log(
-          '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): calling _showGigListOverlay',
-        );
-        _showGigListOverlay(demoProvider);
-      } else {
+      if (!context.mounted) {
         log(
           '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): ❌ no longer mounted after scroll, aborting.',
         );
+        return;
       }
+
+      log(
+        '🎬 [GigsPage] _tryShowGigListDemoOverlay (post-frame): calling _showGigListOverlay',
+      );
+      _showGigListOverlay(demoProvider);
     });
   }
 
   void _scrollListener() {
     // Load more when user is 200 pixels from the bottom of the list
     if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200 &&
+        _scrollController.position.maxScrollExtent - 200 &&
         !_isMoreGigsLoading) {
       _loadMoreGigs();
     }
   }
 
   Future<void> _handleRecurringGigDeletion(
-    Gig gigInstance,
-    RecurringCancelChoice choice,
-  ) async {
+      Gig gigInstance,
+      RecurringCancelChoice choice,
+      ) async {
     if (choice == RecurringCancelChoice.doNothing) return;
 
     final String baseGigId = gigInstance.getBaseId();
     final int index = _allGigs.indexWhere((g) => g.id == baseGigId);
 
     if (index == -1) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Error: Could not find the original recurring gig to modify.',
-            ),
-            backgroundColor: Colors.red,
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Error: Could not find the original recurring gig to modify.',
           ),
-        );
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
@@ -289,11 +335,11 @@ class _GigsPageState extends State<GigsPage>
       if (newEndDate.isBefore(baseGig.dateTime)) {
         _allGigs.removeAt(index);
         message =
-            'The entire recurring series for "${baseGig.venueName}" has been cancelled.';
+        'The entire recurring series for "${baseGig.venueName}" has been cancelled.';
       } else {
         _allGigs[index] = baseGig.copyWith(recurrenceEndDate: newEndDate);
         message =
-            'The recurring gig for "${gigInstance.venueName}" on and after ${DateFormat.yMMMEd().format(gigInstance.dateTime)} has been cancelled.';
+        'The recurring gig for "${gigInstance.venueName}" on and after ${DateFormat.yMMMEd().format(gigInstance.dateTime)} has been cancelled.';
       }
     } else if (choice == RecurringCancelChoice.thisInstanceOnly) {
       List<DateTime> updatedExceptions = List.from(
@@ -313,46 +359,48 @@ class _GigsPageState extends State<GigsPage>
         recurrenceExceptions: updatedExceptions,
       );
       message =
-          'The gig for "${gigInstance.venueName}" on ${DateFormat.yMMMEd().format(gigInstance.dateTime)} has been cancelled.';
+      'The gig for "${gigInstance.venueName}" on ${DateFormat.yMMMEd().format(gigInstance.dateTime)} has been cancelled.';
     }
 
     // --- Save the changes and refresh the UI ---
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
       await prefs.setString(_keyGigsList, Gig.encode(_allGigs));
+      if (!mounted) return;
 
       final notificationService = NotificationService();
       await notificationService.init();
+      if (!mounted) return;
       await notificationService.updateAllGigNotifications();
+      if (!mounted) return;
 
       globalRefreshNotifier.notify();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message), backgroundColor: Colors.orange),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.orange),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error updating recurring gig: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error updating recurring gig: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
   void _handleGlobalRefresh() {
-    if (mounted) {
-      // Reset lazy-loading date range on global refresh
-      _gigListEndDate = DateTime.now().add(const Duration(days: 90));
-      _loadAllDataForGigsPage();
-    }
+    if (!mounted) return;
+    // Reset lazy-loading date range on global refresh
+    _gigListEndDate = DateTime.now().add(const Duration(days: 90));
+    _loadAllDataForGigsPage();
   }
 
   Future<void> _loadAllDataForGigsPage() async {
     await Future.wait([_loadVenues(), _loadGigs()]);
+    if (!mounted) return;
     for (final gig in _allGigs) {
       log('🎸 [GigsPage] Loaded gig: id=${gig.id} venue="${gig.venueName}"...');
     }
@@ -366,7 +414,8 @@ class _GigsPageState extends State<GigsPage>
       upcomingGigs: _displayedGigs,
       lookAheadDays: lookahead,
     );
-    if (mounted && results.isNotEmpty) {
+    if (!mounted) return;
+    if (results.isNotEmpty) {
       setState(() {
         _impactEventsByGigId = results;
         // Attach events back onto displayedGigs so the tile badge renders.
@@ -394,6 +443,7 @@ class _GigsPageState extends State<GigsPage>
       _isLoadingGigs = true;
     });
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
 
     // --- ALWAYS load from the original, correct key ---
     final String? gigsJsonString = prefs.getString(_keyGigsList);
@@ -403,24 +453,23 @@ class _GigsPageState extends State<GigsPage>
       try {
         loadedGigs = Gig.decode(gigsJsonString);
       } catch (e) {
-        if (mounted)
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Error loading gigs: $e')));
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading gigs: $e')));
       }
     }
 
-    if (mounted) {
-      _allGigs = loadedGigs;
-      _generateAndSetDisplayedGigs(); // This will handle generation, sorting, and setting state
-      setState(() {
-        _isLoadingGigs = false;
-      });
-    }
+    if (!mounted) return;
+    _allGigs = loadedGigs;
+    _generateAndSetDisplayedGigs(); // This will handle generation, sorting, and setting state
+    setState(() {
+      _isLoadingGigs = false;
+    });
   }
 
   Future<void> _loadMoreGigs() async {
-    if (!mounted || _isMoreGigsLoading) return;
+    if (!context.mounted || _isMoreGigsLoading) return;
 
     setState(() {
       _isMoreGigsLoading = true;
@@ -430,6 +479,8 @@ class _GigsPageState extends State<GigsPage>
       const Duration(milliseconds: 500),
     ); // Simulate network latency
 
+    if (!mounted) return;
+
     // Extend the date range and regenerate the list
     _gigListEndDate = _gigListEndDate.add(const Duration(days: 14));
     _generateAndSetDisplayedGigs();
@@ -437,11 +488,10 @@ class _GigsPageState extends State<GigsPage>
     // Assess impact events for gigs now visible in the extended window.
     _runImpactAssessment();
 
-    if (mounted) {
-      setState(() {
-        _isMoreGigsLoading = false;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _isMoreGigsLoading = false;
+    });
   }
 
   void _generateAndSetDisplayedGigs() {
@@ -471,7 +521,7 @@ class _GigsPageState extends State<GigsPage>
     // 3. Map and process display logic (Venue names, Band names)
     List<Gig> processedGigs = allOccurrences.map((gig) {
       final sourceVenue = _allKnownVenues.firstWhere(
-        (v) => v.placeId == gig.placeId,
+            (v) => v.placeId == gig.placeId,
         orElse: () => StoredLocation(
           placeId: '',
           name: gig.venueName,
@@ -486,8 +536,9 @@ class _GigsPageState extends State<GigsPage>
       }
       if (gig.isJamOpenMic && !gig.venueName.contains('[JAM]')) {
         processedVenueName = '[JAM] $processedVenueName';
-        if (gig.notes != null && gig.notes!.isNotEmpty)
+        if (gig.notes != null && gig.notes!.isNotEmpty) {
           processedVenueName += " (${gig.notes})";
+        }
       }
 
       return gig.copyWith(venueName: processedVenueName);
@@ -509,10 +560,10 @@ class _GigsPageState extends State<GigsPage>
         final existing = uniqueGigs[gig.id]!;
         final incomingHasData =
             gig.retrospectiveCompleted == true ||
-            (gig.notes?.isNotEmpty ?? false);
+                (gig.notes?.isNotEmpty ?? false);
         final existingLacksData =
             existing.retrospectiveCompleted != true &&
-            (existing.notes?.isEmpty ?? true);
+                (existing.notes?.isEmpty ?? true);
         if (incomingHasData && existingLacksData) {
           uniqueGigs[gig.id] = gig;
         }
@@ -529,13 +580,12 @@ class _GigsPageState extends State<GigsPage>
 
     sortedGigs.sort((a, b) => a.dateTime.compareTo(b.dateTime));
 
-    if (mounted) {
-      setState(() {
-        _displayedGigs = sortedGigs;
-      });
-      _prepareCalendarEvents();
-      _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
-    }
+    if (!mounted) return;
+    setState(() {
+      _displayedGigs = sortedGigs;
+    });
+    _prepareCalendarEvents();
+    _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
   }
 
   List<Gig> _generateJamOpenMicGigs(DateTime rangeEndDate) {
@@ -601,8 +651,8 @@ class _GigsPageState extends State<GigsPage>
 
     // The calculation should not exceed the gig's own end date, if it exists.
     DateTime calculationRangeEnd =
-        baseGig.recurrenceEndDate != null &&
-            baseGig.recurrenceEndDate!.isBefore(rangeEndDate)
+    baseGig.recurrenceEndDate != null &&
+        baseGig.recurrenceEndDate!.isBefore(rangeEndDate)
         ? baseGig.recurrenceEndDate!
         : rangeEndDate;
 
@@ -623,7 +673,7 @@ class _GigsPageState extends State<GigsPage>
 
     switch (baseGig.recurrenceFrequency) {
       case JamFrequencyType.weekly:
-        // Find the first valid occurrence on or after the iterator date.
+      // Find the first valid occurrence on or after the iterator date.
         DateTime testDate = _findNextDayOfWeek(
           iteratorDate,
           targetWeekday,
@@ -642,7 +692,7 @@ class _GigsPageState extends State<GigsPage>
         break;
 
       case JamFrequencyType.biWeekly:
-        // The anchor is always the date of the original event.
+      // The anchor is always the date of the original event.
         DateTime cycleAnchorDate = _findNextDayOfWeek(
           baseGig.dateTime,
           targetWeekday,
@@ -728,13 +778,13 @@ class _GigsPageState extends State<GigsPage>
   }
 
   void _addOccurrenceIfApplicable(
-    List<Gig> occurrences,
-    Gig baseGig,
-    DateTime dateOfOccurrence,
-  ) {
+      List<Gig> occurrences,
+      Gig baseGig,
+      DateTime dateOfOccurrence,
+      ) {
     if (baseGig.recurrenceExceptions != null &&
         baseGig.recurrenceExceptions!.any(
-          (exceptionDate) => isSameDay(exceptionDate, dateOfOccurrence),
+              (exceptionDate) => isSameDay(exceptionDate, dateOfOccurrence),
         )) {
       return;
     }
@@ -824,10 +874,10 @@ class _GigsPageState extends State<GigsPage>
         final existing = uniqueGigs[gig.id]!;
         final incomingHasData =
             gig.retrospectiveCompleted == true ||
-            (gig.notes?.isNotEmpty ?? false);
+                (gig.notes?.isNotEmpty ?? false);
         final existingLacksData =
             existing.retrospectiveCompleted != true &&
-            (existing.notes?.isEmpty ?? true);
+                (existing.notes?.isEmpty ?? true);
         if (incomingHasData && existingLacksData) {
           uniqueGigs[gig.id] = gig;
         }
@@ -843,17 +893,17 @@ class _GigsPageState extends State<GigsPage>
       events.putIfAbsent(date, () => []).add(gig);
     }
 
-    if (mounted)
-      setState(() {
-        _calendarEvents = events;
-      });
+    if (!mounted) return;
+    setState(() {
+      _calendarEvents = events;
+    });
   }
 
   DateTime _findNextDayOfWeek(
-    DateTime startDate,
-    int targetWeekday, {
-    bool sameDayOk = false,
-  }) {
+      DateTime startDate,
+      int targetWeekday, {
+        bool sameDayOk = false,
+      }) {
     DateTime date = DateTime(startDate.year, startDate.month, startDate.day);
     if (sameDayOk && date.weekday == targetWeekday) {
       return date;
@@ -867,11 +917,11 @@ class _GigsPageState extends State<GigsPage>
   }
 
   DateTime? _findNthSpecificWeekdayOfMonth(
-    int year,
-    int month,
-    int targetWeekday,
-    int nth,
-  ) {
+      int year,
+      int month,
+      int targetWeekday,
+      int nth,
+      ) {
     if (nth < 1 || nth > 5) return null;
     int occurrences = 0;
     int daysInMonth = DateTime(year, month + 1, 0).day;
@@ -903,10 +953,10 @@ class _GigsPageState extends State<GigsPage>
     );
     final normalizedCurrentSelectedDay = _selectedDay != null
         ? DateTime.utc(
-            _selectedDay!.year,
-            _selectedDay!.month,
-            _selectedDay!.day,
-          )
+      _selectedDay!.year,
+      _selectedDay!.month,
+      _selectedDay!.day,
+    )
         : null;
     if (!isSameDay(normalizedCurrentSelectedDay, normalizedNewSelectedDay)) {
       if (!mounted) return;
@@ -916,10 +966,10 @@ class _GigsPageState extends State<GigsPage>
         _selectedDayGigs = _getEventsForDay(selectedDay);
       });
     } else {
-      if (mounted)
-        setState(() {
-          _selectedDayGigs = _getEventsForDay(selectedDay);
-        });
+      if (!mounted) return;
+      setState(() {
+        _selectedDayGigs = _getEventsForDay(selectedDay);
+      });
     }
   }
 
@@ -929,37 +979,37 @@ class _GigsPageState extends State<GigsPage>
       _isLoadingVenues = true;
     });
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     final List<String>? venuesJson = prefs.getStringList(_keySavedLocations);
     List<StoredLocation> loadedFromPrefs = [];
     if (venuesJson != null) {
       try {
         loadedFromPrefs = venuesJson
             .map((jsonString) {
-              try {
-                return StoredLocation.fromJson(jsonDecode(jsonString));
-              } catch (e) {
-                log("Error decoding a single venue: $jsonString. Error: $e");
-                return null;
-              }
-            })
+          try {
+            return StoredLocation.fromJson(jsonDecode(jsonString));
+          } catch (e) {
+            log("Error decoding a single venue: $jsonString. Error: $e");
+            return null;
+          }
+        })
             .whereType<StoredLocation>()
             .toList();
       } catch (e) {
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error loading some venues: $e')),
-          );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading some venues: $e')),
+        );
       }
     }
-    if (mounted) {
-      setState(() {
-        _allKnownVenues = loadedFromPrefs;
-        _displayableVenues = _allKnownVenues
-            .where((venue) => !venue.isArchived)
-            .toList();
-        _isLoadingVenues = false;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _allKnownVenues = loadedFromPrefs;
+      _displayableVenues = _allKnownVenues
+          .where((venue) => !venue.isArchived)
+          .toList();
+      _isLoadingVenues = false;
+    });
   }
 
   Future<void> _launchBookingDialogForGig(Gig gigToEdit) async {
@@ -968,7 +1018,7 @@ class _GigsPageState extends State<GigsPage>
     Gig? originalGig;
     if (!gigToEdit.isJamOpenMic) {
       originalGig = _allGigs.firstWhere(
-        (g) => g.id == originalGigId,
+            (g) => g.id == originalGigId,
         orElse: () => gigToEdit,
       );
     } else {
@@ -982,12 +1032,12 @@ class _GigsPageState extends State<GigsPage>
       recurrenceNthValue: originalGig.recurrenceNthValue,
       recurrenceEndDate: originalGig.recurrenceEndDate,
       recurrenceExceptions:
-          originalGig.recurrenceExceptions, // Pass exceptions too
+      originalGig.recurrenceExceptions, // Pass exceptions too
     );
 
     if (originalGig.isJamOpenMic) {
       final sourceVenue = _allKnownVenues.firstWhere(
-        (v) => v.placeId == originalGig?.placeId,
+            (v) => v.placeId == originalGig?.placeId,
         orElse: () => StoredLocation(
           placeId: '',
           name: '',
@@ -996,9 +1046,10 @@ class _GigsPageState extends State<GigsPage>
         ),
       );
       if (sourceVenue.placeId.isEmpty) return;
+      if (!mounted) return;
       await showDialog(
         context: context,
-        builder: (BuildContext dialogContext) {
+        builder: (dialogContext) {
           return AlertDialog(
             title: Text(sourceVenue.name),
             content: const Text('This is a recurring Jam/Open Mic session.'),
@@ -1049,10 +1100,10 @@ class _GigsPageState extends State<GigsPage>
                     log("2. Extracted TRUE Session ID: $sessionId");
 
                     final venueIndex = _allKnownVenues.indexWhere(
-                      (v) => v.placeId == sourceVenue.placeId,
+                          (v) => v.placeId == sourceVenue.placeId,
                     );
                     final sessionIndex = sourceVenue.jamSessions.indexWhere(
-                      (s) => s.id == sessionId,
+                          (s) => s.id == sessionId,
                     );
 
                     if (venueIndex != -1 && sessionIndex != -1) {
@@ -1065,7 +1116,7 @@ class _GigsPageState extends State<GigsPage>
                         _allKnownVenues,
                       );
                       StoredLocation venueToUpdate =
-                          updatedAllVenues[venueIndex];
+                      updatedAllVenues[venueIndex];
                       List<JamSession> updatedSessions = List.from(
                         venueToUpdate.jamSessions,
                       );
@@ -1086,23 +1137,22 @@ class _GigsPageState extends State<GigsPage>
                       );
 
                       // 5. Force the UI to refresh with the updated in-memory data.
-                      if (mounted) {
-                        setState(() {
-                          // This is the crucial step: update the page's local state immediately.
-                          _allKnownVenues = updatedAllVenues;
-                        });
-                        // Now regenerate the gigs list using the corrected local data.
-                        _generateAndSetDisplayedGigs();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Jam session hidden.'),
-                            backgroundColor: Colors.blueAccent,
-                          ),
-                        );
-                        log(
-                          "5. Refresh complete. The session should now be hidden.",
-                        );
-                      }
+                      if (!mounted) return;
+                      setState(() {
+                        // This is the crucial step: update the page's local state immediately.
+                        _allKnownVenues = updatedAllVenues;
+                      });
+                      // Now regenerate the gigs list using the corrected local data.
+                      _generateAndSetDisplayedGigs();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Jam session hidden.'),
+                          backgroundColor: Colors.blueAccent,
+                        ),
+                      );
+                      log(
+                        "5. Refresh complete. The session should now be hidden.",
+                      );
                     } else {
                       log(
                         "Error: Could not find Venue (index: $venueIndex) or Session (index: $sessionIndex). This indicates a logic bug.",
@@ -1128,7 +1178,7 @@ class _GigsPageState extends State<GigsPage>
     final result = await showDialog<dynamic>(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
+      builder: (_) {
         return BookingDialog(
           editingGig: gigForDialog,
           googleApiKey: googleApiKey,
@@ -1137,17 +1187,19 @@ class _GigsPageState extends State<GigsPage>
       },
     );
 
+    if (!mounted) return;
+
     if (result is GigEditResult &&
         result.action != GigEditResultAction.noChange) {
       if (result.action == GigEditResultAction.updated && result.gig != null) {
         await _updateGig(result.gig!);
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Gig "${result.gig!.venueName}" updated.'),
-              backgroundColor: Colors.green,
-            ),
-          );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gig "${result.gig!.venueName}" updated.'),
+            backgroundColor: Colors.green,
+          ),
+        );
       } else if (result.action == GigEditResultAction.deleted &&
           result.gig != null) {
         if (result.cancelChoice != null &&
@@ -1155,13 +1207,13 @@ class _GigsPageState extends State<GigsPage>
           await _handleRecurringGigDeletion(result.gig!, result.cancelChoice!);
         } else if (result.cancelChoice == null) {
           await _deleteGig(result.gig!);
-          if (mounted)
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Gig "${result.gig!.venueName}" cancelled.'),
-                backgroundColor: Colors.orange,
-              ),
-            );
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gig "${result.gig!.venueName}" cancelled.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
         }
       }
     } else if (result is Gig) {
@@ -1169,7 +1221,8 @@ class _GigsPageState extends State<GigsPage>
 
       // Assess the newly booked gig immediately
       _impactEventService.fetchImpactEvents(gig: result).then((events) {
-        if (mounted && events.isNotEmpty) {
+        if (!mounted) return;
+        if (events.isNotEmpty) {
           setState(() {
             _impactEventsByGigId[result.id] = events;
             final idx = _displayedGigs.indexWhere((g) => g.id == result.id);
@@ -1182,13 +1235,13 @@ class _GigsPageState extends State<GigsPage>
         }
       });
 
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('New gig "${result.venueName}" booked.'),
-            backgroundColor: Colors.green,
-          ),
-        );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('New gig "${result.venueName}" booked.'),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
@@ -1196,21 +1249,28 @@ class _GigsPageState extends State<GigsPage>
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => NotesPage(
+        builder: (_) => NotesPage(
           editingGigId: gig.id,
           scrollToImpact: scrollToImpact, // ← new param on NotesPage
           initialImpactEvents: gig.impactEvents ?? [],
         ),
       ),
     );
-    if (result is Gig && mounted) {
-      final idx = _allGigs.indexWhere((g) => g.id == result.getBaseId());
-      if (idx != -1) {
-        setState(() {
-          _allGigs[idx] = result;
-        });
-        _generateAndSetDisplayedGigs();
-      }
+    if (!mounted) return;
+    if (result is Gig) {
+      // NotesPage._saveGigNotes() already wrote the correct data straight to
+      // SharedPreferences (either updating the exact-id record or adding a
+      // new materialized instance). Re-syncing _allGigs by finding the slot
+      // via result.getBaseId() and overwriting it with `result` was WRONG:
+      // for a recurring series that slot holds the TEMPLATE (isRecurring:
+      // true), and overwriting it with one occurrence's full data (its own
+      // id/date, isRecurring: false, and its ratings/tips) corrupted the
+      // template in memory — and permanently on disk the next time any other
+      // save path (e.g. _updateGig/_deleteGig) persisted _allGigs. A
+      // corrupted template then leaks its stale ratings into every other
+      // freshly-opened occurrence of that series (see notes_page.dart fix).
+      // Reload from the source of truth instead of hand-patching memory.
+      await _loadGigs();
       globalRefreshNotifier.notify();
     }
   }
@@ -1235,6 +1295,7 @@ class _GigsPageState extends State<GigsPage>
 
         // 3. Persist the entire list to SharedPreferences
         final prefs = await SharedPreferences.getInstance();
+        if (!mounted) return;
         await prefs.setString(_keyGigsList, Gig.encode(_allGigs));
 
         // 4. CRITICAL: Regenerate the concrete instances for the ListView
@@ -1246,6 +1307,7 @@ class _GigsPageState extends State<GigsPage>
         // Reschedule notifications with updated gig date/time
         final notificationService = NotificationService();
         await notificationService.init();
+        if (!mounted) return;
         await notificationService.updateAllGigNotifications();
 
         log("✅ Gig updated and saved successfully to disk.");
@@ -1254,37 +1316,37 @@ class _GigsPageState extends State<GigsPage>
       }
     } catch (e) {
       log("❌ Error in _updateGig: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error updating gig: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error updating gig: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
   Future<void> _deleteGig(Gig gigToDelete) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
       _allGigs.removeWhere((g) => g.id == gigToDelete.getBaseId());
       await prefs.setString(_keyGigsList, Gig.encode(_allGigs));
 
       final notificationService = NotificationService();
       await notificationService.init();
+      if (!mounted) return;
       await notificationService.updateAllGigNotifications();
 
       globalRefreshNotifier.notify();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error cancelling gig: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error cancelling gig: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -1296,8 +1358,8 @@ class _GigsPageState extends State<GigsPage>
     // Check non-recurring gigs
     upcomingActualGigsAtVenue.addAll(
       _allGigs.where(
-        (g) =>
-            !g.isRecurring &&
+            (g) =>
+        !g.isRecurring &&
             g.placeId == venueToArchive.placeId &&
             !g.isJamOpenMic &&
             g.dateTime.isAfter(DateTime.now()),
@@ -1305,8 +1367,8 @@ class _GigsPageState extends State<GigsPage>
     );
     // Check recurring gigs
     for (var gig in _allGigs.where(
-      (g) =>
-          g.isRecurring &&
+          (g) =>
+      g.isRecurring &&
           g.placeId == venueToArchive.placeId &&
           !g.isJamOpenMic,
     )) {
@@ -1319,23 +1381,23 @@ class _GigsPageState extends State<GigsPage>
         'Are you sure you want to archive "${venueToArchive.name}"?';
     if (upcomingActualGigsAtVenue.isNotEmpty) {
       dialogMessage +=
-          '\n\nThis will also DELETE all upcoming actual gig(s) scheduled here (including all recurring instances).';
+      '\n\nThis will also DELETE all upcoming actual gig(s) scheduled here (including all recurring instances).';
     } else {
       dialogMessage +=
-          '\nIt will be hidden from lists but not permanently deleted.';
+      '\nIt will be hidden from lists but not permanently deleted.';
     }
 
     final bool confirmArchive =
         await showDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) {
+          builder: (_) {
             return AlertDialog(
               title: Text('Confirm Archive: ${venueToArchive.name}'),
               content: Text(dialogMessage),
               actions: <Widget>[
                 TextButton(
                   child: const Text('CANCEL'),
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  onPressed: () => Navigator.of(context).pop(false),
                 ),
                 TextButton(
                   child: Text(
@@ -1344,14 +1406,15 @@ class _GigsPageState extends State<GigsPage>
                       color: Theme.of(context).colorScheme.error,
                     ),
                   ),
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  onPressed: () => Navigator.of(context).pop(true),
                 ),
               ],
             );
           },
         ) ??
-        false;
+            false;
 
+    if (!mounted) return;
     if (confirmArchive) {
       setState(() {
         _isLoadingVenues = true;
@@ -1366,7 +1429,7 @@ class _GigsPageState extends State<GigsPage>
             ? Gig.decode(gigsJsonString)
             : [];
         currentAllActualGigs.removeWhere(
-          (gig) => gig.placeId == venueToArchive.placeId && !gig.isJamOpenMic,
+              (gig) => gig.placeId == venueToArchive.placeId && !gig.isJamOpenMic,
         );
         await prefs.setString(_keyGigsList, Gig.encode(currentAllActualGigs));
 
@@ -1376,7 +1439,7 @@ class _GigsPageState extends State<GigsPage>
       }
 
       int index = _allKnownVenues.indexWhere(
-        (v) => v.placeId == venueToArchive.placeId,
+            (v) => v.placeId == venueToArchive.placeId,
       );
       if (index != -1) {
         List<StoredLocation> updatedAllVenues = List.from(_allKnownVenues);
@@ -1390,25 +1453,24 @@ class _GigsPageState extends State<GigsPage>
       }
 
       globalRefreshNotifier.notify();
-      if (mounted) {
-        String snackbarMessage = 'Venue "${venueToArchive.name}" archived.';
-        if (upcomingActualGigsAtVenue.isNotEmpty) {
-          snackbarMessage += ' All associated actual gigs deleted.';
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(snackbarMessage),
-            backgroundColor: Colors.orange,
-          ),
-        );
+      if (!mounted) return;
+      String snackbarMessage = 'Venue "${venueToArchive.name}" archived.';
+      if (upcomingActualGigsAtVenue.isNotEmpty) {
+        snackbarMessage += ' All associated actual gigs deleted.';
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(snackbarMessage),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
   Future<void> _updateVenueJamNightSettings(StoredLocation updatedVenue) async {
     final prefs = await SharedPreferences.getInstance();
     int index = _allKnownVenues.indexWhere(
-      (v) => v.placeId == updatedVenue.placeId,
+          (v) => v.placeId == updatedVenue.placeId,
     );
     if (index != -1) {
       List<StoredLocation> updatedAllVenuesList = List.from(_allKnownVenues);
@@ -1418,10 +1480,10 @@ class _GigsPageState extends State<GigsPage>
       // Don't persist read-only JSON jam venues unless user has modified them
       final List<StoredLocation> venuesToSave = updatedAllVenuesList.where((v) {
         final hasVisibleJamSessions = v.jamSessions.any(
-          (s) => s.showInGigsList,
+              (s) => s.showInGigsList,
         );
         return v.placeId ==
-                updatedVenue.placeId || // Always save the venue being updated
+            updatedVenue.placeId || // Always save the venue being updated
             hasVisibleJamSessions ||
             v.rating > 0 ||
             v.isArchived ||
@@ -1435,17 +1497,17 @@ class _GigsPageState extends State<GigsPage>
           .map((v) => jsonEncode(v.toJson()))
           .toList();
       await prefs.setStringList(_keySavedLocations, updatedVenuesJson);
-      if (mounted) {
-        globalRefreshNotifier.notify();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Jam/Open Mic settings updated for ${updatedVenue.name}.',
-            ),
-            backgroundColor: Colors.green,
+      if (!mounted) return;
+      globalRefreshNotifier.notify();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Jam/Open Mic settings updated for ${updatedVenue.name}.',
           ),
-        );
-      }
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
@@ -1453,15 +1515,15 @@ class _GigsPageState extends State<GigsPage>
     if (!mounted) return;
 
     final upcomingGigs =
-        _displayedGigs
-            .where(
-              (g) =>
-                  g.placeId == venue.placeId &&
-                  g.dateTime.isAfter(DateTime.now()) &&
-                  !g.isJamOpenMic,
-            )
-            .toList()
-          ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    _displayedGigs
+        .where(
+          (g) =>
+      g.placeId == venue.placeId &&
+          g.dateTime.isAfter(DateTime.now()) &&
+          !g.isJamOpenMic,
+    )
+        .toList()
+      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
     final nextUpcomingGig = upcomingGigs.isNotEmpty ? upcomingGigs.first : null;
 
     await Navigator.of(context).push(
@@ -1475,15 +1537,15 @@ class _GigsPageState extends State<GigsPage>
           },
           onBook: (venueToSaveAndBook) async {
             await _updateAndSaveLocationReview(venueToSaveAndBook);
+            if (!mounted) return;
             final newGig = await _launchBookingDialogForVenue(
               venueToSaveAndBook,
             );
             if (newGig != null) {
               await Future.delayed(const Duration(milliseconds: 100));
-              if (mounted) {
-                Navigator.of(context).pop();
-                _showVenueDetailsDialog(venueToSaveAndBook);
-              }
+              if (!mounted) return;
+              Navigator.of(context).pop();
+              _showVenueDetailsDialog(venueToSaveAndBook);
             }
           },
           onSave: (updatedVenue) {
@@ -1491,7 +1553,7 @@ class _GigsPageState extends State<GigsPage>
           },
           onContactSaved: (contact, bookingInfo) async {
             final index = _allKnownVenues.indexWhere(
-              (v) => v.placeId == venue.placeId,
+                  (v) => v.placeId == venue.placeId,
             );
             if (index != -1) {
               _allKnownVenues[index] = _allKnownVenues[index].copyWith(
@@ -1499,19 +1561,19 @@ class _GigsPageState extends State<GigsPage>
                 bookingInfo: bookingInfo,
               );
               final prefs = await SharedPreferences.getInstance();
+              if (!mounted) return;
               final updatedJson = _allKnownVenues
                   .map((v) => jsonEncode(v.toJson()))
                   .toList();
               await prefs.setStringList(_keySavedLocations, updatedJson);
+              if (!mounted) return;
               globalRefreshNotifier.notify();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Contact updated for ${venue.name}.'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Contact updated for ${venue.name}.'),
+                  backgroundColor: Colors.green,
+                ),
+              );
             }
           },
           onEditJamSettings: () async {
@@ -1539,11 +1601,11 @@ class _GigsPageState extends State<GigsPage>
   }
 
   Future<void> _updateAndSaveLocationReview(
-    StoredLocation updatedLocation,
-  ) async {
+      StoredLocation updatedLocation,
+      ) async {
     List<StoredLocation> updatedAllVenues = List.from(_allKnownVenues);
     int index = updatedAllVenues.indexWhere(
-      (loc) => loc.placeId == updatedLocation.placeId,
+          (loc) => loc.placeId == updatedLocation.placeId,
     );
 
     if (index != -1) {
@@ -1554,37 +1616,38 @@ class _GigsPageState extends State<GigsPage>
 
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
       final List<String> locationsJson = updatedAllVenues
           .map((loc) => jsonEncode(loc.toJson()))
           .toList();
       await prefs.setStringList(_keySavedLocations, locationsJson);
+      if (!mounted) return;
       globalRefreshNotifier.notify();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${updatedLocation.name} saved!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${updatedLocation.name} saved!'),
+          backgroundColor: Colors.green,
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving venue: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving venue: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
   Future<Gig?> _launchBookingDialogForVenue(StoredLocation venue) async {
     const String googleApiKey = String.fromEnvironment('GOOGLE_API_KEY');
+    if (!mounted) return null;
     return await showDialog<Gig>(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
+      builder: (_) {
         return BookingDialog(
           preselectedVenue: venue,
           googleApiKey: googleApiKey,
@@ -1631,40 +1694,8 @@ class _GigsPageState extends State<GigsPage>
     );
   }
 
-  /// Merges public venue data with local user preferences for jam sessions
-  /// Preserves showInGigsList setting from local version
-  StoredLocation _mergeVenueJamPreferences(
-    StoredLocation publicVenue,
-    StoredLocation? localVenue,
-  ) {
-    if (localVenue == null || localVenue.jamSessions.isEmpty) {
-      return publicVenue; // No local preferences to preserve
-    }
-
-    // Create map of local jam preferences by session ID
-    final Map<String, bool> localPreferences = {
-      for (var session in localVenue.jamSessions)
-        session.id: session.showInGigsList,
-    };
-
-    // Merge: Use public jam data but preserve local showInGigsList setting
-    final mergedJamSessions = publicVenue.jamSessions.map((publicSession) {
-      final localPref = localPreferences[publicSession.id];
-      if (localPref != null) {
-        // User has a preference for this session, preserve it
-        return publicSession.copyWith(showInGigsList: localPref);
-      }
-      return publicSession; // New session, use public default
-    }).toList();
-
-    return publicVenue.copyWith(jamSessions: mergedJamSessions);
-  }
 
   Widget _buildGigsTabContent() {
-    bool hasUpcomingGigs = _displayedGigs.any(
-      (gig) => !gig.isJamOpenMic && gig.dateTime.isAfter(DateTime.now()),
-    );
-
     if (_isLoadingGigs && _displayedGigs.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -1693,9 +1724,9 @@ class _GigsPageState extends State<GigsPage>
                 onPressed: _allGigs.isEmpty
                     ? null
                     : () => showGigInsightsDialog(
-                        context: context,
-                        allGigs: _allGigs,
-                      ),
+                  context: context,
+                  allGigs: _allGigs,
+                ),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(
                     color: Theme.of(context).colorScheme.primary,
@@ -1860,7 +1891,7 @@ class _GigsPageState extends State<GigsPage>
     // 3. Build the ListView.
     // The rest of this method remains the same as it correctly renders the items.
     bool _firstGigKeyAssigned =
-        false; // 🎬 Track whether we've assigned the key yet
+    false; // 🎬 Track whether we've assigned the key yet
 
     return ListView.builder(
       controller: _scrollController,
@@ -1999,10 +2030,10 @@ class _GigsPageState extends State<GigsPage>
 
                 final List<Gig> gigEvents = events.cast<Gig>();
                 bool hasActualGig = gigEvents.any(
-                  (gig) => !gig.isJamOpenMic && !gig.isRecurring,
+                      (gig) => !gig.isJamOpenMic && !gig.isRecurring,
                 ); // One-off gig
                 bool hasRecurringGig = gigEvents.any(
-                  (gig) => !gig.isJamOpenMic && gig.isRecurring,
+                      (gig) => !gig.isJamOpenMic && gig.isRecurring,
                 ); // Recurring gig instance
                 bool hasJam = gigEvents.any((gig) => gig.isJamOpenMic);
                 List<Widget> markers = [];
@@ -2039,29 +2070,29 @@ class _GigsPageState extends State<GigsPage>
         Expanded(
           child: _selectedDayGigs.isNotEmpty
               ? ListView.builder(
-                  itemCount: _selectedDayGigs.length,
-                  itemBuilder: (context, index) {
-                    final gig = _selectedDayGigs[index];
-                    return GigListTile(
-                      gig: gig,
-                      style: GigTileStyle.calendarView,
-                      onTap: () => _launchBookingDialogForGig(gig),
-                      onNotesTap: () => _openNotesPage(gig),
-                    );
-                  },
-                )
+            itemCount: _selectedDayGigs.length,
+            itemBuilder: (context, index) {
+              final gig = _selectedDayGigs[index];
+              return GigListTile(
+                gig: gig,
+                style: GigTileStyle.calendarView,
+                onTap: () => _launchBookingDialogForGig(gig),
+                onNotesTap: () => _openNotesPage(gig),
+              );
+            },
+          )
               : Center(
-                  child: Text(
-                    _selectedDay != null
-                        ? 'No events for ${DateFormat.yMMMEd().format(_selectedDay!)}.'
-                        : 'Select a day to see events.',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.white70
-                          : Colors.black87,
-                    ),
-                  ),
-                ),
+            child: Text(
+              _selectedDay != null
+                  ? 'No events for ${DateFormat.yMMMEd().format(_selectedDay!)}.'
+                  : 'Select a day to see events.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white70
+                    : Colors.black87,
+              ),
+            ),
+          ),
         ),
       ],
     );

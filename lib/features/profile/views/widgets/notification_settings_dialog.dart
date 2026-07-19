@@ -110,11 +110,11 @@ class _NotificationSettingsDialogState
         } catch (e) {
           log('❌ Error updating notifications: $e');
         } finally {
-          if (mounted) Navigator.of(context, rootNavigator: true).pop();
+          if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
         }
       }
 
-      if (mounted) {
+      if (context.mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

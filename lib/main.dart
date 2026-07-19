@@ -244,7 +244,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   Future<void> _maybeCheckInviteCodeReentry() async {
-    if (!mounted) return;
+    if (!context.mounted) return;
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     if (!demoProvider.isDemoModeActive) {
       await maybeShowInviteCodeReentry(context);
@@ -259,9 +259,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     final hasSeenIntro =
     forceDemoForTesting ? false : (prefs.getBool(DemoProvider.hasSeenIntroKey) ?? false);
 
-    log('🎬 Main: hasSeenIntro=$hasSeenIntro, mounted=$mounted');
+    log('🎬 Main: hasSeenIntro=$hasSeenIntro, context.mounted=${context.mounted}');
 
-    if (!hasSeenIntro && mounted) {
+    if (!hasSeenIntro && context.mounted) {
       log('🎬 Main: First launch — starting onboarding...');
       await Provider.of<DemoProvider>(context, listen: false)
           .startDemo(force: forceDemoForTesting);
@@ -336,12 +336,12 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     } finally {
       // ALWAYS clear the loading flag, success or failure, so the app can
       // never get stuck on the spinner.
-      if (mounted) {
+      if (context.mounted) {
         setState(() {
           if (pendingGigResult != null) {
             _gigNeedingReview = pendingGigResult;
             GigRetrospectiveService.getGigsNeedingRetrospective().then((allGigs) {
-              if (mounted) {
+              if (context.mounted) {
                 setState(() => _totalGigsNeedingReview = allGigs.length);
               }
             });
@@ -364,7 +364,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     await Future.delayed(const Duration(milliseconds: 50));
     final gigsNeedingReview =
     await GigRetrospectiveService.getGigsNeedingRetrospective();
-    if (gigsNeedingReview.isNotEmpty && mounted) {
+    if (gigsNeedingReview.isNotEmpty && context.mounted) {
       setState(() {
         _gigNeedingReview = gigsNeedingReview.first;
         _totalGigsNeedingReview = gigsNeedingReview.length;
@@ -380,7 +380,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
   Future<void> _initializeSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    if (!context.mounted) return;
     final backgroundPaths =
     List.generate(4, (i) => prefs.getString('background_image_$i'));
     final backgroundColors = List.generate(4, (i) {
@@ -454,7 +454,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       if (await canLaunchUrl(emailLaunchUri)) {
         await launchUrl(emailLaunchUri);
       } else {
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Could not open email app')),
           );
@@ -463,6 +463,77 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     } catch (e) {
       log('Error launching email: $e');
     }
+  }
+
+  // ✅ NEW: Opens the Help Videos YouTube playlist in the browser/YouTube app.
+  Future<void> _openHelpVideos() async {
+    final Uri helpVideosUri =
+    Uri.parse('https://www.youtube.com/playlist?list=PLaiWq3b5YIi8');
+
+    try {
+      if (await canLaunchUrl(helpVideosUri)) {
+        await launchUrl(helpVideosUri, mode: LaunchMode.externalApplication);
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open Help Videos')),
+          );
+        }
+      }
+    } catch (e) {
+      log('Error launching Help Videos: $e');
+    }
+  }
+
+  // ✅ NEW: Bottom sheet shown when the "?" icon is tapped — lets the user
+  // choose between emailing Cliff and watching the Help Videos playlist.
+  void _showHelpMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.grey[850],
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 12, bottom: 4),
+                child: Text(
+                  'How can we help?',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.email_outlined, color: Colors.white),
+                title:
+                const Text('Email Cliff', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _sendFeedbackEmail();
+                },
+              ),
+              ListTile(
+                leading:
+                const Icon(Icons.play_circle_outline, color: Colors.white),
+                title: const Text('Help Videos',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _openHelpVideos();
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _openAddGigDialog() async {
@@ -476,7 +547,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
       const String googleApiKey = String.fromEnvironment('GOOGLE_API_KEY');
 
-      if (mounted) {
+      if (context.mounted) {
         final GigEditResult? result = await showDialog<GigEditResult>(
           context: context,
           builder: (context) => BookingDialog(
@@ -496,7 +567,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
           await notificationService.updateAllGigNotifications();
 
           globalRefreshNotifier.notify();
-          if (mounted) {
+          if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                 content: Text('Gig booked successfully!'),
                 backgroundColor: Colors.green));
@@ -505,7 +576,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       }
     } catch (e) {
       log('Error opening Add Gig dialog: $e');
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Could not open gig form: $e')));
       }
@@ -582,8 +653,10 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
                     padding: const EdgeInsets.all(8),
                     child: const Icon(Icons.question_mark, color: Colors.white, size: 24),
                   ),
-                  tooltip: 'Contact Cliff',
-                  onPressed: _sendFeedbackEmail,
+                  // ✅ CHANGED: was _sendFeedbackEmail directly — now opens a
+                  // choice between emailing Cliff and the Help Videos playlist.
+                  tooltip: 'Help',
+                  onPressed: _showHelpMenu,
                 ),
               ),
             ],

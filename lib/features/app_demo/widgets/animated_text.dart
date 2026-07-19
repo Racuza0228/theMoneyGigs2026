@@ -31,7 +31,7 @@ class _AnimatedTextState extends State<AnimatedText> {
   void _startAnimation() {
     _timer = Timer.periodic(widget.speed, (timer) {
       if (_charIndex < widget.text.length) {
-        if (mounted) {
+        if (context.mounted) {
           setState(() {
             _displayText += widget.text[_charIndex];
             _charIndex++;

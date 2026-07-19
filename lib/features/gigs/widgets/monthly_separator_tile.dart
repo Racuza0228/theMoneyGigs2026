@@ -23,10 +23,10 @@ class MonthlySeparatorTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       margin: const EdgeInsets.only(top: 16, left: 8, right: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).primaryColor.withOpacity(0.1),
+        color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: Theme.of(context).primaryColor.withOpacity(0.2),
+          color: Theme.of(context).primaryColor.withValues(alpha: 0.2),
         ),
       ),
       child: Column(

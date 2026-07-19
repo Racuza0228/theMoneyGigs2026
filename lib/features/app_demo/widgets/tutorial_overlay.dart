@@ -45,7 +45,7 @@ class TutorialOverlay extends StatelessWidget {
               painter: _HighlightPainter(
                 highlightKey: highlightKey,
                 context: context,
-                overlayColor: Colors.black.withOpacity(0.7),
+                overlayColor: Colors.black.withValues(alpha: 0.7),
                 // Pass the new property to the painter
                 showDimmedOverlay: showDimmedOverlay, // <<< 3. PASS TO PAINTER
               ),
@@ -58,7 +58,7 @@ class TutorialOverlay extends StatelessWidget {
               painter: _HighlightPainter(
                 highlightKey: highlightKey,
                 context: context,
-                overlayColor: Colors.black.withOpacity(0.7),
+                overlayColor: Colors.black.withValues(alpha: 0.7),
                 showDimmedOverlay: showDimmedOverlay, // <<< 3. PASS TO PAINTER
               ),
             ),
@@ -70,7 +70,7 @@ class TutorialOverlay extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 24.0),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withValues(alpha: 0.6),
                 border: Border.all(color: Colors.white, width: 1.5),
                 borderRadius: BorderRadius.circular(16.0),
               ),

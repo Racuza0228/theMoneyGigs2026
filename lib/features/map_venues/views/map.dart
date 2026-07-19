@@ -141,7 +141,7 @@ class _MapPageState extends State<MapPage> {
     // the current grant status and unblocks the GoogleMap widget.
     Geolocator.checkPermission().then((permission) {
       FirebaseCrashlytics.instance.log('map: initState perm=$permission');
-      if (mounted) {
+      if (context.mounted) {
         setState(() {
           _permissionResolved = true;
           _locationPermissionGranted =
@@ -152,7 +152,7 @@ class _MapPageState extends State<MapPage> {
     }).catchError((Object e) {
       // Permission check failed — unblock map with safe defaults.
       log('⚠️ initState permission pre-check failed: $e');
-      if (mounted) setState(() => _permissionResolved = true);
+      if (context.mounted) setState(() => _permissionResolved = true);
     });
   }
 
@@ -163,8 +163,8 @@ class _MapPageState extends State<MapPage> {
   /// ask for location permission. After dismissal the OS dialog appears with
   /// context, so users understand exactly why we need it.
   Future<void> _showLocationRationaleIfNeeded() async {
-    if (!mounted) return;
     final prefs = await SharedPreferences.getInstance();
+
     final alreadyExplained =
         prefs.getBool('location_rationale_shown') ?? false;
     if (alreadyExplained) return;
@@ -176,33 +176,30 @@ class _MapPageState extends State<MapPage> {
     if (city.isNotEmpty || zip.isNotEmpty) return;
 
     await prefs.setBool('location_rationale_shown', true);
-    if (!mounted) return;
-
-    // Push the dialog below the status bar + AppBar.
-    // extendBodyBehindAppBar is true in main.dart, so without this the
-    // dialog floats up behind the AppBar.
-    final double topClearance =
-        MediaQuery.of(context).padding.top + kToolbarHeight + 8;
-
+    if (!context.mounted) return;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        insetPadding: EdgeInsets.fromLTRB(24, topClearance, 24, 24),
-        title: const Text('Finding venues near you'),
-        content: const Text(
-          'MoneyGigs uses your location to center the map on your area '
-              'so you can find nearby venues where musicians play.\n\n'
-              "We'll ask for location access now. You can also set your home "
-              'city in Profile instead if you prefer.',
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Got it'),
+      builder: (ctx) {
+        final double topClearance =
+            MediaQuery.of(ctx).padding.top + kToolbarHeight + 8;
+        return AlertDialog(
+          insetPadding: EdgeInsets.fromLTRB(24, topClearance, 24, 24),
+          title: const Text('Finding venues near you'),
+          content: const Text(
+            'MoneyGigs uses your location to center the map on your area '
+                'so you can find nearby venues where musicians play.\n\n'
+                "We'll ask for location access now. You can also set your home "
+                'city in Profile instead if you prefer.',
           ),
-        ],
-      ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Got it'),
+            ),
+          ],
+        );
+      },
     );
   }
   Future<void> _resolvePermissionBeforeMapInit() async {
@@ -216,7 +213,7 @@ class _MapPageState extends State<MapPage> {
       log('⚠️ Pre-flight permission check failed: $e');
     } finally {
       FirebaseCrashlytics.instance.log('map: resolvePermBeforeInit done');
-      if (mounted) setState(() => _permissionResolved = true);
+      if (context.mounted) setState(() => _permissionResolved = true);
     }
   }
 
@@ -236,7 +233,7 @@ class _MapPageState extends State<MapPage> {
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
         // Set fallback and return — never touch LocationService
-        if (mounted) {
+        if (context.mounted) {
           setState(() {
             _initialCameraPosition = CameraPosition(target: fallback, zoom: 12.0);
             _locationPermissionGranted = false;
@@ -246,35 +243,31 @@ class _MapPageState extends State<MapPage> {
       }
       // Permission confirmed — safe to proceed
       FirebaseCrashlytics.instance.log('map: setInitialCamera perm ok');
-      if (mounted) {
-        setState(() => _locationPermissionGranted = true);
-      }
+      if (!context.mounted) return;
+      setState(() => _locationPermissionGranted = true);
     } catch (e) {
       log('⚠️ Permission pre-check failed: $e');
-      if (mounted) {
-        setState(() {
-          _initialCameraPosition = CameraPosition(target: fallback, zoom: 12.0);
-        });
-      }
+      if (!context.mounted) return;
+      setState(() {
+        _initialCameraPosition = CameraPosition(target: fallback, zoom: 12.0);
+      });
       return;
     }
 
     try {
       final locationService = LocationService();
       final LatLng center = await locationService.getInitialMapCenter();
-      if (mounted) {
-        setState(() {
-          _initialCameraPosition = CameraPosition(target: center, zoom: 12.0);
-        });
-      }
+      if (!context.mounted) return;
+      setState(() {
+        _initialCameraPosition = CameraPosition(target: center, zoom: 12.0);
+      });
     } catch (e, s) {
       log('⚠️ _setInitialCameraPosition failed — using Cincinnati fallback: $e\n$s');
-      if (mounted) {
-        setState(() {
-          _initialCameraPosition =
-              CameraPosition(target: fallback, zoom: 12.0);
-        });
-      }
+      if (!context.mounted) return;
+      setState(() {
+        _initialCameraPosition =
+            CameraPosition(target: fallback, zoom: 12.0);
+      });
     }
 
     // Gate myLocation on actual permission status so the Google Maps SDK
@@ -282,13 +275,12 @@ class _MapPageState extends State<MapPage> {
     // triggers a native assertion on iOS 26 regardless of the Dart-level catch.
     try {
       final permission = await Geolocator.checkPermission();
-      if (mounted) {
-        setState(() {
-          _locationPermissionGranted =
-              permission == LocationPermission.whileInUse ||
-                  permission == LocationPermission.always;
-        });
-      }
+      if (!context.mounted) return;
+      setState(() {
+        _locationPermissionGranted =
+            permission == LocationPermission.whileInUse ||
+                permission == LocationPermission.always;
+      });
     } catch (e) {
       // If the permission check itself fails, leave _locationPermissionGranted
       // false — safe default, myLocation stays off, no SDK assertion.
@@ -311,20 +303,14 @@ class _MapPageState extends State<MapPage> {
       // layer on here — one step after onMapCreated, not at build time — is
       // what prevents the iOS 26 native assertion crashing Dad and Iqui.
       FirebaseCrashlytics.instance.log('map: enabling myLocation layer');
-      if (mounted) {
-        setState(() => _myLocationEnabled = true);
-      }
+      if (!context.mounted) return;
+      setState(() => _myLocationEnabled = true);
 
       final locationService = LocationService();
       final LatLng actual = await locationService.getInitialMapCenter();
 
-      if (mounted) {
-        await controller.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(target: actual, zoom: 12.0),
-          ),
-        );
-      }
+      if (!context.mounted) return;
+      await controller.animateCamera(CameraUpdate.newCameraPosition(CameraPosition(target: actual, zoom: 12.0)));
     } catch (e) {
       // Non-fatal — user can always tap the my-location button.
       log('⚠️ Could not re-center on actual location: $e');
@@ -339,12 +325,13 @@ class _MapPageState extends State<MapPage> {
       // Show a one-time explanation before the OS location dialog appears.
       // This gives users context so the permission request doesn't feel random.
       await _showLocationRationaleIfNeeded();
+      if (!context.mounted) return;
 
       // _setInitialCameraPosition is now internally guarded — a location
       // failure falls back to Cincinnati rather than throwing up the stack.
       await _setInitialCameraPosition();
 
-      if (!mounted) return;
+      if (!context.mounted) return;
 
       // Set up listeners.
       globalRefreshNotifier.addListener(_handleGlobalRefresh);
@@ -358,14 +345,14 @@ class _MapPageState extends State<MapPage> {
           if (_searchController.text.isNotEmpty) {
             _fetchAutocompleteResults(_searchController.text);
           } else {
-            if (mounted) setState(() => _autocompleteResults = []);
+            if (context.mounted) setState(() => _autocompleteResults = []);
           }
         });
       });
 
       if (_googleApiKey.isEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
+          if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text(
@@ -380,19 +367,19 @@ class _MapPageState extends State<MapPage> {
       // Now load all the data for the map.
       await _loadAllMapData();
 
-      if (mounted) {
+      if (context.mounted) {
         setState(() => _isFullyInitialized = true);
       }
 
       // If a replay mapTutorial signal arrived before init completed,
       // show the tutorial now that the map is ready and skip the
       // normal first-launch shouldShow check.
-      if (mounted) {
+      if (context.mounted) {
         final dp = Provider.of<DemoProvider>(context, listen: false);
         if (dp.isDemoModeActive && dp.currentStep == DemoStep.mapTutorial) {
           log('🗺️ MapTutorial: SHOWING — reason: mapTutorial step was pending during init');
           await Future.delayed(const Duration(milliseconds: 800));
-          if (mounted) setState(() => _showMapTutorial = true);
+          if (context.mounted) setState(() => _showMapTutorial = true);
           return;
         }
       }
@@ -405,10 +392,10 @@ class _MapPageState extends State<MapPage> {
       // Replay path goes through DemoProvider.mapTutorial step instead.
       final tutorialNeeded = await MapTutorialOverlay.shouldShow();
       log('🗺️ MapTutorial: _initializeAndLoadData check — shouldShow=$tutorialNeeded');
-      if (mounted && tutorialNeeded) {
+      if (context.mounted && tutorialNeeded) {
         log('🗺️ MapTutorial: SHOWING — reason: first launch, map_tutorial_shown not set');
         await Future.delayed(const Duration(milliseconds: 800));
-        if (mounted) setState(() => _showMapTutorial = true);
+        if (context.mounted) setState(() => _showMapTutorial = true);
       } else {
         log('🗺️ MapTutorial: suppressed — map_tutorial_shown already set');
       }
@@ -418,7 +405,7 @@ class _MapPageState extends State<MapPage> {
       log('❌ _initializeAndLoadData failed — showing empty map: $e\n$s');
       // Unblock the UI so the user sees the map shell rather than an
       // infinite spinner, even if some data failed to load.
-      if (mounted && !_isFullyInitialized) {
+      if (context.mounted && !_isFullyInitialized) {
         setState(() => _isFullyInitialized = true);
       }
     }
@@ -429,7 +416,7 @@ class _MapPageState extends State<MapPage> {
     globalRefreshNotifier.removeListener(_handleGlobalRefresh);
     // Use try-catch as the provider might be disposed during hot restart.
     try {
-      if (mounted) {
+      if (context.mounted) {
         Provider.of<DemoProvider>(context, listen: false).removeListener(_onDemoStateChanged);
       }
     } catch (e) {
@@ -444,7 +431,7 @@ class _MapPageState extends State<MapPage> {
 
   // --- DEMO ---
   void _onDemoStateChanged() {
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     final step = demoProvider.currentStep;
@@ -459,7 +446,7 @@ class _MapPageState extends State<MapPage> {
       if (_isFullyInitialized) {
         log('🗺️ MapTutorial: SHOWING — reason: replay demo reached mapTutorial step');
         Future.delayed(const Duration(milliseconds: 800), () {
-          if (mounted) setState(() => _showMapTutorial = true);
+          if (context.mounted) setState(() => _showMapTutorial = true);
         });
       } else {
         log('🗺️ MapTutorial: map not yet initialized — pending signal will be caught in _initializeAndLoadData');
@@ -523,7 +510,7 @@ class _MapPageState extends State<MapPage> {
   }
 
   void _handleGlobalRefresh() {
-    if (mounted) {
+    if (context.mounted) {
       log("🗺️ MapPage received global refresh signal. Reloading all map data.");
       _loadAllMapData();
       // Re-center in case the user just saved a new profile address.
@@ -537,7 +524,7 @@ class _MapPageState extends State<MapPage> {
   Future<void> _recenterMapFromProfile() async {
     final locationService = LocationService();
     final LatLng newCenter = await locationService.getInitialMapCenter();
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     // Update the stored position so a hot-reload also gets the right coordinates.
     setState(() {
@@ -556,7 +543,7 @@ class _MapPageState extends State<MapPage> {
   }
 
   Future<void> _loadAllMapData() async {
-    if (!mounted) return;
+    if (!context.mounted) return;
     setState(() { _isLoading = true; });
 
     // ── Step 1: Local data — each call has its own error handling internally.
@@ -607,7 +594,7 @@ class _MapPageState extends State<MapPage> {
       try {
         await ensureRevenueCatConfigured();
 
-        if (!mounted) return;
+        if (!context.mounted) return;
 
         const String userId = 'default_user_id';
         _venueRepository = VenueRepository();
@@ -648,7 +635,7 @@ class _MapPageState extends State<MapPage> {
     // ── Step 4: Commit state and update markers.
     // Guard mounted check before every setState — the user may have
     // navigated away during the async Firebase load.
-    if (!mounted) return;
+    if (!context.mounted) return;
     setState(() {
       _gigMarkerIcon      = loadedGigIcon;
       _allKnownMapVenues  = finalVenuesMap.values.toList();
@@ -672,7 +659,7 @@ class _MapPageState extends State<MapPage> {
           ? authService.currentUserId
           : 'anonymous';
       final publicVenues = await _venueRepository!.getAllPublicVenues(userId);
-      if (!mounted) return;
+      if (!context.mounted) return;
 
       setState(() {
         for (var publicVenue in publicVenues) {
@@ -707,7 +694,7 @@ class _MapPageState extends State<MapPage> {
       }
       return uniqueVenues.values.toList();
     } catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not load Jam Session data: ${e.toString()}'), backgroundColor: Colors.red));
       }
     }
@@ -748,12 +735,26 @@ class _MapPageState extends State<MapPage> {
 
   // --- UI & INTERACTION ---
 
+  /// A gig counts as "upcoming" if it's a one-off/materialized gig whose
+  /// date is still ahead, OR an active recurring series (hasn't passed its
+  /// recurrenceEndDate). Recurring templates never get their `dateTime`
+  /// bumped forward as time passes — it stays pinned to the original anchor
+  /// occurrence — so `gig.dateTime.isAfter(now)` alone silently drops every
+  /// recurring gig once that anchor date is in the past, which is true for
+  /// virtually any established weekly/biweekly series.
+  bool _hasUpcomingOccurrence(Gig gig, DateTime now) {
+    if (gig.isRecurring) {
+      return gig.recurrenceEndDate == null || gig.recurrenceEndDate!.isAfter(now);
+    }
+    return gig.dateTime.isAfter(now);
+  }
+
   Future<void> _updateMarkers() async {
-    if (!mounted || _gigMarkerIcon == null) return;
+    if (!context.mounted || _gigMarkerIcon == null) return;
 
     final Set<Marker> newMarkers = {};
     final now = DateTime.now();
-    final upcomingGigVenuePlaceIds = _allLoadedGigs.where((gig) => gig.dateTime.isAfter(now)).map((gig) => gig.placeId).toSet();
+    final upcomingGigVenuePlaceIds = _allLoadedGigs.where((gig) => _hasUpcomingOccurrence(gig, now)).map((gig) => gig.placeId).toSet();
     final currentDisplayableVenues = _allKnownMapVenues.where((v) => !v.isArchived).toList();
 
     List<StoredLocation> venuesToShow;
@@ -791,7 +792,7 @@ class _MapPageState extends State<MapPage> {
       venuesToShow = venuesToShow.sublist(0, markerHardCap);
     }
 
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     for (var loc in venuesToShow) {
       final bool hasUpcomingGig = upcomingGigVenuePlaceIds.contains(loc.placeId);
@@ -827,7 +828,7 @@ class _MapPageState extends State<MapPage> {
 
   Future<void> _fetchAutocompleteResults(String input) async {
     final results = await _placesService.fetchAutocompleteResults(input);
-    if (mounted) {
+    if (context.mounted) {
       setState(() { _autocompleteResults = results; });
     }
   }
@@ -839,7 +840,7 @@ class _MapPageState extends State<MapPage> {
       demoProvider.nextStep();
     }
 
-    if (mounted) {
+    if (context.mounted) {
       setState(() {
         _isLoading = true;
         _isSearchVisible = false;
@@ -851,8 +852,11 @@ class _MapPageState extends State<MapPage> {
 
     final placeDetails = await _placesService.fetchPlaceDetails(selectedPlace.placeId);
 
-    if (mounted && placeDetails != null) {
+    if (!context.mounted) return;
+
+    if (placeDetails != null) {
       final GoogleMapController controller = await _controller.future;
+      if (!context.mounted) return;
 
       const nonVenueTypes = {
         'locality', 'administrative_area_level_1', 'administrative_area_level_2',
@@ -872,23 +876,24 @@ class _MapPageState extends State<MapPage> {
         _askToAddOrViewVenue(placeDetails);
       }
     }
-    if (mounted) setState(() => _isLoading = false);
+    if (context.mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _handleMapTap(LatLng tappedPoint) async {
     if (_googleApiKey.isEmpty) return;
-    if (mounted) setState(() { _isLoading = true; });
+    if (context.mounted) setState(() { _isLoading = true; });
     try {
       const String typesToSearch = "restaurant|bar|cafe|night_club|music_venue|performing_arts_theater|stadium";
       final String url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${tappedPoint.latitude},${tappedPoint.longitude}&radius=50&type=$typesToSearch&key=$_googleApiKey';
       final response = await http.get(Uri.parse(url));
-      if (!mounted) return;
+      if (!context.mounted) return;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['status'] == 'OK' && data['results'] is List && (data['results'] as List).isNotEmpty) {
           final List<dynamic> venues = data['results'];
           if (venues.length == 1) {
             final placeDetails = await _placesService.fetchPlaceDetails(venues[0]['place_id']);
+            if (!context.mounted) return;
             if (placeDetails != null) {
               _askToAddOrViewVenue(placeDetails);
             }
@@ -918,6 +923,7 @@ class _MapPageState extends State<MapPage> {
                             Navigator.of(dialogContext).pop();
                             if (selectedResult != null) {
                               final placeDetails = await _placesService.fetchPlaceDetails(selectedResult['place_id']);
+                              if (!context.mounted) return;
                               if (placeDetails != null) {
                                 _askToAddOrViewVenue(placeDetails);
                               }
@@ -932,21 +938,24 @@ class _MapPageState extends State<MapPage> {
             );
           }
         } else {
+          if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No matching venues found nearby.')));
         }
       } else {
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error contacting Google Places: ${response.statusCode}')));
       }
     } catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred: $e'), backgroundColor: Colors.red));
       }
     } finally {
-      if (mounted) setState(() { _isLoading = false; });
+      if (context.mounted) setState(() { _isLoading = false; });
     }
   }
 
   Future<void> _askToAddOrViewVenue(PlaceApiResult place) async {
+    if (!context.mounted) return;
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     final existingLocations = _allKnownMapVenues.where((loc) => loc.placeId == place.placeId);
 
@@ -957,6 +966,7 @@ class _MapPageState extends State<MapPage> {
       }
       _showLocationDetailsDialog(existingLocations.first);
     } else {
+      if (!context.mounted) return;
       await showDialog<void>(
         context: context,
         builder: (BuildContext dialogContext) {
@@ -1013,13 +1023,13 @@ class _MapPageState extends State<MapPage> {
 
       globalRefreshNotifier.notify();
 
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${updatedLocation.name} saved!'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving venue: $e'), backgroundColor: Colors.red));
       }
     }
@@ -1055,21 +1065,21 @@ class _MapPageState extends State<MapPage> {
 
     globalRefreshNotifier.notify();
 
-    if (mounted) {
+    if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${newLocation.name} added to saved venues!')));
     }
     _showLocationDetailsDialog(newLocation);
   }
 
   Future<void> _saveBookedGig(Gig newGig) async {
-    if (!mounted) return;
+    if (!context.mounted) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       List<Gig> existingGigs = await _loadAllGigs();
       existingGigs.add(newGig);
       await prefs.setString(_keyGigsList, Gig.encode(existingGigs));
       globalRefreshNotifier.notify();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig booked at ${newGig.venueName}!'), backgroundColor: Colors.green));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gig booked at ${newGig.venueName}!'), backgroundColor: Colors.green));
     } catch (e) {
       // Handle error
     }
@@ -1081,7 +1091,7 @@ class _MapPageState extends State<MapPage> {
       return null;
     }
     List<Gig> existingGigs = await _loadAllGigs();
-    if (!mounted) return null;
+    if (!context.mounted) return null;
 
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
 
@@ -1122,7 +1132,7 @@ class _MapPageState extends State<MapPage> {
       final currentVenue = _allKnownMapVenues[index];
       final updatedVenue = currentVenue.copyWith(isArchived: !currentVenue.isArchived);
       await _updateAndSaveLocationReview(updatedVenue);
-      if (mounted) {
+      if (context.mounted) {
         final action = updatedVenue.isArchived ? 'archived' : 'restored';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${venueToArchive.name} $action.')));
       }
@@ -1154,16 +1164,24 @@ class _MapPageState extends State<MapPage> {
 
   Future<void> _showLocationDetailsDialog(StoredLocation passedInLocation) async {
     final location = _allKnownMapVenues.firstWhere((loc) => loc.placeId == passedInLocation.placeId, orElse: () => passedInLocation);
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     setState(() { _isLoading = true; });
     List<Gig> allGigs = await _loadAllGigs();
-    List<Gig> upcomingGigsForVenue = allGigs.where((gig) => gig.placeId == location.placeId && gig.dateTime.isAfter(DateTime.now())).toList();
+    final now = DateTime.now();
+    List<Gig> upcomingGigsForVenue = allGigs.where((gig) => gig.placeId == location.placeId && _hasUpcomingOccurrence(gig, now)).toList();
     upcomingGigsForVenue.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    // NOTE: for a matched recurring gig, `.dateTime` here is still the
+    // template's original anchor date, not the true next occurrence date —
+    // this now correctly flags that a future gig EXISTS, but the specific
+    // date shown on the venue sheet for a recurring match may be stale/past.
+    // Computing the real next occurrence needs the same generator gigs.dart
+    // uses (_generateOccurrencesForGig); worth extracting into a shared
+    // util both files can call rather than duplicating it here.
     Gig? nextUpcomingGig = upcomingGigsForVenue.isNotEmpty ? upcomingGigsForVenue.first : null;
     setState(() { _isLoading = false; });
 
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final demoProvider = Provider.of<DemoProvider>(context, listen: false);
     final demoStep = demoProvider.isDemoModeActive ? demoProvider.currentStep : null;
@@ -1183,7 +1201,7 @@ class _MapPageState extends State<MapPage> {
             final newGig = await _launchBookingDialogForVenue(venueToSaveAndBook);
             if (newGig != null) {
               await Future.delayed(const Duration(milliseconds: 100));
-              if (mounted) {
+              if (context.mounted) {
                 Navigator.of(context).pop(); // pop VenueDetailPage
                 _showLocationDetailsDialog(venueToSaveAndBook); // reopen
               }
@@ -1240,7 +1258,9 @@ class _MapPageState extends State<MapPage> {
           final demoProvider =
           Provider.of<DemoProvider>(context, listen: false);
           if (demoProvider.isDemoModeActive &&
-              demoProvider.currentStep != DemoStep.mapTutorial) return;
+              demoProvider.currentStep != DemoStep.mapTutorial) {
+            return;
+          }
           _initializeAndLoadData().catchError((Object e, StackTrace s) {
             log('❌ Map init (VisibilityDetector) failed: $e\n$s');
           });
@@ -1485,11 +1505,13 @@ class _MapPageState extends State<MapPage> {
   // the tutorial even shows, and never moves again during a tutorial
   // that requires no panning. Checking fresh here removes that race.
   Future<void> _checkAndOfferVenuePopulationIfEmpty(String? sessionId) async {
-    if (!mounted || !_controller.isCompleted) return;
+    if (!context.mounted || !_controller.isCompleted) return;
 
     try {
       final controller = await _controller.future;
       final LatLngBounds bounds = await controller.getVisibleRegion();
+      if (!context.mounted) return;
+
       final hasVenuesInView = _allKnownMapVenues
           .where((v) => !v.isArchived)
           .any((v) => bounds.contains(v.coordinates));
@@ -1506,7 +1528,7 @@ class _MapPageState extends State<MapPage> {
   // user's viewport had none after the tutorial finished. Never runs
   // outside onboarding — only reachable via the tutorial's onDismiss above.
   Future<void> _offerVenuePopulationForEmptyArea(String? sessionId) async {
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final shouldPopulate = await showDialog<bool>(
       context: context,
@@ -1532,7 +1554,7 @@ class _MapPageState extends State<MapPage> {
       ),
     );
 
-    if (shouldPopulate != true || !mounted) {
+    if (shouldPopulate != true || !context.mounted) {
       if (sessionId != null) {
         MapTutorialOverlay.trackPopulateOutcome(
           sessionId,
@@ -1545,6 +1567,8 @@ class _MapPageState extends State<MapPage> {
 
     final controller = await _controller.future;
     final bounds = await controller.getVisibleRegion();
+    if (!context.mounted) return;
+
     final centerLat =
         (bounds.northeast.latitude + bounds.southwest.latitude) / 2;
     final centerLng =
@@ -1552,7 +1576,7 @@ class _MapPageState extends State<MapPage> {
 
     setState(() => _isPopulatingVenues = true);
 
-    if (!mounted) return;
+    if (!context.mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1583,7 +1607,7 @@ class _MapPageState extends State<MapPage> {
       log('❌ Error populating venues for empty area: $e');
     }
 
-    if (!mounted) return;
+    if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop(); // close loading dialog
     setState(() => _isPopulatingVenues = false);
 

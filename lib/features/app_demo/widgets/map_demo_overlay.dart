@@ -75,7 +75,7 @@ class MapDemoOverlay extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.9),
+                    color: Colors.black.withValues(alpha: 0.9),
                     border: Border.all(color: Colors.white, width: 2),
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -183,7 +183,7 @@ class _HighlightPainter extends CustomPainter {
 
     final overlayPath = Path.combine(PathOperation.difference, fullScreenPath, highlightPath);
 
-    canvas.drawPath(overlayPath, Paint()..color = Colors.black.withOpacity(0.7));
+    canvas.drawPath(overlayPath, Paint()..color = Colors.black.withValues(alpha: 0.7));
   }
 
   @override

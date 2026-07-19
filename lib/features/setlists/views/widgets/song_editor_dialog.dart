@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../models/song_model.dart';
 import 'package:the_money_gigs/core/services/music_facts_service.dart';
 import 'package:uuid/uuid.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class SongEditorDialog extends StatefulWidget {
   final Song? song; // If null, we're creating a new song
@@ -124,9 +125,9 @@ class _SongEditorDialogState extends State<SongEditorDialog> {
         });
       }
     } catch (e) {
-      print('Error fetching song facts: $e');
+      log('Error fetching song facts: $e');
     } finally {
-      if (mounted) {
+      if (context.mounted) {
         setState(() {
           _isLoadingFacts = false;
         });

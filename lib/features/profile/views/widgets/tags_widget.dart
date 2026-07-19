@@ -38,7 +38,7 @@ class _TagsWidgetState extends State<TagsWidget> {
 
   Future<void> _loadTags() async {
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final instrumentTags = prefs.getStringList(_keyInstrumentTags) ?? [];
     final genreTags = prefs.getStringList(_keyGenreTags) ?? [];
@@ -54,7 +54,7 @@ class _TagsWidgetState extends State<TagsWidget> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_keyInstrumentTags, _instrumentTags.toList());
     await prefs.setStringList(_keyGenreTags, _genreTags.toList());
-    if (mounted) {
+    if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Your skills have been updated!'),
@@ -182,7 +182,7 @@ class _TagsWidgetState extends State<TagsWidget> {
           children: tags.map((tag) {
             return Chip(
               label: Text(tag, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.8),
+              backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
               onDeleted: () => _removeTag(tag, tags),
               deleteIcon: const Icon(Icons.cancel, size: 18),
               deleteIconColor: Colors.white70,

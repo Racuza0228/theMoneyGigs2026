@@ -1,7 +1,24 @@
 // lib/features/map_venues/widgets/venue_detail_page.dart
 //
-// Step 2: General tab fully populated.
-// Business tab (Step 3) and Booking tab (Step 4) still stubbed.
+// ── Sync model (read this before touching _handleSave) ──────────────────────
+// Two modes:
+//   1) Standalone — not connected to the network (no invite code / not
+//      signed in). Everything on this page saves to the phone only, via
+//      widget.onSave(). No Firebase calls happen at all.
+//   2) Network member — connected AND the venue isn't marked Private. Then,
+//      per tab:
+//        General  -> syncs to the public DB (rating, comment, instrument/
+//                    genre/actFormat tags). Always, no extra toggle.
+//        Business -> syncs to the public DB (Deal Type, Payment Method and
+//                    Tax Arrangement tags). Always, no extra toggle.
+//        Booking  -> contact info + leads-out months + booking-window date
+//                    sync to the public DB ONLY if "Share with Network" is
+//                    on. Off = saved locally only, same as Standalone mode.
+//                    (Enforced inside _BookingTabState.saveContact().)
+//        Private  -> the 4th tab (rendered as _NotesTab below: personal
+//                    notes, external link, tax docs) — always local-only,
+//                    in BOTH modes. Never touches Firebase.
+// See _handleSave() for where this is enforced.
 
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -123,10 +140,9 @@ class _VenueDetailPageState extends State<VenueDetailPage>
 
   Future<void> _initializePage() async {
     await _checkConnectionStatus();
-    if (mounted) {
-      _loadUserRating();
-      _loadCommunityVenueData();
-    }
+    if (!context.mounted) return;
+    _loadUserRating();
+    _loadCommunityVenueData();
     // Dirty tracking for notes + URL fields
     _notesController.addListener(() => setState(() => _isDirty = true));
     _urlController.addListener(() => setState(() => _isDirty = true));
@@ -134,11 +150,10 @@ class _VenueDetailPageState extends State<VenueDetailPage>
 
   Future<void> _checkConnectionStatus() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _isConnected = prefs.getBool(_isConnectedKey) ?? false;
-      });
-    }
+    if (!context.mounted) return;
+    setState(() {
+      _isConnected = prefs.getBool(_isConnectedKey) ?? false;
+    });
   }
 
   Future<void> _loadUserRating() async {
@@ -152,13 +167,13 @@ class _VenueDetailPageState extends State<VenueDetailPage>
           .collection('venueRatings')
           .doc(docId)
           .get();
-      if (doc.exists && mounted) {
-        final data = doc.data()!;
-        setState(() {
-          _currentRating = (data['rating'] as num).toDouble();
-          _commentController.text = data['comment'] as String? ?? '';
-        });
-      }
+      if (!doc.exists) return;
+      if (!context.mounted) return;
+      final data = doc.data()!;
+      setState(() {
+        _currentRating = (data['rating'] as num).toDouble();
+        _commentController.text = data['comment'] as String? ?? '';
+      });
     } catch (e) {
       log('❌ Error loading user rating: $e');
     }
@@ -171,17 +186,17 @@ class _VenueDetailPageState extends State<VenueDetailPage>
           .collection('venues')
           .doc(widget.venue.placeId)
           .get();
-      if (doc.exists && mounted) {
-        final data = doc.data()!;
-        setState(() {
-          if (data.containsKey('contact')) {
-            _localContact = VenueContact.fromJson(data['contact'] as Map<String, dynamic>);
-          }
-          if (data.containsKey('bookingInfo')) {
-            _localBookingInfo = BookingInfo.fromJson(data['bookingInfo'] as Map<String, dynamic>);
-          }
-        });
-      }
+      if (!doc.exists) return;
+      if (!context.mounted) return;
+      final data = doc.data()!;
+      setState(() {
+        if (data.containsKey('contact')) {
+          _localContact = VenueContact.fromJson(data['contact'] as Map<String, dynamic>);
+        }
+        if (data.containsKey('bookingInfo')) {
+          _localBookingInfo = BookingInfo.fromJson(data['bookingInfo'] as Map<String, dynamic>);
+        }
+      });
     } catch (e) {
       log('❌ Error loading community venue data: $e');
     }
@@ -229,72 +244,122 @@ class _VenueDetailPageState extends State<VenueDetailPage>
   // ── Save / Book ───────────────────────────────────────────────────────────
 
   Future<void> _handleSave() async {
-    // Also save contact/booking fields from the Booking tab
+    // Captured before any await — calling methods on the ScaffoldMessengerState
+    // itself later doesn't require touching BuildContext again, so this
+    // sidesteps the "BuildContext across an async gap" issue entirely rather
+    // than relying on a mounted check at the point of use.
+    final messenger = ScaffoldMessenger.of(context);
+
+    // Booking tab: contact + leads-out + booking window. Always saved
+    // locally by this call. Only reaches the public DB if "Share with
+    // Network" is on — that gating lives inside saveContact() itself, so
+    // nothing below needs to re-check it.
     await _bookingTabKey.currentState?.saveContact();
 
     final updatedVenue = _buildUpdatedVenue();
+
+    // Standalone mode (and network members editing a Private venue) stop
+    // here — local save only, no Firebase calls at all.
     widget.onSave(updatedVenue);
 
-    if (_isConnected && !updatedVenue.isPrivate) {
-      try {
-        final authService = AuthService();
-        final userId = authService.isSignedIn
-            ? authService.currentUserId
-            : 'anonymous';
+    final isNetworkMember = _isConnected && !updatedVenue.isPrivate;
+    final syncErrors = <String>[];
 
-        // New venue → write to public DB, stripping private fields first
-        if (!widget.venue.isPublic) {
-          final venueForFirebase = updatedVenue.copyWith(
-            venueNotes: () => null,
-            venueNotesUrl: () => null,
-          );
-          _venueRepository.saveVenue(venueForFirebase, userId);
+    if (isNetworkMember) {
+      final authService = AuthService();
+      final userId =
+      authService.isSignedIn ? authService.currentUserId : 'anonymous';
+
+      // ── First-ever publish ────────────────────────────────────────────────
+      // saveVenue() only ever writes name/address/coordinates/placeId/
+      // jamSessions (see VenueRepository) — it never touches contact,
+      // bookingInfo, rating, or tags, so there's nothing to strip here.
+      if (!widget.venue.isPublic) {
+        try {
+          await _venueRepository.saveVenue(updatedVenue, userId);
+        } catch (e) {
+          log('❌ Error publishing venue: $e');
+          syncErrors.add('venue');
         }
+      }
 
-        // Only write a rating/comment if the user actually provided one.
-        // A zero rating with no comment is a no-op SAVE tap — skip it entirely.
-        final hasRating = updatedVenue.rating > 0;
-        final hasComment = updatedVenue.comment != null &&
-            updatedVenue.comment!.trim().isNotEmpty;
-
-        if (hasRating || hasComment) {
-          _venueRepository.saveVenueRating(
+      // ── General tab: rating/comment ──────────────────────────────────────
+      // Skip entirely if this is a no-op SAVE tap (no rating, no comment).
+      final hasRating = updatedVenue.rating > 0;
+      final hasComment = updatedVenue.comment != null &&
+          updatedVenue.comment!.trim().isNotEmpty;
+      if (hasRating || hasComment) {
+        try {
+          await _venueRepository.saveVenueRating(
             userId: userId,
             placeId: updatedVenue.placeId,
             rating: updatedVenue.rating,
             comment: updatedVenue.comment,
-          ).catchError((e) {
-            log('❌ Error saving rating: $e');
-            return false;
-          });
+          );
+        } catch (e) {
+          log('❌ Error saving rating: $e');
+          syncErrors.add('rating');
         }
+      }
 
-        // Tag sync is independent of the rating — always push if tags exist.
-        if (updatedVenue.genreTags.isNotEmpty ||
-            updatedVenue.instrumentTags.isNotEmpty ||
-            updatedVenue.actFormatTags.isNotEmpty) {
-          _venueRepository
-              .syncLocalTagsToFirebase(
+      // ── General tab: instrument/genre/act-format tags ────────────────────
+      if (updatedVenue.genreTags.isNotEmpty ||
+          updatedVenue.instrumentTags.isNotEmpty ||
+          updatedVenue.actFormatTags.isNotEmpty) {
+        try {
+          await _venueRepository.syncLocalTagsToFirebase(
             placeId: updatedVenue.placeId,
             userId: userId,
             genreTags: updatedVenue.genreTags,
             instrumentTags: updatedVenue.instrumentTags,
             actFormatTags: updatedVenue.actFormatTags,
-          )
-              .catchError((e) => log('❌ Error syncing tags to Firebase: $e'));
+          );
+        } catch (e) {
+          log('❌ Error syncing tags to Firebase: $e');
+          syncErrors.add('tags');
         }
-
-        // Refresh community data regardless of which writes ran
-        widget.onDataChanged?.call();
-
-      } catch (e) {
-        log('❌ Error during Firebase save: $e');
       }
+
+      // ── Business tab: Deal Type ──────────────────────────────────────────
+      // Always syncs for network members — NOT gated by Share with Network.
+      // Lives in its own top-level `dealTypes` field (see
+      // VenueRepository.syncDealTypesToFirebase), separate from the
+      // `bookingInfo` map that saveVenueContact() writes only when Share
+      // with Network is on. Runs after the first-publish saveVenue() call
+      // above, so the doc already exists by the time this fires.
+      final dealTypes = updatedVenue.bookingInfo?.dealTypes ?? const <String>[];
+      if (dealTypes.isNotEmpty) {
+        try {
+          await _venueRepository.syncDealTypesToFirebase(
+            placeId: updatedVenue.placeId,
+            userId: userId,
+            dealTypes: dealTypes,
+          );
+        } catch (e) {
+          log('❌ Error syncing deal types to Firebase: $e');
+          syncErrors.add('deal type');
+        }
+      }
+
+      // Payment Method / Tax Arrangement tags already sync in real time as
+      // they're toggled in _CategoryTagsSectionState — nothing to do here.
+
+      // Refresh community data only after every write above has resolved,
+      // so the refreshed view can't race the saves that produced it.
+      widget.onDataChanged?.call();
     }
 
-    if (mounted) {
-      setState(() => _isDirty = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+    if (!mounted) return;
+    setState(() => _isDirty = false);
+    if (syncErrors.isNotEmpty) {
+      messenger.showSnackBar(SnackBar(
+        content:
+        Text('Saved locally. Cloud sync failed: ${syncErrors.join(', ')}.'),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 3),
+      ));
+    } else {
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('Venue saved.'),
           duration: Duration(seconds: 2),
@@ -379,6 +444,14 @@ class _VenueDetailPageState extends State<VenueDetailPage>
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  TextButton(
+                    // Same behavior as the AppBar's BackButton (maybePop,
+                    // no dirty-check) — just a second, more visible way out
+                    // of the page for anyone who scrolled past the arrow.
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    child: const Text('CLOSE'),
+                  ),
+                  const SizedBox(width: 8),
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 200),
                     child: _isDirty
@@ -558,28 +631,30 @@ class _GeneralTabState extends State<_GeneralTab>
       final id = authService.isSignedIn
           ? authService.currentUserId
           : 'anonymous';
-      if (mounted) setState(() => _currentUserId = id);
+      if (!context.mounted) return;
+      setState(() => _currentUserId = id);
     } catch (_) {}
   }
 
   Future<void> _loadRecentComments() async {
     if (!widget.venue.isPublic || !widget.isConnected) {
-      if (mounted) setState(() => _loadingComments = false);
+      if (!context.mounted) return;
+      setState(() => _loadingComments = false);
       return;
     }
     try {
       final comments = await _venueRepository.getRecentComments(
           placeId: widget.venue.placeId, limit: 10);
-      if (mounted) {
-        setState(() {
-          _recentComments = comments;
-          _loadingComments = false;
-          _currentCommentIndex = 0;
-        });
-      }
+      if (!context.mounted) return;
+      setState(() {
+        _recentComments = comments;
+        _loadingComments = false;
+        _currentCommentIndex = 0;
+      });
     } catch (e) {
       log('❌ Error loading comments: $e');
-      if (mounted) setState(() => _loadingComments = false);
+      if (!context.mounted) return;
+      setState(() => _loadingComments = false);
     }
   }
 
@@ -1180,17 +1255,23 @@ class _CategoryTagsSectionState extends State<_CategoryTagsSection> {
   }
 
   Future<void> _init() async {
+    // Same anonymous fallback used everywhere else on this page (rating,
+    // comment, instrument/genre tags) — previously this was the one spot
+    // that required a real sign-in, so Payment Method / Tax Arrangement
+    // votes silently never saved for anyone testing while signed out.
     try {
       final authService = AuthService();
-      if (authService.isSignedIn) {
-        _currentUserId = authService.currentUserId;
-      }
-    } catch (_) {}
+      _currentUserId =
+      authService.isSignedIn ? authService.currentUserId : 'anonymous';
+    } catch (_) {
+      _currentUserId = 'anonymous';
+    }
 
-    if (widget.isConnected && _currentUserId != null) {
+    if (widget.isConnected) {
       await _loadFirebaseTags();
     } else {
-      if (mounted) setState(() => _isLoading = false);
+      if (!context.mounted) return;
+      setState(() => _isLoading = false);
     }
   }
 
@@ -1201,9 +1282,11 @@ class _CategoryTagsSectionState extends State<_CategoryTagsSection> {
         userId: _currentUserId!,
         tagCategory: widget.tagCategory,
       );
-      if (mounted) setState(() { _firebaseTags = tags; _isLoading = false; });
+      if (!context.mounted) return;
+      setState(() { _firebaseTags = tags; _isLoading = false; });
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (!context.mounted) return;
+      setState(() => _isLoading = false);
     }
   }
 
@@ -1218,7 +1301,7 @@ class _CategoryTagsSectionState extends State<_CategoryTagsSection> {
     }
     widget.onTagsChanged(current);
 
-    if (widget.isConnected && _currentUserId != null) {
+    if (widget.isConnected) {
       if (isSelected) {
         await _venueRepository.removeVoteForTagByCategory(
           placeId: widget.venue.placeId,
@@ -1440,7 +1523,6 @@ class _BookingTabState extends State<_BookingTab>
   // ── Edit-mode flags (profile pattern) ─────────────────────────────────────
   bool _isEditingContact = false;
   bool _isEditingBooking = false;
-  bool _isSaving = false;
 
   // ── Contact form state ─────────────────────────────────────────────────────
   late final TextEditingController _nameController;
@@ -1478,12 +1560,11 @@ class _BookingTabState extends State<_BookingTab>
 
   Future<void> _loadProfileData() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _profileMusicLink = prefs.getString('musician_profile_music_link');
-        _profileCity = prefs.getString('profile_city');
-      });
-    }
+    if (!context.mounted) return;
+    setState(() {
+      _profileMusicLink = prefs.getString('musician_profile_music_link');
+      _profileCity = prefs.getString('profile_city');
+    });
   }
 
   void _initControllers() {
@@ -1555,12 +1636,11 @@ class _BookingTabState extends State<_BookingTab>
       if (!auth.isSignedIn) return;
       final result = await _venueRepository.getContactConfirmationState(
           placeId: widget.venue.placeId, userId: auth.currentUserId);
-      if (mounted) {
-        setState(() {
-          _userHasConfirmedContact = result['userConfirmed'] as bool? ?? false;
-          _liveConfirmationCount   = result['count'] as int? ?? _liveConfirmationCount;
-        });
-      }
+      if (!context.mounted) return;
+      setState(() {
+        _userHasConfirmedContact = result['userConfirmed'] as bool? ?? false;
+        _liveConfirmationCount   = result['count'] as int? ?? _liveConfirmationCount;
+      });
     } catch (e) {
       log('❌ Error loading confirmation: $e');
     }
@@ -1585,14 +1665,16 @@ class _BookingTabState extends State<_BookingTab>
             placeId: widget.venue.placeId, userId: auth.currentUserId);
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _userHasConfirmedContact = wasConfirmed;
-          _liveConfirmationCount  += wasConfirmed ? 1 : -1;
-        });
-      }
+      // Safe to early-return from inside catch — finally below still runs.
+      if (!context.mounted) return;
+      setState(() {
+        _userHasConfirmedContact = wasConfirmed;
+        _liveConfirmationCount  += wasConfirmed ? 1 : -1;
+      });
     } finally {
-      if (mounted) setState(() => _confirmationLoading = false);
+      if (context.mounted) {
+        setState(() => _confirmationLoading = false);
+      }
     }
   }
 
@@ -1600,7 +1682,9 @@ class _BookingTabState extends State<_BookingTab>
 
   Future<void> saveContact() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isSaving = true);
+
+    // Captured before any await, same reasoning as _handleSave above.
+    final messenger = ScaffoldMessenger.of(context);
 
     final existing = widget.localContact;
     final auth = AuthService();
@@ -1640,22 +1724,32 @@ class _BookingTabState extends State<_BookingTab>
         );
       } catch (e) {
         log('❌ Error saving contact to Firebase: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Saved locally. Cloud sync failed.'),
-            backgroundColor: Colors.orange,
-          ));
-        }
+        // messenger was captured before any await, so this doesn't touch
+        // BuildContext at all — safe to call even if the widget has since
+        // been unmounted (showSnackBar on a stale messenger is a no-op-ish
+        // call, not a crash), so _isEditing* below still resets either way.
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Saved locally. Cloud sync failed.'),
+          backgroundColor: Colors.orange,
+        ));
       }
     }
 
-    if (mounted) {
-      setState(() {
-        _isSaving           = false;
-        _isEditingContact   = false;
-        _isEditingBooking   = false;
-      });
-    }
+    if (!mounted) return;
+    // Only collapse Booking Details into its read-only display mode if
+    // there's actually data to show there. Its pencil only renders when
+    // hasBookingData is true (see build()), and its display block has the
+    // same gate — so unconditionally setting _isEditingBooking = false
+    // after a Contact-only save (Leads Out / booking window left empty)
+    // stranded the section with no pencil, no display, and no fields: a
+    // dead end with only the header visible. Keep it in edit mode until
+    // there's something worth collapsing to.
+    final hasBookingDataNow = updatedBookingInfo.leadsOutMonths != null ||
+        updatedBookingInfo.bookingWindowStart != null;
+    setState(() {
+      _isEditingContact = false;
+      _isEditingBooking = !hasBookingDataNow;
+    });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -2225,9 +2319,11 @@ class _NotesTabState extends State<_NotesTab>
           (g.notes?.isNotEmpty ?? false))
           .toList()
         ..sort((a, b) => b.dateTime.compareTo(a.dateTime));
-      if (mounted) setState(() { _historicalGigs = filtered; _loadingHistory = false; });
+      if (!context.mounted) return;
+      setState(() { _historicalGigs = filtered; _loadingHistory = false; });
     } catch (_) {
-      if (mounted) setState(() => _loadingHistory = false);
+      if (!context.mounted) return;
+      setState(() => _loadingHistory = false);
     }
   }
 
@@ -2238,16 +2334,15 @@ class _NotesTabState extends State<_NotesTab>
   Future<void> _loadTaxDoc() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_taxDocKey(_taxDocYear));
-    if (mounted) {
-      setState(() {
-        if (raw != null) {
-          final data = jsonDecode(raw) as Map<String, dynamic>;
-          _taxDocType = data['type'] as String?;
-        } else {
-          _taxDocType = null;
-        }
-      });
-    }
+    if (!context.mounted) return;
+    setState(() {
+      if (raw != null) {
+        final data = jsonDecode(raw) as Map<String, dynamic>;
+        _taxDocType = data['type'] as String?;
+      } else {
+        _taxDocType = null;
+      }
+    });
   }
 
   Future<void> _saveTaxDoc(String? type) async {
@@ -2269,15 +2364,22 @@ class _NotesTabState extends State<_NotesTab>
   Future<void> _launchUrl() async {
     final raw = widget.urlController.text.trim();
     if (raw.isEmpty) return;
+
+    // Captured before any await, same reasoning as _handleSave.
+    final messenger = ScaffoldMessenger.of(context);
     final uri = Uri.tryParse(raw.startsWith('http') ? raw : 'https://$raw');
-    if (uri != null && await canLaunchUrl(uri)) {
+    final canLaunch = uri != null && await canLaunchUrl(uri);
+
+    if (canLaunch) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open: $raw'),
-            backgroundColor: Colors.red),
-      );
+      return;
     }
+
+    if (!mounted) return;
+    messenger.showSnackBar(
+      SnackBar(content: Text('Could not open: $raw'),
+          backgroundColor: Colors.red),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────

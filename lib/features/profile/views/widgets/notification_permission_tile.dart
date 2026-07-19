@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:the_money_gigs/core/services/notification_service.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 class NotificationPermissionTile extends StatefulWidget {
   const NotificationPermissionTile({super.key});
@@ -75,12 +76,12 @@ class _NotificationPermissionTileState
       permanentlyDenied = status.isPermanentlyDenied;
     }
 
-    if (!mounted) return;
+    if (!context.mounted) return;
     setState(() {
       _isGranted = granted;
       _isPermanentlyDenied = permanentlyDenied;
     });
-    print('🔔 Status check: isGranted=$_isGranted, '
+    log('🔔 Status check: isGranted=$_isGranted, '
         'isPermanentlyDenied=$_isPermanentlyDenied, '
         'platform=${Platform.isIOS ? "iOS" : "Android"}');
   }
@@ -130,7 +131,7 @@ class _NotificationPermissionTileState
           sound: true,
         );
         if (granted == true) {
-          if (mounted) {
+          if (context.mounted) {
             setState(() {
               _isGranted = true;
               _isPermanentlyDenied = false;
@@ -163,7 +164,7 @@ class _NotificationPermissionTileState
         }
       }
     } finally {
-      if (mounted) setState(() => _isRequesting = false);
+      if (context.mounted) setState(() => _isRequesting = false);
     }
   }
 

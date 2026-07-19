@@ -26,6 +26,7 @@ import 'widgets/rate_display.dart';
 import 'widgets/rate_form_field.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:the_money_gigs/core/utils/logger.dart';
 
 
 
@@ -91,7 +92,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _loadProfileData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (!mounted) return;
+      if (!context.mounted) return;
 
       String address1 = prefs.getString(_keyAddress1) ?? '';
       String address2 = prefs.getString(_keyAddress2) ?? '';
@@ -126,8 +127,8 @@ class _ProfilePageState extends State<ProfilePage> {
       });
 
     } catch (e) {
-      print("Error loading profile data: $e");
-      if (mounted) {
+      log("Error loading profile data: $e");
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error loading profile: ${e.toString()}'),
@@ -165,7 +166,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
       await prefs.setString(_keyMusicLink, _musicLinkController.text.trim());
 
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile saved successfully!')),
         );
@@ -178,7 +179,7 @@ class _ProfilePageState extends State<ProfilePage> {
         globalRefreshNotifier.notify();
       }
     } else {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please correct the errors in the form.')),
         );
@@ -187,12 +188,12 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _sendFeedbackEmail() async {
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     // Show dialog asking if user wants to include diagnostic data
     final bool? includeData = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text('Send Feedback'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -274,7 +275,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final exportService = ExportService();
     await exportService.sendFeedback(context, includeData: includeData);
 
-    if (mounted) {
+    if (context.mounted) {
       setState(() => _isExporting = false);
     }
   }
@@ -655,17 +656,17 @@ class _ProfilePageState extends State<ProfilePage> {
                       final authService = AuthService();
 
                       // Show loading
-                      if (!mounted) return;
+                      if (!context.mounted) return;
                       showDialog(
                         context: context,
                         barrierDismissible: false,
-                        builder: (context) => const Center(child: CircularProgressIndicator()),
+                        builder: (_) => const Center(child: CircularProgressIndicator()),
                       );
 
                       final result = await authService.signInWithGoogle();
 
                       // Close loading
-                      if (!mounted) return;
+                      if (!context.mounted) return;
                       Navigator.pop(context);
 
                       // Show result
@@ -742,7 +743,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       await prefs.setBool('is_connected_to_network', false);
                       await prefs.remove('network_invite_code');
 
-                      if (!mounted) return;
+                      if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('✅ Network state reset! You can test invite codes again.'),
@@ -796,7 +797,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     await prefs.remove('network_invite_code');
 
                     // Show confirmation
-                    if (!mounted) return;
+                    if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('✅ Signed out successfully'),

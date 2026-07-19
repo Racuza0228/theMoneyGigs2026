@@ -63,7 +63,7 @@ class _GigCalculatorState extends State<GigCalculator>
     if (_googleApiKey.isEmpty) {
       log('WARNING (GigCalculator): GOOGLE_API_KEY not defined.');
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('API Key Missing: Booking new venues may fail.'),
@@ -107,7 +107,7 @@ class _GigCalculatorState extends State<GigCalculator>
 
   Future<void> _loadUserMinHourlyRate() async {
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    if (!context.mounted) return;
     setState(() {
       _userMinHourlyRate = prefs.getInt(_keyMinHourlyRate)?.toDouble();
       _calculateSuggestedPay();
@@ -150,7 +150,7 @@ class _GigCalculatorState extends State<GigCalculator>
     _gigTimeController.clear();
     _driveSetupTimeController.clear();
     _rehearsalTimeController.clear();
-    if (mounted) {
+    if (context.mounted) {
       setState(() {
         _isDoorGig = false;
         _hourlyRateResult = '';
@@ -164,7 +164,7 @@ class _GigCalculatorState extends State<GigCalculator>
   Future<void> _performCalculation() async {
     FocusScope.of(context).unfocus();
     await _loadUserMinHourlyRate();
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     String newHourlyRateResult = '';
     String newCurrentHourlyRateString = '';
@@ -240,7 +240,7 @@ class _GigCalculatorState extends State<GigCalculator>
       }
       return [];
     } catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Error loading existing gigs: $e'),
             backgroundColor: Colors.orange));
@@ -279,7 +279,7 @@ class _GigCalculatorState extends State<GigCalculator>
     }
 
     final List<Gig> allExistingGigs = await _loadAllGigsFromPreferences();
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final GigEditResult? result = await showDialog<GigEditResult>(
       context: context,
@@ -299,7 +299,7 @@ class _GigCalculatorState extends State<GigCalculator>
       },
     );
 
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     if (result != null &&
         result.action == GigEditResultAction.updated &&

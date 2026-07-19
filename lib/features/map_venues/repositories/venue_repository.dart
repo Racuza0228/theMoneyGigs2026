@@ -112,6 +112,36 @@ class VenueRepository {
     log('✅ Jam sessions synced to Firebase: $placeId');
   }
 
+  /// Pushes locally-added Deal Type selections to the public venue document.
+  ///
+  /// Only touches the top-level `dealTypes` field — ratings, tags, contact,
+  /// bookingInfo, and jamSessions are left completely untouched. This is
+  /// deliberately its OWN field, separate from `bookingInfo.dealType` (see
+  /// saveVenueContact below), because Deal Type is Business-tab data and
+  /// must always be public for network members — unlike the rest of
+  /// bookingInfo (contact, leadsOutWeeks), which is gated by
+  /// isSharedWithNetwork. If your security rules currently write dealType
+  /// only inside bookingInfo, you may end up with it in two places for
+  /// users who also have Share with Network on; that's harmless duplication,
+  /// not a conflict, since both are written from the same source of truth.
+  ///
+  /// Callers must guard for network-member mode (connected + venue not
+  /// private) before calling. If the document doesn't exist yet, the update
+  /// throws and the caller should treat it as non-fatal — call this only
+  /// after saveVenue() has created the doc.
+  Future<void> syncDealTypesToFirebase({
+    required String placeId,
+    required String userId,
+    required List<String> dealTypes,
+  }) async {
+    final venueRef = _firestoreInstance.collection('venues').doc(placeId);
+    await venueRef.update({
+      'dealTypes': dealTypes,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    log('✅ Deal types synced to Firebase: $placeId');
+  }
+
   // ── Contact ───────────────────────────────────────────────────────────────
 
   /// Saves the venue contact and optional booking info to Firestore.
@@ -290,7 +320,7 @@ class VenueRepository {
       log('⚠️ saveVenueRating: skipping zero rating for $placeId');
       return false;
     }
-    
+
     try {
       final batch = _firestoreInstance.batch();
 

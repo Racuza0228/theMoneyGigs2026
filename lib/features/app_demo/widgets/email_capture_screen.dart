@@ -75,20 +75,20 @@ class _EmailCaptureScreenState extends State<EmailCaptureScreen> {
       log('✅ Email lead captured: $email');
 
       // Advance demo
-      if (mounted) {
+      if (context.mounted) {
         final demoProvider = Provider.of<DemoProvider>(context, listen: false);
         demoProvider.nextStep();
         Navigator.of(context).pop();
       }
     } catch (e) {
       log('❌ Error capturing email: $e');
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error saving email. Please try again.')),
         );
       }
     } finally {
-      if (mounted) {
+      if (context.mounted) {
         setState(() => _isSubmitting = false);
       }
     }
@@ -98,7 +98,7 @@ class _EmailCaptureScreenState extends State<EmailCaptureScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('email_skipped', true);
 
-    if (mounted) {
+    if (context.mounted) {
       final demoProvider = Provider.of<DemoProvider>(context, listen: false);
       demoProvider.nextStep();
       Navigator.of(context).pop();
@@ -164,7 +164,7 @@ class _EmailCaptureScreenState extends State<EmailCaptureScreen> {
                         hintText: 'your.email@example.com',
                         hintStyle: const TextStyle(color: Colors.white38),
                         filled: true,
-                        fillColor: Colors.white.withOpacity(0.1),
+                        fillColor: Colors.white.withValues(alpha: 0.1),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: const BorderSide(color: Colors.white54),

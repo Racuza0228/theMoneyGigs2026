@@ -190,7 +190,7 @@ class _CoachingDemoFlowState extends State<CoachingDemoFlow> {
     if (confirmed == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(DemoProvider.hasSeenIntroKey, true);
-      if (mounted) {
+      if (context.mounted) {
         Provider.of<DemoProvider>(context, listen: false).endDemo();
       }
     }
@@ -580,7 +580,7 @@ class _CoachingDemoFlowState extends State<CoachingDemoFlow> {
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? Theme.of(context).colorScheme.primary.withOpacity(0.3)
+                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)
                       : Colors.white10,
                   border: Border.all(
                     color: isSelected
@@ -751,7 +751,7 @@ class _CoachingDemoFlowState extends State<CoachingDemoFlow> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade900.withOpacity(0.3),
+                  color: Colors.blue.shade900.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.blue.shade700),
                 ),

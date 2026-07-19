@@ -38,7 +38,7 @@ class _GigInsightsDialogState extends State<GigInsightsDialog> {
       widget.allGigs,
       minimumRate: minRate,
     );
-    if (mounted) {
+    if (context.mounted) {
       setState(() {
         _summary = summary;
         _isLoading = false;
@@ -75,7 +75,7 @@ class _GigInsightsDialogState extends State<GigInsightsDialog> {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
+              color: color.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: color, size: 18),
@@ -107,7 +107,7 @@ class _GigInsightsDialogState extends State<GigInsightsDialog> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Theme.of(ctx).colorScheme.surfaceVariant.withOpacity(0.5),
+        color: Theme.of(ctx).colorScheme.surfaceVariant.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -188,9 +188,9 @@ class _GigInsightsDialogState extends State<GigInsightsDialog> {
             padding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: gapColor.withOpacity(0.12),
+              color: gapColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: gapColor.withOpacity(0.35)),
+              border: Border.all(color: gapColor.withValues(alpha: 0.35)),
             ),
             child: Text(
               gapLabel,
@@ -601,9 +601,9 @@ class _GigInsightsDialogState extends State<GigInsightsDialog> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.35)),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -729,7 +729,7 @@ class _GigInsightsDialogState extends State<GigInsightsDialog> {
                   color: Theme.of(ctx)
                       .colorScheme
                       .primaryContainer
-                      .withOpacity(0.5),
+                      .withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(

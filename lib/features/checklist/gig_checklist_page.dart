@@ -37,7 +37,7 @@ class _GigChecklistPageState extends State<GigChecklistPage> {
 
   Future<void> _load() async {
     final items = await _repo.loadItems();
-    if (mounted) setState(() { _items = items; _loading = false; });
+    if (context.mounted) setState(() { _items = items; _loading = false; });
   }
 
   Future<void> _save() async {
@@ -102,7 +102,7 @@ class _GigChecklistPageState extends State<GigChecklistPage> {
     if (confirmed != true) return;
     await _repo.resetCheckedState(_items);
     await _load();
-    if (mounted) {
+    if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Checklist reset. Good luck tonight!')),
       );
@@ -196,7 +196,7 @@ class _GigChecklistPageState extends State<GigChecklistPage> {
         // Section header
         Container(
           width: double.infinity,
-          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+          color: Theme.of(context).colorScheme.surfaceVariant.withValues(alpha: 0.5),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
@@ -280,7 +280,7 @@ class _GigChecklistPageState extends State<GigChecklistPage> {
           style: TextStyle(
             decoration: item.isChecked ? TextDecoration.lineThrough : null,
             color: item.isChecked
-                ? Theme.of(context).colorScheme.onSurface.withOpacity(0.45)
+                ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45)
                 : null,
             fontSize: 15,
           ),
@@ -288,7 +288,7 @@ class _GigChecklistPageState extends State<GigChecklistPage> {
         secondary: IconButton(
           icon: Icon(Icons.delete_outline,
               size: 20,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.35)),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35)),
           onPressed: () => _delete(item),
           tooltip: 'Delete',
         ),

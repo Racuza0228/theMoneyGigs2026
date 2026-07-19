@@ -53,7 +53,7 @@ class MusicLinkField extends StatelessWidget {
             hintStyle: const TextStyle(color: Colors.white38),
             prefixIcon: const Icon(Icons.link, color: Color(0xFFB3B3B3), size: 18),
             filled: true,
-            fillColor: Colors.white.withOpacity(0.06),
+            fillColor: Colors.white.withValues(alpha: 0.06),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: const BorderSide(color: Colors.white24),
