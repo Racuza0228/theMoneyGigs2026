@@ -1507,6 +1507,18 @@ class _MapPageState extends State<MapPage> {
   Future<void> _checkAndOfferVenuePopulationIfEmpty(String? sessionId) async {
     if (!context.mounted || !_controller.isCompleted) return;
 
+    // Standalone users aren't connected to the public venue database, so
+    // populating venues there would locate results they can never see —
+    // _loadAllMapData() only merges Firebase data when isConnected is true.
+    // Skip the offer entirely rather than running a search whose results
+    // vanish on next load.
+    final prefs = await SharedPreferences.getInstance();
+    final bool isConnected = prefs.getBool(_isConnectedKey) ?? false;
+    if (!isConnected) {
+      log('🚫 Skipping venue population offer — user is standalone (not connected to public venue database).');
+      return;
+    }
+
     try {
       final controller = await _controller.future;
       final LatLngBounds bounds = await controller.getVisibleRegion();
