@@ -49,3 +49,4 @@ app.*.map.json
 output.txt
 macos/Pods/
 android/app/build/
+node_modules/
