@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart'; // Import TableCalendar
 import 'package:the_money_gigs/global_refresh_notifier.dart'; // Import the notifier
+import 'package:the_money_gigs/active_tab_notifier.dart'; // Gates impact assessment to when My Gigs is actually visible
 import 'package:the_money_gigs/core/models/enums.dart'; // <<<--- IMPORT THE SHARED ENUMS
 import 'package:the_money_gigs/core/services/notification_service.dart';
 
@@ -30,6 +31,14 @@ import 'package:the_money_gigs/features/venues/views/venues_list_tab.dart';
 import 'package:the_money_gigs/features/gigs/widgets/gig_export_dialog.dart';
 import 'package:the_money_gigs/features/gigs/widgets/gig_insights_dialog.dart';
 import 'package:the_money_gigs/features/checklist/gig_checklist_page.dart';
+
+// Band/Project Expansion v3.0.0 — Sprint Task 4
+import 'package:the_money_gigs/core/services/auth_service.dart';
+import 'package:the_money_gigs/features/bands/models/band_model.dart';
+import 'package:the_money_gigs/features/bands/repositories/band_repository.dart';
+import 'package:the_money_gigs/features/bands/views/my_bands_tab.dart';
+import 'package:the_money_gigs/features/bands/views/create_band_page.dart';
+import 'package:the_money_gigs/features/bands/views/band_detail_page.dart';
 
 import '../../app_demo/providers/demo_provider.dart';
 import 'package:the_money_gigs/features/app_demo/widgets/simple_demo_overlay.dart';
@@ -59,6 +68,13 @@ class _GigsPageState extends State<GigsPage>
   DateTime _gigListEndDate = DateTime.now().add(const Duration(days: 90));
   bool _isMoreGigsLoading = false;
 
+  // Bottom-nav index for this tab (see main.dart's IndexedStack + activeTabIndexNotifier).
+  static const int _kMyGigsTabIndex = 2;
+  // Ticketmaster impact assessment only looks a month out by default, even
+  // though the gig list itself is generated up to 90 days ahead. It only
+  // reaches further once the user actually scrolls to load more gigs.
+  static const int _kInitialImpactLookAheadDays = 30;
+
   Map<DateTime, List<Gig>> _calendarEvents = {};
 
   List<StoredLocation> _allKnownVenues = [];
@@ -66,6 +82,16 @@ class _GigsPageState extends State<GigsPage>
 
   bool _isLoadingGigs = true;
   bool _isLoadingVenues = true;
+
+  // ── Band/Project Expansion v3.0.0 — Sprint Task 4 ─────────────────────────
+  // Same 'is_connected_to_network' key used in venue_details_page.dart,
+  // map.dart, and connect_widget.dart — this is the established standalone-
+  // vs-network flag, not a new one.
+  static const String _isConnectedKey = 'is_connected_to_network';
+  final BandRepository _bandRepository = BandRepository();
+  List<BandProject> _allBands = [];
+  bool _isLoadingBands = true;
+  bool _isConnectedToNetwork = false;
 
   GigsViewType _gigsViewType = GigsViewType.list;
   CalendarFormat _calendarFormat = CalendarFormat.month;
@@ -133,13 +159,18 @@ class _GigsPageState extends State<GigsPage>
         );
       },
     );
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _scrollController = ScrollController()
       ..addListener(_scrollListener); // Initialize scroll controller
     _selectedDay = _focusedDay;
     _tabController.addListener(_handleTabSelection);
     _loadAllDataForGigsPage();
     globalRefreshNotifier.addListener(_handleGlobalRefresh);
+    // My Gigs is bottom-nav index 2. All four tabs are built eagerly at app
+    // launch (kept alive in an IndexedStack), so this widget's initState
+    // fires even when a different tab is on screen. Only run the Ticketmaster
+    // impact assessment once this tab is actually visible.
+    activeTabIndexNotifier.addListener(_handleActiveTabChanged);
 
     // 🎬 Listen to DemoProvider so we react when the step changes to gigListView.
     _demoProvider = Provider.of<DemoProvider>(context, listen: false);
@@ -155,6 +186,7 @@ class _GigsPageState extends State<GigsPage>
     _demoProvider.removeListener(_handleDemoStepChange);
 
     globalRefreshNotifier.removeListener(_handleGlobalRefresh);
+    activeTabIndexNotifier.removeListener(_handleActiveTabChanged);
     _tabController.removeListener(_handleTabSelection);
     _tabController.dispose();
     _scrollController.dispose(); // Dispose scroll controller
@@ -399,17 +431,36 @@ class _GigsPageState extends State<GigsPage>
   }
 
   Future<void> _loadAllDataForGigsPage() async {
-    await Future.wait([_loadVenues(), _loadGigs()]);
+    await Future.wait([_loadVenues(), _loadGigs(), _loadBands()]);
     if (!mounted) return;
     for (final gig in _allGigs) {
       log('🎸 [GigsPage] Loaded gig: id=${gig.id} venue="${gig.venueName}"...');
     }
-    // Fire impact assessment after gigs are loaded. Non-blocking.
-    _runImpactAssessment();
+    // Local data (gigs/venues/bands from SharedPreferences) is cheap and can
+    // load regardless of tab visibility. The Ticketmaster-backed impact
+    // assessment is not — only fire it if My Gigs is the tab actually on
+    // screen right now. If it's not, _handleActiveTabChanged() will run it
+    // the moment the user switches to this tab.
+    if (activeTabIndexNotifier.value == _kMyGigsTabIndex) {
+      _runImpactAssessment(lookAheadDays: _kInitialImpactLookAheadDays);
+    }
   }
 
-  Future<void> _runImpactAssessment() async {
-    final int lookahead = _gigListEndDate.difference(DateTime.now()).inDays + 1;
+  // Fires once when the user actually navigates to My Gigs. Cheap to call
+  // repeatedly — ImpactEventService caches per-gig results for 24h and skips
+  // anything still fresh, so re-visiting the tab doesn't re-hit Ticketmaster.
+  void _handleActiveTabChanged() {
+    if (!mounted) return;
+    if (activeTabIndexNotifier.value == _kMyGigsTabIndex) {
+      _runImpactAssessment(lookAheadDays: _kInitialImpactLookAheadDays);
+    }
+  }
+
+  Future<void> _runImpactAssessment({int? lookAheadDays}) async {
+    // Default (no override) mirrors the old behavior of reaching as far as
+    // the gig list has been scrolled — used by _loadMoreGigs() below.
+    final int lookahead =
+        lookAheadDays ?? _gigListEndDate.difference(DateTime.now()).inDays + 1;
     final results = await _impactEventService.reassessUpcomingGigs(
       upcomingGigs: _displayedGigs,
       lookAheadDays: lookahead,
@@ -1010,6 +1061,98 @@ class _GigsPageState extends State<GigsPage>
           .toList();
       _isLoadingVenues = false;
     });
+  }
+
+  // ── Band/Project Expansion v3.0.0 — Sprint Task 4 ─────────────────────────
+
+  Future<void> _loadBands() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingBands = true;
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final bool isConnected = prefs.getBool(_isConnectedKey) ?? false;
+
+    if (!mounted) return;
+    setState(() {
+      _isConnectedToNetwork = isConnected;
+    });
+
+    // Standalone users have no backend connection at all — bands require
+    // Firestore, so there's nothing to fetch. Show the gate instead.
+    if (!isConnected) {
+      if (!mounted) return;
+      setState(() {
+        _allBands = [];
+        _isLoadingBands = false;
+      });
+      return;
+    }
+
+    final authService = AuthService();
+    if (!authService.isSignedIn) {
+      if (!mounted) return;
+      setState(() {
+        _allBands = [];
+        _isLoadingBands = false;
+      });
+      return;
+    }
+
+    try {
+      final bands = await _bandRepository.getBandsForUser(authService.currentUserId);
+      if (!mounted) return;
+      setState(() {
+        _allBands = bands;
+        _isLoadingBands = false;
+      });
+    } catch (e) {
+      log('❌ Error loading bands: $e');
+      if (!mounted) return;
+      setState(() {
+        _allBands = [];
+        _isLoadingBands = false;
+      });
+    }
+  }
+
+  Future<void> _openCreateBandFlow() async {
+    final authService = AuthService();
+    if (!authService.isSignedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Sign in to the network to create a band.')),
+      );
+      return;
+    }
+
+    final result = await Navigator.of(context).push<BandProject>(
+      MaterialPageRoute(
+        builder: (_) => CreateBandPage(leaderId: authService.currentUserId),
+      ),
+    );
+
+    if (!mounted) return;
+    if (result != null) {
+      await _loadBands();
+    }
+  }
+
+  Future<void> _openBandDetail(BandProject band) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BandDetailPage(
+          initialBand: band,
+          currentUserId: AuthService().currentUserId,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    // Membership/rename changes made on Band Detail should reflect in the
+    // list immediately on return, not just next global refresh.
+    await _loadBands();
   }
 
   Future<void> _launchBookingDialogForGig(Gig gigToEdit) async {
@@ -1673,6 +1816,7 @@ class _GigsPageState extends State<GigsPage>
             tabs: const [
               Tab(icon: Icon(Icons.event_note), text: 'Upcoming Gigs'),
               Tab(icon: Icon(Icons.location_city), text: 'Saved Venues'),
+              Tab(icon: Icon(Icons.groups), text: 'My Bands'),
             ],
           ),
         ),
@@ -1686,6 +1830,14 @@ class _GigsPageState extends State<GigsPage>
                 displayableVenues: _displayableVenues,
                 displayedGigs: _displayedGigs,
                 onVenueTapped: _showVenueDetailsDialog,
+              ),
+              MyBandsTab(
+                isLoading: _isLoadingBands,
+                isConnected: _isConnectedToNetwork,
+                bands: _allBands,
+                currentUserId: AuthService().currentUserId,
+                onCreateBand: _openCreateBandFlow,
+                onBandTapped: _openBandDetail,
               ),
             ],
           ),

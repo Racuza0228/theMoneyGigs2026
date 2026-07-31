@@ -1,0 +1,21 @@
+{
+  "name": "moneygigs-functions",
+  "description": "Cloud Functions for MoneyGigs — Band/Project Expansion v3.0.0, Sprint Task 9 (gig-notification emails).",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "lint": "true",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.1.0",
+    "firebase-functions": "^5.0.0"
+  },
+  "private": true
+}

@@ -22,6 +22,12 @@ import 'package:the_money_gigs/core/services/notification_service.dart';
 import 'package:the_money_gigs/features/gigs/widgets/recurring_gig_dialog.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
 
+// Band/Project Expansion v3.0.0 — Sprint Task 7
+import 'package:the_money_gigs/core/services/auth_service.dart';
+import 'package:the_money_gigs/features/bands/models/band_model.dart';
+import 'package:the_money_gigs/features/bands/repositories/band_repository.dart';
+import 'package:the_money_gigs/features/bands/views/create_band_page.dart';
+
 // These enums and classes remain the same
 enum GigEditResultAction { updated, deleted, noChange }
 enum RecurringCancelChoice { thisInstanceOnly, allFutureInstances, doNothing }
@@ -86,20 +92,29 @@ class _BookingDialogState extends State<BookingDialog> {
   String _dynamicRateString = "";
   Color _dynamicRateResultColor = Colors.grey;
   List<StoredLocation> _allKnownVenuesInternal = [];
-  List<String> _allKnownBands = [];
 
   List<StoredLocation> _selectableVenuesForDropdown = [];
   StoredLocation? _selectedVenue;
   bool _isAddNewVenue = false;
 
-  String? _selectedBand;
-  bool _isAddNewBand = false;
-  static const String _keyGigsList = 'gigs_list';
-  static const String _addNewBandPlaceholder = "--- Add New Band ---";
+  // ── Band/Project Expansion v3.0.0 — Sprint Task 7 ─────────────────────────
+  // Real bands (led OR member-of — see BandRepository.getBandsForUser)
+  // replace the old free-text/SharedPreferences band list.
+  final BandRepository _bandRepository = BandRepository();
+  List<BandProject> _realBands = [];
+  String? _selectedBandId; // null = Solo, unless _legacyBandName is set
+  String? _selectedBandName;
+  // A free-text bandName from before this feature existed, with no matching
+  // bandId — spec section 5: "render as-is in the list. No migration."
+  // Cleared the moment the leader picks anything else from the dropdown.
+  String? _legacyBandName;
+  static const String _soloValue = '__solo__';
+  static const String _addNewBandValue = '__add_new_band__';
+  static const String _legacyBandValue = '__legacy_band__';
+  bool _isNotifyingBand = false; // Sprint Task 8
 
   final TextEditingController _newVenueNameController = TextEditingController();
   final TextEditingController _newVenueAddressController = TextEditingController();
-  final TextEditingController _newBandNameController = TextEditingController();
 
   final FocusNode _newVenueAddressFocusNode = FocusNode();
   String? _manualDriveDurationString;
@@ -269,7 +284,7 @@ class _BookingDialogState extends State<BookingDialog> {
 
       _editableGig = widget.editingGig!.copyWith(
         id: widget.editingGig!.id,
-        bandName: widget.editingGig!.bandName, // <-- CRITICAL: This was missing
+        bandName: () => widget.editingGig!.bandName, // <-- CRITICAL: This was missing
         venueName: widget.editingGig!.venueName,
         latitude: widget.editingGig!.latitude,
         longitude: widget.editingGig!.longitude,
@@ -340,12 +355,47 @@ class _BookingDialogState extends State<BookingDialog> {
     }
     if (context.mounted) {
       setState(() {
-        // This is where the dropdown UI gets its value
-        _selectedBand = _editableGig?.bandName;
+        _resolveInitialBandSelection();
         _isInitialized = true;
       });
-      log("Setting UI state: _selectedBand = '$_selectedBand'");
+      log("Setting UI state: _selectedBandId = '$_selectedBandId', "
+          "_selectedBandName = '$_selectedBandName', "
+          "_legacyBandName = '$_legacyBandName'");
     }
+  }
+
+  /// Figures out what the band dropdown should show on open. Three cases:
+  /// a real bandId that still resolves to a band in _realBands, an old
+  /// free-text-only bandName with no bandId (legacy — spec section 5, "no
+  /// migration"), or a bandId that no longer resolves (band deleted/access
+  /// lost) — falls back to showing the last-known name as legacy rather
+  /// than silently dropping it. New/non-editing gigs default to Solo.
+  void _resolveInitialBandSelection() {
+    final gig = _editableGig;
+    if (gig?.bandId != null) {
+      final match = _realBands.where((b) => b.bandId == gig!.bandId);
+      if (match.isNotEmpty) {
+        _selectedBandId = gig!.bandId;
+        _selectedBandName = match.first.name;
+        _legacyBandName = null;
+        return;
+      }
+      // bandId set but doesn't resolve anymore — don't lose the name.
+      _legacyBandName = gig!.bandName;
+      _selectedBandId = null;
+      _selectedBandName = null;
+      return;
+    }
+    if (gig?.bandName != null && gig!.bandName!.isNotEmpty) {
+      _legacyBandName = gig.bandName;
+      _selectedBandId = null;
+      _selectedBandName = null;
+      return;
+    }
+    // Solo.
+    _selectedBandId = null;
+    _selectedBandName = null;
+    _legacyBandName = null;
   }
 
   DriveTimeService _createDriveTimeService() {
@@ -502,25 +552,14 @@ class _BookingDialogState extends State<BookingDialog> {
       return;
     }
 
-    String? finalBandName;
-    if (_isAddNewBand) {
-      finalBandName = _newBandNameController.text.trim();
-      if (finalBandName.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please enter a band name.')));
-        return;
-      }
-      if (!_allKnownBands.contains(finalBandName)) {
-        _allKnownBands.add(finalBandName);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setStringList('saved_band_names', _allKnownBands);
-      }
-    } else {
-      finalBandName = _selectedBand;
-    }
+    // _legacyBandName and _selectedBandName are mutually exclusive by
+    // construction (see _onBandDropdownChanged / _resolveInitialBandSelection)
+    // — a legacy free-text name never coexists with a real bandId.
+    final String? finalBandName = _legacyBandName ?? _selectedBandName;
+    final String? finalBandId = _legacyBandName != null ? null : _selectedBandId;
 
     log("--- Confirming Action ---");
-    log("Returning gig with bandName: '$finalBandName'");
+    log("Returning gig with bandName: '$finalBandName', bandId: '$finalBandId'");
 
     // ✅ FIX: New bookings always start with retrospectiveCompleted = false.
     // Edit mode preserves the existing review state.
@@ -531,7 +570,8 @@ class _BookingDialogState extends State<BookingDialog> {
 
     final Gig newOrUpdatedGigData = _editableGig!.copyWith(
         venueName: finalVenueDetails.name,
-        bandName: finalBandName,
+        bandName: () => finalBandName,
+        bandId: () => finalBandId,
         latitude: finalVenueDetails.coordinates.latitude,
         longitude: finalVenueDetails.coordinates.longitude,
         address: finalVenueDetails.address,
@@ -615,31 +655,175 @@ class _BookingDialogState extends State<BookingDialog> {
     }
   }
 
+  /// Loads bands the current user leads OR belongs to as an active member
+  /// (BandRepository.getBandsForUser — same query My Bands uses), so a
+  /// member who isn't the leader can still represent the band on their own
+  /// gigs, not just leaders.
   Future<void> _loadAllKnownBands() async {
-    final prefs = await SharedPreferences.getInstance();
+    final authService = AuthService();
+    if (!authService.isSignedIn) {
+      // Standalone/signed-out — no backend connection, so no real bands.
+      // Any existing bandName on the gig still renders via the legacy path.
+      return;
+    }
+    try {
+      final bands = await _bandRepository.getBandsForUser(authService.currentUserId);
+      if (!mounted) return;
+      setState(() {
+        _realBands = bands..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      });
+    } catch (e) {
+      log("❌ Error loading bands for booking dialog: $e");
+    }
+  }
 
-    // 1. Load the manual list of "Saved Bands"
-    final List<String> savedBands = prefs.getStringList('saved_band_names') ?? [];
-
-    // 2. Load the actual Gigs list from disk using our shared key to extract any bands used
-    final String? gigsJson = prefs.getString(_keyGigsList); // <--- USING THE KEY HERE
-    Set<String> bandsFromDisk = {};
-    if (gigsJson != null) {
-      final List<Gig> decodedGigs = Gig.decode(gigsJson);
-      bandsFromDisk = decodedGigs.map((g) => g.bandName).whereType<String>().toSet();
+  /// Handles every possible band-dropdown selection: Solo, the legacy
+  /// free-text placeholder (re-selecting it is a no-op — nothing to change),
+  /// "+ New Band" (pushes CreateBandPage and auto-selects the result), or a
+  /// real band's bandId.
+  Future<void> _onBandDropdownChanged(String? val) async {
+    if (val == null || val == _soloValue) {
+      setState(() {
+        _selectedBandId = null;
+        _selectedBandName = null;
+        _legacyBandName = null;
+      });
+      return;
     }
 
-    // 3. Combine with the list passed from the widget (existingGigs)
-    final Set<String> bandsFromWidget = widget.existingGigs
-        .map((g) => g.bandName)
-        .whereType<String>()
-        .toSet();
+    if (val == _legacyBandValue) {
+      return; // re-affirming the existing legacy value — nothing to do
+    }
 
+    if (val == _addNewBandValue) {
+      final authService = AuthService();
+
+      // Standalone / signed-out users have no backend connection, so a real
+      // Firestore band can't exist for them regardless of price tier or
+      // intent — but per Cliff (7/20), the plain text-caption way of
+      // labeling a band is a permanent standalone feature, not something to
+      // gate behind sign-in. Give them a lightweight prompt instead of the
+      // full Create Band flow.
+      if (!authService.isSignedIn) {
+        final caption = await _promptForSimpleBandCaption();
+        if (!mounted || caption == null || caption.trim().isEmpty) return;
+        setState(() {
+          _legacyBandName = caption.trim();
+          _selectedBandId = null;
+          _selectedBandName = null;
+        });
+        return;
+      }
+
+      final newBand = await Navigator.of(context).push<BandProject>(
+        MaterialPageRoute(
+          builder: (_) => CreateBandPage(leaderId: authService.currentUserId),
+        ),
+      );
+      if (!mounted || newBand == null) return;
+      setState(() {
+        _realBands = [..._realBands, newBand]
+          ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        _selectedBandId = newBand.bandId;
+        _selectedBandName = newBand.name;
+        _legacyBandName = null;
+      });
+      return;
+    }
+
+    // Otherwise val is a real band's bandId.
+    final matchOnChange = _realBands.where((b) => b.bandId == val);
+    if (matchOnChange.isEmpty) return;
     setState(() {
-      // Merge all sources to ensure the dropdown is exhaustive
-      _allKnownBands = {...savedBands, ...bandsFromDisk, ...bandsFromWidget}.toList()
-        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      _selectedBandId = matchOnChange.first.bandId;
+      _selectedBandName = matchOnChange.first.name;
+      _legacyBandName = null;
     });
+  }
+
+  /// Lightweight text-entry prompt for standalone/signed-out users who want
+  /// to label a gig with a band name without any Firestore-backed Band
+  /// entity. Deliberately just a caption — no members, no invites, nothing
+  /// synced. This mirrors the pre-Task-7 free-text behavior and is the same
+  /// mechanism that renders old/legacy band names (_legacyBandName), so a
+  /// standalone-created caption is indistinguishable from historical data
+  /// and needs no separate code path elsewhere in this file.
+  Future<String?> _promptForSimpleBandCaption() async {
+    final controller = TextEditingController(text: _legacyBandName ?? '');
+    // Deliberately not disposing `controller` here — it's a one-off, local
+    // controller with no other listeners, same as the equivalent rename
+    // dialog in band_detail_page.dart. Disposing it right after showDialog
+    // returns fires before the dialog's exit transition finishes (the
+    // Future resolves the instant Navigator.pop runs, not after the
+    // animation), which throws "TextEditingController used after being
+    // disposed" on the still-animating-out TextField. Not worth chasing a
+    // frame-timing fix for a single short-lived object GC handles fine.
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Band / Project Name'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: "e.g. 'JC Band'",
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (val) => Navigator.of(dialogContext).pop(val),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    return result;
+  }
+
+  /// Only the band's leader gets a Notify Band button — sidemen shouldn't
+  /// be triggering notifications to their own bandmates.
+  bool get _canNotifyBand {
+    if (_selectedBandId == null) return false;
+    final match = _realBands.where((b) => b.bandId == _selectedBandId);
+    if (match.isEmpty) return false;
+    return match.first.leaderId == AuthService().currentUserId;
+  }
+
+  /// Writes the gig-notification document (spec 7.1). Only reachable in
+  /// edit mode, on an already-saved gig — a brand-new booking's id is still
+  /// a temporary placeholder until _confirmAction persists it, so there's
+  /// nothing real to notify about until the gig has been reopened once.
+  /// This is Task 8's write only; no email actually goes out yet — that's
+  /// the Cloud Function in Task 9, triggered server-side off this write.
+  Future<void> _notifyBand() async {
+    if (_selectedBandId == null || _editableGig == null) return;
+    setState(() => _isNotifyingBand = true);
+
+    final success = await _bandRepository.notifyBandOfGig(
+      bandId: _selectedBandId!,
+      gigId: _editableGig!.id,
+      venueName: _editableGig!.venueName,
+      dateTime: _editableGig!.dateTime,
+      pay: _editableGig!.pay,
+      address: _editableGig!.address,
+    );
+
+    if (!mounted) return;
+    setState(() => _isNotifyingBand = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(success
+            ? 'Notification recorded for ${_selectedBandName ?? "the band"}.'
+            : 'Could not record the notification. Try again.'),
+        backgroundColor: success ? Colors.green : Colors.red,
+      ),
+    );
   }
 
   void _calculateDynamicRate() {
@@ -964,46 +1148,58 @@ class _BookingDialogState extends State<BookingDialog> {
                         ],
                       ),
 
-                      // --- START: NEW BAND SELECTION FIELD ---
+                      // --- START: BAND SELECTION FIELD (v3.0.0 real bands) ---
                       const Divider(height: 32),
                       Text("Band / Project:", style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: _isAddNewBand ? _addNewBandPlaceholder : _selectedBand,
+                        value: _legacyBandName != null
+                            ? _legacyBandValue
+                            : (_selectedBandId ?? _soloValue),
                         decoration: const InputDecoration(
                             border: OutlineInputBorder(),
                             contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            hintText: "Select Band (Optional)"
                         ),
                         items: [
-                          const DropdownMenuItem<String>(value: null, child: Text("None / Solo")),
-                          ..._allKnownBands.map((band) => DropdownMenuItem(value: band, child: Text(band))),
+                          const DropdownMenuItem<String>(value: _soloValue, child: Text("None / Solo")),
+                          if (_legacyBandName != null)
+                            DropdownMenuItem<String>(
+                              value: _legacyBandValue,
+                              child: Text(
+                                '$_legacyBandName (unlinked)',
+                                style: const TextStyle(fontStyle: FontStyle.italic),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ..._realBands.map((band) => DropdownMenuItem<String>(
+                            value: band.bandId,
+                            child: Text(band.name, overflow: TextOverflow.ellipsis),
+                          )),
                           const DropdownMenuItem<String>(
-                              value: _addNewBandPlaceholder,
-                              child: Text(_addNewBandPlaceholder, style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))
+                              value: _addNewBandValue,
+                              child: Text('+ New Band', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))
                           ),
                         ],
-                        onChanged: (val) {
-                          setState(() {
-                            if (val == _addNewBandPlaceholder) {
-                              _isAddNewBand = true;
-                              _selectedBand = null;
-                            } else {
-                              _isAddNewBand = false;
-                              _selectedBand = val;
-                            }
-                          });
-                        },
+                        onChanged: _onBandDropdownChanged,
                       ),
-                      if (_isAddNewBand) ...[
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _newBandNameController,
-                          decoration: const InputDecoration(labelText: 'New Band Name*', border: OutlineInputBorder()),
-                          validator: (value) => (_isAddNewBand && (value == null || value.trim().isEmpty)) ? 'Band name required' : null,
+                      // --- END: BAND SELECTION FIELD ---
+                      if (_isEditingMode && _canNotifyBand)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: Center(
+                            child: OutlinedButton.icon(
+                              icon: _isNotifyingBand
+                                  ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                                  : const Icon(Icons.notifications_active_outlined),
+                              label: const Text('Notify Band'),
+                              onPressed: _isNotifyingBand ? null : _notifyBand,
+                            ),
+                          ),
                         ),
-                      ],
-                      // --- END: NEW BAND SELECTION FIELD ---
 
                       const SizedBox(height: 16),
                       if (_isEditingMode)

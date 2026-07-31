@@ -5,8 +5,31 @@
 //   + Added `lastAssessedAt` field — DateTime?
 //   + Updated toJson / fromJson / copyWith / encode / decode accordingly
 //   All existing fields and logic unchanged.
+//
+// CHANGE LOG (Band/Project Expansion v3.0.0 — Sprint Task 1):
+//   + Added `bandId` field — String? (null for solo/old gigs; Firestore band doc ID when a band is selected)
+//   + Updated constructor / toJson / fromJson / copyWith accordingly
+//   bandName is kept as-is for display + backward compatibility. Solo = bandName null AND bandId null.
+//   No migration needed — old free-text-only gigs just have bandId == null and render as before.
+//
+// CHANGE LOG (Band/Project Expansion v3.0.0 — Sprint Task 7):
+//   + copyWith's `bandName` / `bandId` switched from plain String? to
+//     ValueGetter<String?>? (same wrapper pattern StoredLocation.copyWith
+//     already uses in venue_model.dart). Plain `field ?? this.field` can
+//     never null out an existing value via copyWith — passing null is
+//     indistinguishable from "don't change it." That's now a real bug, not
+//     a theoretical one: the booking dialog's band dropdown lets someone
+//     switch an edited gig back to "Solo," which needs bandName/bandId to
+//     actually clear. Everywhere else in this file already sidesteps the
+//     same limitation by using the full Gig(...) constructor instead of
+//     copyWith (search "copyWith cannot null out nullable fields") — this
+//     is the same bug, just finally fixed at the two fields that needed it
+//     fixed rather than worked around again. Every OTHER nullable field
+//     here (otherExpenses, notes, etc.) still has the same underlying
+//     limitation — not touched, out of scope for this task.
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show ValueGetter;
 import 'package:the_money_gigs/core/models/enums.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_rating.dart';
 import 'package:the_money_gigs/features/gigs/models/impact_event.dart'; // ← NEW
@@ -16,6 +39,7 @@ class Gig {
   String id;
   String venueName;
   String? bandName;
+  String? bandId; // null for solo/old gigs; Firestore band document ID when band selected
   double latitude;
   double longitude;
   String address;
@@ -51,6 +75,7 @@ class Gig {
     required this.id,
     required this.venueName,
     this.bandName,
+    this.bandId,
     required this.latitude,
     required this.longitude,
     required this.address,
@@ -82,7 +107,8 @@ class Gig {
   Gig copyWith({
     String? id,
     String? venueName,
-    String? bandName,
+    ValueGetter<String?>? bandName,
+    ValueGetter<String?>? bandId,
     double? latitude,
     double? longitude,
     String? address,
@@ -113,7 +139,8 @@ class Gig {
     return Gig(
       id: id ?? this.id,
       venueName: venueName ?? this.venueName,
-      bandName: bandName ?? this.bandName,
+      bandName: bandName != null ? bandName() : this.bandName,
+      bandId: bandId != null ? bandId() : this.bandId,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       address: address ?? this.address,
@@ -214,6 +241,7 @@ class Gig {
       'id': id,
       'venueName': venueName,
       'bandName': bandName,
+      'bandId': bandId,
       'latitude': latitude,
       'longitude': longitude,
       'address': address,
@@ -278,6 +306,7 @@ class Gig {
       id: json['id'] as String,
       venueName: json['venueName'] as String,
       bandName: json['bandName'] as String?,
+      bandId: json['bandId'] as String?,
       latitude: (json['latitude'] as num).toDouble(),
       longitude: (json['longitude'] as num).toDouble(),
       address: json['address'] as String,

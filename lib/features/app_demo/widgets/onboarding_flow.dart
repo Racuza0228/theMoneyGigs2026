@@ -58,6 +58,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   // null | 'connected_founder' | 'connected_member' | 'sign_in_declined'
   // | 'auth_failed' | 'invalid' | 'needs_subscription' | 'error'
   String? _codeStatus;
+  // Set alongside _codeStatus whenever a connect attempt succeeds. Not read
+  // anywhere yet (that info is currently derived from _codeStatus instead) -
+  // kept as a hook for a future explicit "connected" check; safe to delete
+  // if it stays unused.
   bool _codeConnectedSuccessfully = false;
 
   // ── Request-code state ────────────────────────────────────────────────────
@@ -297,19 +301,19 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         log('📧 _requestCode: canLaunchUrl(mailto) returned false — '
             'no mail client on this device; flag still persisted, '
             'advancing standalone');
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'No email app found. Email cliff@themoneygigs.com to request a code.',
-              ),
-              duration: Duration(seconds: 6),
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No email app found. Email cliff@themoneygigs.com to request a code.',
             ),
-          );
-          setState(() => _codeRequested = true);
-          await Future.delayed(const Duration(milliseconds: 1200));
-          if (context.mounted) _finish(userCompleted: true);
-        }
+            duration: Duration(seconds: 6),
+          ),
+        );
+        setState(() => _codeRequested = true);
+        await Future.delayed(const Duration(milliseconds: 1200));
+        if (!context.mounted) return;
+        _finish(userCompleted: true);
       }
     } catch (e) {
       log('mailto launch error: $e');

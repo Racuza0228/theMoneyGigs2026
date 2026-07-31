@@ -26,6 +26,7 @@ import 'features/gigs/views/gigs.dart';
 import 'features/profile/views/profile.dart';
 import 'core/widgets/page_background_wrapper.dart';
 import 'global_refresh_notifier.dart';
+import 'active_tab_notifier.dart';
 import 'features/gigs/widgets/booking_dialog.dart';
 import 'features/gigs/models/gig_model.dart';
 import 'features/gigs/services/gig_retrospective_service.dart';
@@ -422,15 +423,15 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         case DemoStep.mapVenueSearch:
         case DemoStep.mapAddVenue:
         case DemoStep.mapBookGig:
-          if (_selectedIndex != 0) setState(() => _selectedIndex = 0);
+          if (_selectedIndex != 0) _setSelectedIndex(0);
           break;
       // My Gigs stays at index 2
         case DemoStep.gigListView:
-          if (_selectedIndex != 2) setState(() => _selectedIndex = 2);
+          if (_selectedIndex != 2) _setSelectedIndex(2);
           break;
       // Profile stays at index 3
         case DemoStep.profileConnect:
-          if (_selectedIndex != 3) setState(() => _selectedIndex = 3);
+          if (_selectedIndex != 3) _setSelectedIndex(3);
           break;
         default:
           break;
@@ -439,7 +440,16 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   void _onSettingsChanged() => _initializeSettings();
-  void _onItemTapped(int index) => setState(() => _selectedIndex = index);
+
+  // Single choke point for tab changes so activeTabIndexNotifier always
+  // reflects what's actually on screen (tabs live in an IndexedStack and
+  // are built eagerly, so widgets can't infer visibility from build/initState).
+  void _setSelectedIndex(int index) {
+    setState(() => _selectedIndex = index);
+    activeTabIndexNotifier.value = index;
+  }
+
+  void _onItemTapped(int index) => _setSelectedIndex(index);
 
   Future<void> _sendFeedbackEmail() async {
     final Uri emailLaunchUri = Uri(
@@ -612,7 +622,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
               demoProvider.nextStep();
               // Always land on the Map (Venues) tab after onboarding,
               // regardless of which tab was active when replay was triggered.
-              setState(() => _selectedIndex = 0);
+              _setSelectedIndex(0);
             },
           );
         }
