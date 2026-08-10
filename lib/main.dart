@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart'; // ✅ Added for email support
 import 'package:the_money_gigs/core/utils/logger.dart';
 
 import 'firebase_options.dart';
+import 'core/services/analytics_service.dart';
 import 'core/services/app_update_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/revenuecat_gate.dart';
@@ -115,6 +116,13 @@ void main() {
     } catch (e, s) {
       log('❌ prefs read failed — continuing as standalone: $e\n$s');
     }
+
+    // Silent, best-effort usage signal — never blocks or fails launch.
+    // See analytics_service.dart for the "must not know / must not fail"
+    // guarantees (8/9). Standalone installs are tagged too: Firebase is
+    // already initialized above for everyone, account or not.
+    unawaited(AnalyticsService.setUserType(hasEverConnected));
+    unawaited(AnalyticsService.logAppOpen());
 
     if (hasEverConnected) {
       log("👤 Network user — configuring RevenueCat at startup.");
@@ -241,6 +249,12 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     // check on every resume.
     if (state == AppLifecycleState.resumed) {
       _maybeCheckInviteCodeReentry();
+    }
+    // Best-effort "session end" proxy — true termination isn't reliably
+    // observable on mobile, so `paused` (backgrounded) is the standard
+    // substitute every analytics SDK uses. See analytics_service.dart.
+    if (state == AppLifecycleState.paused) {
+      unawaited(AnalyticsService.logAppClose());
     }
   }
 
@@ -447,6 +461,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   void _setSelectedIndex(int index) {
     setState(() => _selectedIndex = index);
     activeTabIndexNotifier.value = index;
+    // One event, tab_name as the dimension — covers all four tabs
+    // (Venues/Gig Pay/My Gigs/Profile) without a separate call each.
+    unawaited(AnalyticsService.logMainNavAccess(_pageTitles[index]));
   }
 
   void _onItemTapped(int index) => _setSelectedIndex(index);

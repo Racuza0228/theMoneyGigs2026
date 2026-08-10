@@ -1,9 +1,12 @@
+import 'dart:io' show Platform;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';  // NEW: For Clipboard
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/features/profile/views/reconciliation_screen.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
+import 'package:the_money_gigs/core/widgets/email_auth_dialog.dart';
 import 'package:the_money_gigs/core/services/network_service.dart';
 import 'package:the_money_gigs/core/services/subscription_service.dart';
 import 'package:the_money_gigs/core/services/revenuecat_gate.dart';
@@ -189,51 +192,85 @@ class _ConnectWidgetState extends State<ConnectWidget> {
     final networkService = NetworkService();
 
     if (value) {
-      // STEP 1: Ensure user is signed in with Google
+      // STEP 1: Ensure user is signed in (Google or email/password)
       if (!authService.isSignedIn) {
         if (!context.mounted) return;
 
-        final shouldSignIn = await showDialog<bool>(
+        final signInMethod = await showDialog<String>(
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Sign In Required'),
             content: const Text(
-                'Community Edition requires a Google account to submit ratings and comments.\n\n'
-                    'Sign in with Google to continue.'
+                'Community Edition requires an account to submit ratings and comments.\n\n'
+                    'Sign in to continue.'
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: () => Navigator.pop(context, null),
                 child: const Text('Cancel'),
               ),
+              TextButton.icon(
+                icon: const Icon(Icons.email_outlined),
+                label: const Text('Sign In with Email'),
+                onPressed: () => Navigator.pop(context, 'email'),
+              ),
+              if (Platform.isIOS)
+                TextButton.icon(
+                  icon: const Icon(Icons.apple),
+                  label: const Text('Sign In with Apple'),
+                  onPressed: () => Navigator.pop(context, 'apple'),
+                ),
               ElevatedButton.icon(
                 icon: const Icon(Icons.login),
                 label: const Text('Sign In with Google'),
-                onPressed: () => Navigator.pop(context, true),
+                onPressed: () => Navigator.pop(context, 'google'),
               ),
             ],
           ),
         );
 
-        if (shouldSignIn != true) return;
+        if (signInMethod == null) return;
 
-        // Show loading
-        if (!context.mounted) return;
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => const Center(child: CircularProgressIndicator()),
-        );
+        UserCredential? result;
 
-        // Attempt Google sign-in
-        final result = await authService.signInWithGoogle();
+        if (signInMethod == 'email') {
+          // EmailAuthDialog handles its own loading state and error display.
+          result = await showDialog<UserCredential?>(
+            context: context,
+            builder: (_) => const EmailAuthDialog(),
+          );
+        } else if (signInMethod == 'apple') {
+          if (!context.mounted) return;
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => const Center(child: CircularProgressIndicator()),
+          );
 
-        // Close loading
-        if (!context.mounted) return;
-        Navigator.pop(context);
+          result = await authService.signInWithApple();
+
+          if (!context.mounted) return;
+          Navigator.pop(context);
+        } else {
+          // Show loading
+          if (!context.mounted) return;
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => const Center(child: CircularProgressIndicator()),
+          );
+
+          // Attempt Google sign-in
+          result = await authService.signInWithGoogle();
+
+          // Close loading
+          if (!context.mounted) return;
+          Navigator.pop(context);
+        }
 
         if (result == null) {
           // Sign-in failed or cancelled
+          if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Sign-in cancelled or failed'),
@@ -244,6 +281,7 @@ class _ConnectWidgetState extends State<ConnectWidget> {
         }
 
         // Success! Continue to next step...
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('✅ Signed in as ${result.user?.email}'),

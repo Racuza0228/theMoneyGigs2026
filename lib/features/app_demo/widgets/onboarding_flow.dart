@@ -15,12 +15,17 @@
 //
 // When a valid invite code is submitted we run the exact same sequence as
 // ConnectWidget._toggleConnection(true):
-//   Google Sign-In → getMember / createMember → subscription check (if needed)
+//   Sign-in (Google or email/password) → getMember / createMember → subscription check (if needed)
 //
 // On success:
 //   • is_connected_to_network = true  (map shows community venues immediately)
-//   • Email already known from Google → no separate capture needed
+//   • Email already known from sign-in → no separate capture needed
+//
+// FIX (8/2/26, Trello #300/#313): Google Sign-In used to be the ONLY path
+// here, silently locking out any musician without a Gmail account right at
+// activation. Email/password is now offered as an equal alternative.
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,6 +37,7 @@ import 'package:the_money_gigs/core/services/network_service.dart';
 import 'package:the_money_gigs/core/services/subscription_service.dart';
 import 'package:the_money_gigs/core/services/revenuecat_gate.dart'; // ensureRevenueCatConfigured()
 import 'package:the_money_gigs/core/utils/logger.dart';
+import 'package:the_money_gigs/core/widgets/email_auth_dialog.dart';
 
 // ── Page name constants (Firestore tracking) ──────────────────────────────
 abstract class _Page {
@@ -351,33 +357,44 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   Future<void> _runConnectSequence(String code, SharedPreferences prefs) async {
     final authService = AuthService();
 
-    // ── 1. Google Sign-In ─────────────────────────────────────────────────
+    // ── 1. Sign in (Google or email/password) ─────────────────────────────
     if (!authService.isSignedIn) {
       if (!context.mounted) return;
 
-      final shouldSignIn = await showDialog<bool>(
+      final signInMethod = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('One quick step'),
           content: const Text(
-            'We use Google Sign-In to link your invite code to your account. '
+            'We link your invite code to an account. '
                 'Your email stays private — it only identifies you in the network.',
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
+              onPressed: () => Navigator.pop(ctx, null),
               child: const Text('Skip for now'),
             ),
+            TextButton.icon(
+              icon: const Icon(Icons.email_outlined),
+              label: const Text('Sign in with Email'),
+              onPressed: () => Navigator.pop(ctx, 'email'),
+            ),
+            if (Platform.isIOS)
+              TextButton.icon(
+                icon: const Icon(Icons.apple),
+                label: const Text('Sign in with Apple'),
+                onPressed: () => Navigator.pop(ctx, 'apple'),
+              ),
             ElevatedButton.icon(
               icon: const Icon(Icons.login),
               label: const Text('Sign in with Google'),
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: () => Navigator.pop(ctx, 'google'),
             ),
           ],
         ),
       );
 
-      if (shouldSignIn != true) {
+      if (signInMethod == null) {
         setState(() => _codeStatus = 'sign_in_declined');
         await _trackCodeResult('sign_in_declined');
         await Future.delayed(const Duration(milliseconds: 900));
@@ -385,9 +402,23 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         return;
       }
 
-      _showLoading('Signing in…');
-      final result = await authService.signInWithGoogle();
-      _hideLoading();
+      UserCredential? result;
+
+      if (signInMethod == 'email') {
+        // EmailAuthDialog handles its own loading state and error display.
+        result = await showDialog<UserCredential?>(
+          context: context,
+          builder: (_) => const EmailAuthDialog(),
+        );
+      } else if (signInMethod == 'apple') {
+        _showLoading('Signing in…');
+        result = await authService.signInWithApple();
+        _hideLoading();
+      } else {
+        _showLoading('Signing in…');
+        result = await authService.signInWithGoogle();
+        _hideLoading();
+      }
 
       if (!context.mounted) return;
       if (result == null) {

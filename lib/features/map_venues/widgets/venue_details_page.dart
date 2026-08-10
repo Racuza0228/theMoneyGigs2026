@@ -20,6 +20,7 @@
 //                    in BOTH modes. Never touches Firebase.
 // See _handleSave() for where this is enforced.
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -28,6 +29,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:the_money_gigs/core/services/analytics_service.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
 import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
@@ -125,6 +127,10 @@ class _VenueDetailPageState extends State<VenueDetailPage>
     _localBookingInfo = widget.venue.bookingInfo ?? const BookingInfo();
     _localContact = widget.venue.contact;
     _initializePage();
+    unawaited(AnalyticsService.logVenueDetailsAccess(
+      venueName: widget.venue.name,
+      placeId: widget.venue.placeId,
+    ));
   }
 
   @override

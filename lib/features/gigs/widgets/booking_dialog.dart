@@ -1,4 +1,5 @@
 // lib/features/gigs/widgets/booking_dialog.dart
+import 'dart:async';
 import 'dart:convert';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ import 'package:the_money_gigs/features/app_demo/widgets/booking_demo_overlay.da
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/calculator_summary_view.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/financial_inputs_view.dart';
 import 'package:the_money_gigs/features/gigs/widgets/booking_dialog_widgets/venue_selection_view.dart';
+import 'package:the_money_gigs/core/services/analytics_service.dart';
 import 'package:the_money_gigs/core/services/notification_service.dart';
 import 'package:the_money_gigs/features/gigs/widgets/recurring_gig_dialog.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
@@ -635,6 +637,20 @@ class _BookingDialogState extends State<BookingDialog> {
       log("🔔 Notifications rescheduled after gig save.");
     } catch (e) {
       log("⚠️ Error rescheduling notifications, but continuing. Error: $e");
+    }
+
+    // Fired on the BOOK button specifically — new gigs only, not edits —
+    // regardless of which of the three entry points it came from (map,
+    // calculator, or the "+" button/Add Gig flow). Per Cliff (8/9).
+    if (!_isEditingMode) {
+      final String entryPoint = _isCalculatorMode
+          ? 'calculator'
+          : (_isMapModeNewGig ? 'map' : 'add_button');
+      unawaited(AnalyticsService.logGigBooked(
+        entryPoint: entryPoint,
+        hasBand: finalBandName != null,
+        isRecurring: newOrUpdatedGigData.isRecurring,
+      ));
     }
 
     if (context.mounted) setState(() => _isProcessing = false);

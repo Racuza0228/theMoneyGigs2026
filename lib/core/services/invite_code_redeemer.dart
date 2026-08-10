@@ -11,12 +11,15 @@
 // flow — but it does NOT own page navigation. Callers decide what happens
 // after redemption based on the returned result.
 
+import 'dart:io' show Platform;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
 import 'package:the_money_gigs/core/services/network_service.dart';
 import 'package:the_money_gigs/core/services/subscription_service.dart';
 import 'package:the_money_gigs/core/services/revenuecat_gate.dart';
+import 'package:the_money_gigs/core/widgets/email_auth_dialog.dart';
 import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
 
@@ -112,39 +115,64 @@ Future<InviteCodeRedeemResult> _redeemInviteCodeInner(
     globalRefreshNotifier.notify();
   }
 
-  // ── 1. Google Sign-In ────────────────────────────────────────────────
+  // ── 1. Sign in (Google, Apple, or email/password) ───────────────────
   if (!authService.isSignedIn) {
     if (!context.mounted) return InviteCodeRedeemResult.authFailed;
 
-    final shouldSignIn = await showDialog<bool>(
+    final signInMethod = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('One quick step'),
         content: const Text(
-          'We use Google Sign-In to link your invite code to your account. '
+          'We link your invite code to an account. '
               'Your email stays private — it only identifies you in the network.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx, null),
             child: const Text('Skip for now'),
           ),
+          TextButton.icon(
+            icon: const Icon(Icons.email_outlined),
+            label: const Text('Sign in with Email'),
+            onPressed: () => Navigator.pop(ctx, 'email'),
+          ),
+          if (Platform.isIOS)
+            TextButton.icon(
+              icon: const Icon(Icons.apple),
+              label: const Text('Sign in with Apple'),
+              onPressed: () => Navigator.pop(ctx, 'apple'),
+            ),
           ElevatedButton.icon(
             icon: const Icon(Icons.login),
             label: const Text('Sign in with Google'),
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => Navigator.pop(ctx, 'google'),
           ),
         ],
       ),
     );
 
-    if (shouldSignIn != true) {
+    if (signInMethod == null) {
       return InviteCodeRedeemResult.signInDeclined;
     }
 
-    showLoading('Signing in…');
-    final result = await authService.signInWithGoogle();
-    hideLoading();
+    UserCredential? result;
+
+    if (signInMethod == 'email') {
+      // EmailAuthDialog handles its own loading state and error display.
+      result = await showDialog<UserCredential?>(
+        context: context,
+        builder: (_) => const EmailAuthDialog(),
+      );
+    } else if (signInMethod == 'apple') {
+      showLoading('Signing in…');
+      result = await authService.signInWithApple();
+      hideLoading();
+    } else {
+      showLoading('Signing in…');
+      result = await authService.signInWithGoogle();
+      hideLoading();
+    }
 
     if (!context.mounted) return InviteCodeRedeemResult.authFailed;
     if (result == null) {
