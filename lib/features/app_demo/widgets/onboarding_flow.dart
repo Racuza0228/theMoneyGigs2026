@@ -118,6 +118,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'welcomeViewed':      false,
         'inviteCodeViewed':   false,
         'inviteCodeProvided': false,
+        'inviteCodeUsed':     null,
         'inviteCodeStatus':   null,
         'connectedViaCode':   false,
         'codeRequested':      false,
@@ -172,9 +173,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
   }
 
-  Future<void> _trackCodeResult(String status, {bool connected = false}) async {
+  // `code` is whatever the user typed into the box this session — recorded
+  // even on failure/decline paths so the admin dashboard can show which
+  // code someone attempted, not just successful redemptions.
+  Future<void> _trackCodeResult(String status, {bool connected = false, required String code}) async {
     await _safeUpdate({
       'inviteCodeProvided': true,
+      'inviteCodeUsed':     code,
       'inviteCodeStatus':   status,
       'connectedViaCode':   connected,
       'codeOutcomeAt':      FieldValue.serverTimestamp(),
@@ -396,7 +401,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
       if (signInMethod == null) {
         setState(() => _codeStatus = 'sign_in_declined');
-        await _trackCodeResult('sign_in_declined');
+        await _trackCodeResult('sign_in_declined', code: code);
         await Future.delayed(const Duration(milliseconds: 900));
         if (context.mounted) _nextPage();
         return;
@@ -423,10 +428,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       if (!context.mounted) return;
       if (result == null) {
         setState(() => _codeStatus = 'auth_failed');
-        await _trackCodeResult('auth_failed');
+        await _trackCodeResult('auth_failed', code: code);
         return;
       }
     }
+
+    // Unconditional, not just on the fresh-sign-in branch above: if Firebase's
+    // session already persisted (isSignedIn was already true — e.g. a
+    // reinstall where iOS Keychain survived), the sign-in methods above never
+    // ran, so Purchases.logIn(uid) never fired for this app process either.
+    // Without this, a purchase later in this sequence can land under a fresh
+    // anonymous RevenueCat ID instead of the real Firebase UID. Cheap/
+    // idempotent — safe to call every time. See ensureIdentifiedToRevenueCat
+    // doc comment in auth_service.dart for the bug this closes.
+    await authService.ensureIdentifiedToRevenueCat();
 
     // ── 2. Check if already a network member ──────────────────────────────
     _showLoading('Checking membership…');
@@ -448,7 +463,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _codeStatus = status;
         _codeConnectedSuccessfully = true;
       });
-      await _trackCodeResult(status, connected: true);
+      await _trackCodeResult(status, connected: true, code: code);
       await Future.delayed(const Duration(milliseconds: 1400));
       if (context.mounted) _nextPage();
       return;
@@ -462,7 +477,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
     if (inviteCodeDoc == null) {
       setState(() => _codeStatus = 'invalid');
-      await _trackCodeResult('invalid');
+      await _trackCodeResult('invalid', code: code);
       return;
     }
 
@@ -478,7 +493,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
     if (!success) {
       setState(() => _codeStatus = 'invalid');
-      await _trackCodeResult('creation_failed');
+      await _trackCodeResult('creation_failed', code: code);
       return;
     }
 
@@ -494,7 +509,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _codeStatus = 'connected_founder';
         _codeConnectedSuccessfully = true;
       });
-      await _trackCodeResult('connected_founder', connected: true);
+      await _trackCodeResult('connected_founder', connected: true, code: code);
       await Future.delayed(const Duration(milliseconds: 1400));
       if (context.mounted) _nextPage();
 
@@ -515,7 +530,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           _codeStatus = 'connected_member';
           _codeConnectedSuccessfully = true;
         });
-        await _trackCodeResult('connected_member', connected: true);
+        await _trackCodeResult('connected_member', connected: true, code: code);
         await Future.delayed(const Duration(milliseconds: 1400));
         if (context.mounted) _nextPage();
 
@@ -546,7 +561,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         if (shouldPurchase != true) {
           await networkService.deleteMember(userId);
           setState(() => _codeStatus = 'needs_subscription');
-          await _trackCodeResult('subscription_declined');
+          await _trackCodeResult('subscription_declined', code: code);
           await Future.delayed(const Duration(milliseconds: 900));
           if (context.mounted) _nextPage();
           return;
@@ -568,14 +583,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             _codeStatus = 'connected_member';
             _codeConnectedSuccessfully = true;
           });
-          await _trackCodeResult('connected_member', connected: true);
+          await _trackCodeResult('connected_member', connected: true, code: code);
           await Future.delayed(const Duration(milliseconds: 1400));
           if (context.mounted) _nextPage();
 
         } else {
           await networkService.deleteMember(userId);
           setState(() => _codeStatus = 'needs_subscription');
-          await _trackCodeResult('subscription_failed');
+          await _trackCodeResult('subscription_failed', code: code);
           await Future.delayed(const Duration(milliseconds: 900));
           if (context.mounted) _nextPage();
         }

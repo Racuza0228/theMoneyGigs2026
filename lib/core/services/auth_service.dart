@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
+import 'package:the_money_gigs/core/services/analytics_service.dart';
 import 'package:the_money_gigs/core/services/revenuecat_gate.dart';
 
 class AuthService {
@@ -150,17 +152,46 @@ class AuthService {
       await _identifyToRevenueCat(userCredential.user);
 
       return userCredential;
-    } on SignInWithAppleAuthorizationException catch (e) {
+    } on SignInWithAppleAuthorizationException catch (e, stack) {
       if (e.code == AuthorizationErrorCode.canceled) {
         log("⚠️ User cancelled Apple Sign-In");
       } else {
         log("❌ Apple Sign-In error: ${e.code} — ${e.message}");
+        await _recordAppleSignInFailure(e.code.toString(), e.message, stack);
       }
       return null;
-    } catch (e) {
+    } catch (e, stack) {
       log("❌ Apple Sign-In error: $e");
+      await _recordAppleSignInFailure(e.runtimeType.toString(), e.toString(), stack);
       return null;
     }
+  }
+
+  /// Added 8/17/26. Before this, every Apple Sign-In failure only reached
+  /// the debug-only log() helper (a no-op in release builds), which is why
+  /// the confirmed Nashville failures (8/14, Trello: "Apple Sign-In broken —
+  /// cost 2+ conversions at Nashville") left nothing in Crashlytics or
+  /// Analytics to diagnose after the fact — the exception is caught here,
+  /// so it never reaches main.dart's global handlers either. This sends the
+  /// actual error code/message somewhere retrievable: Crashlytics (non-fatal,
+  /// reason 'apple_signin_failed') and a matching GA4 event. Both wrapped in
+  /// try/catch — a failure here must never break sign-in itself.
+  Future<void> _recordAppleSignInFailure(
+      String code, String? message, StackTrace stack) async {
+    try {
+      await FirebaseCrashlytics.instance.recordError(
+        'Apple Sign-In failed: $code — ${message ?? ''}',
+        stack,
+        fatal: false,
+        reason: 'apple_signin_failed',
+      );
+    } catch (_) {}
+    try {
+      await AnalyticsService.logAppleSignInFailed(
+        errorCode: code,
+        errorMessage: message,
+      );
+    } catch (_) {}
   }
 
   /// Cryptographically secure random string, required as the raw nonce
@@ -193,6 +224,24 @@ class AuthService {
       log('⚠️ RevenueCat logIn failed (non-fatal, sign-in still succeeds): $e');
     }
   }
+
+  /// Public wrapper around _identifyToRevenueCat, for callers that need to
+  /// (re)confirm RevenueCat identity WITHOUT going through a fresh sign-in.
+  ///
+  /// Why this exists (8/17/26): every explicit sign-in method above calls
+  /// _identifyToRevenueCat automatically. But onboarding_flow.dart's invite
+  /// code path only calls those sign-in methods when authService.isSignedIn
+  /// is false — if Firebase's session already persisted (e.g. a reinstall,
+  /// where iOS Keychain can survive uninstall), sign-in is skipped entirely
+  /// and Purchases.logIn(uid) never fires for that app process. RevenueCat
+  /// then falls back to a fresh local anonymous ID for that install, so a
+  /// purchase can land under $RCAnonymousID instead of the real Firebase
+  /// UID — the same failure class as the "2 anonymous RevenueCat IDs" /
+  /// subscriber-count-mismatch bug (see Trello: "RevenueCat ↔ Firestore
+  /// sync gap", "Apple Sign-In broken — cost 2+ conversions at Nashville").
+  /// Purchases.logIn is idempotent/cheap, so call this unconditionally
+  /// before any purchase or entitlement check, signed-in-already or not.
+  Future<void> ensureIdentifiedToRevenueCat() => _identifyToRevenueCat(currentUser);
 
   /// Sign out
   Future<void> signOut() async {

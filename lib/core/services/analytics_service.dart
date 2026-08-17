@@ -97,6 +97,27 @@ class AnalyticsService {
   /// Fired only on a genuinely new booking (not edits) — the BOOK button
   /// specifically, per Cliff (8/9), regardless of which of the three entry
   /// points it came from (map, calculator, or the "+" button/Add Gig flow).
+  /// Added 8/17/26 — Apple Sign-In failures at Nashville (8/14) left zero
+  /// trace anywhere retrievable (see the recordError note in auth_service.dart
+  /// for the full story). This + Crashlytics are the two places that data
+  /// will show up going forward.
+  static Future<void> logAppleSignInFailed({
+    required String errorCode,
+    String? errorMessage,
+  }) async {
+    try {
+      await _analytics.logEvent(
+        name: 'apple_signin_failed',
+        parameters: {
+          'error_code': errorCode,
+          if (errorMessage != null) 'error_message': errorMessage,
+        },
+      );
+    } catch (e) {
+      log('Analytics logAppleSignInFailed failed (non-fatal): $e');
+    }
+  }
+
   static Future<void> logGigBooked({
     required String entryPoint, // 'calculator' | 'map' | 'add_button'
     required bool hasBand,
