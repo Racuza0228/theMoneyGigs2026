@@ -143,6 +143,13 @@ class AuthService {
       final oauthCredential = OAuthProvider("apple.com").credential(
         idToken: appleCredential.identityToken,
         rawNonce: rawNonce,
+        // Without this, Firebase can't fully validate the token against
+        // Apple and throws [firebase_auth/invalid-credential] "Invalid
+        // OAuth response from apple.com" — 100% reproducible, not
+        // intermittent. Root-caused 8/18 via a matching flutterfire issue
+        // (github.com/firebase/flutterfire/issues/18289) after Nashville's
+        // 8/14 failure. Do not remove.
+        accessToken: appleCredential.authorizationCode,
       );
 
       final userCredential = await _auth.signInWithCredential(oauthCredential);

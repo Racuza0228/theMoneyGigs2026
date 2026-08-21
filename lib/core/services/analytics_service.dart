@@ -128,8 +128,13 @@ class AnalyticsService {
         name: 'gig_booked',
         parameters: {
           'entry_point': entryPoint,
-          'has_band': hasBand,
-          'is_recurring': isRecurring,
+          // Firebase Analytics only accepts String or num as parameter values.
+          // Bools are rejected by the native SDK and the ENTIRE event is
+          // silently dropped — this is why gig_booked reported zero from
+          // 8/10 to 8/21 despite real bookings. Fixed 8/21/26. Keep these
+          // numeric: GA4 aggregates nums, and 0/1 still segments cleanly.
+          'has_band': hasBand ? 1 : 0,
+          'is_recurring': isRecurring ? 1 : 0,
         },
       );
     } catch (e) {
