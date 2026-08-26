@@ -1,4 +1,5 @@
 // lib/gigs.dart
+import 'dart:async'; // unawaited() — fire-and-forget network attendance mirror
 import 'dart:collection'; // For LinkedHashMap (used by TableCalendar for events)
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -36,6 +37,7 @@ import 'package:the_money_gigs/features/checklist/gig_checklist_page.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
 import 'package:the_money_gigs/features/bands/models/band_model.dart';
 import 'package:the_money_gigs/features/bands/repositories/band_repository.dart';
+import 'package:the_money_gigs/features/gigs/repositories/jam_attendance_repository.dart';
 import 'package:the_money_gigs/features/bands/views/my_bands_tab.dart';
 import 'package:the_money_gigs/features/bands/views/create_band_page.dart';
 import 'package:the_money_gigs/features/bands/views/band_detail_page.dart';
@@ -89,6 +91,8 @@ class _GigsPageState extends State<GigsPage>
   // vs-network flag, not a new one.
   static const String _isConnectedKey = 'is_connected_to_network';
   final BandRepository _bandRepository = BandRepository();
+  final JamAttendanceRepository _jamAttendanceRepository =
+      JamAttendanceRepository();
   List<BandProject> _allBands = [];
   bool _isLoadingBands = true;
   bool _isConnectedToNetwork = false;
@@ -1179,7 +1183,7 @@ class _GigsPageState extends State<GigsPage>
     );
 
     if (originalGig.isJamOpenMic) {
-      final sourceVenue = _allKnownVenues.firstWhere(
+      final matchedVenue = _allKnownVenues.firstWhere(
             (v) => v.placeId == originalGig?.placeId,
         orElse: () => StoredLocation(
           placeId: '',
@@ -1188,70 +1192,277 @@ class _GigsPageState extends State<GigsPage>
           coordinates: const LatLng(0, 0),
         ),
       );
-      if (sourceVenue.placeId.isEmpty) return;
+      // A gig can outlive its venue's local record — e.g. one materialized
+      // before GO JAM was fixed to also save the venue, or a venue that's
+      // since been un-saved. Rather than silently no-op'ing the whole tap
+      // (the old behavior — this listing would just never open), degrade
+      // gracefully: fall back to the gig's own stored fields for display,
+      // skip "VIEW VENUE DETAILS" (nothing to navigate to), and treat it as
+      // not part of any active recurring series so at least "NOT GOING" is
+      // offered to clean it up.
+      final bool venueResolved = matchedVenue.placeId.isNotEmpty;
+      final StoredLocation? sourceVenue = venueResolved ? matchedVenue : null;
       if (!mounted) return;
+
+      // Snapshot originalGig into a genuinely non-nullable local — Dart's
+      // null-promotion of a non-final local (originalGig) doesn't survive
+      // into the onPressed closures below, so every closure would otherwise
+      // need its own `if (originalGig == null) return;` guard (see how the
+      // old HIDE FROM MY GIGS handler had to do exactly that).
+      final Gig gig = originalGig;
+
+      // Which JamSession this occurrence came from, so we know whether
+      // "Show in Gigs list" is currently ON for it (an ongoing recurring
+      // series -> only "REMOVE REGULAR JAM" applies) or this is a one-off
+      // add, e.g. via GO JAM (-> "NOT GOING" applies instead). Same
+      // prefix-stripping the old HIDE handler used, since placeId/sessionId
+      // can themselves contain underscores.
+      final String baseGigId = gig.getBaseId();
+      final String? sessionId = sourceVenue == null
+          ? null
+          : (baseGigId.startsWith('jam_${sourceVenue.placeId}_')
+          ? baseGigId.substring('jam_${sourceVenue.placeId}_'.length)
+          : null);
+      final int sessionIndex = (sourceVenue == null || sessionId == null)
+          ? -1
+          : sourceVenue.jamSessions.indexWhere((s) => s.id == sessionId);
+      final JamSession? session =
+      sessionIndex == -1 ? null : sourceVenue!.jamSessions[sessionIndex];
+      final bool isRecurringSeriesActive = session?.showInGigsList ?? false;
+      // Only a materialized (really-saved) instance has anything to delete —
+      // a still-virtual, never-interacted-with recurring occurrence doesn't
+      // exist as a record yet. NOT GOING is offered regardless of state
+      // (see onPressed below for how each case is handled) so the user can
+      // always change their mind, even after marking GOING/INTERESTED on an
+      // occurrence that belongs to an active recurring series.
+      final bool isMaterialized = _allGigs.any((g) => g.id == gig.id);
+
+      // Network attendance counts (fast-follow to the local-only feature).
+      // Kicked off now, before showDialog, rather than inside the builder,
+      // so the fetch is already in flight while the dialog's open animation
+      // plays — by the time the user can actually read the buttons it has
+      // often already resolved. Standalone (not connected/not signed in)
+      // users skip this entirely and just see plain "GOING"/"INTERESTED",
+      // same as before.
+      int? goingCount;
+      int? interestedCount;
+      VoidCallback? refreshDialogCounts;
+      if (_isConnectedToNetwork && AuthService().isSignedIn) {
+        final String userId = AuthService().currentUserId;
+        unawaited(() async {
+          var counts =
+              await _jamAttendanceRepository.getCounts(gig.id, forUserId: userId);
+
+          // Self-heal: bring Firestore in line with the local record when
+          // they've drifted apart — e.g. this occurrence was added via GO
+          // JAM (which has always set attendanceStatus: 'going' locally)
+          // before the network mirror existed, so nobody ever actually
+          // wrote it there. Without this, an occurrence the user is
+          // already marked GOING on locally would keep showing 0 counts
+          // forever, until they happened to re-tap a button here — which
+          // reads as "the app forgot I'm going" rather than what it
+          // actually is. Only fires on an actual mismatch, so an
+          // already-synced occurrence never gets a redundant write.
+          if (gig.attendanceStatus != counts.myStatus) {
+            await _jamAttendanceRepository.setAttendance(
+              occurrenceId: gig.id,
+              userId: userId,
+              newStatus: gig.attendanceStatus,
+            );
+            counts = await _jamAttendanceRepository.getCounts(
+              gig.id,
+              forUserId: userId,
+            );
+          }
+
+          goingCount = counts.going;
+          interestedCount = counts.interested;
+          refreshDialogCounts?.call();
+        }());
+      }
+
       await showDialog(
         context: context,
         builder: (dialogContext) {
-          return AlertDialog(
-            title: Text(sourceVenue.name),
-            content: const Text('This is a recurring Jam/Open Mic session.'),
+          return StatefulBuilder(
+            // Deliberately NOT named `context` — this closure encloses every
+            // onPressed handler below, several of which call
+            // ScaffoldMessenger.of(context)/Theme.of(context) using the
+            // OUTER State's context AFTER Navigator.of(dialogContext).pop()
+            // has already removed this StatefulBuilder from the tree. A
+            // same-named inner `context` parameter would shadow the outer
+            // one for all of that code and hand those calls a deactivated
+            // context instead.
+            builder: (_, setDialogState) {
+              // Re-assigned on every build (cheap, idempotent) so the
+              // counts fetch above can trigger exactly one dialog repaint
+              // whenever it resolves, however long that takes.
+              refreshDialogCounts = () => setDialogState(() {});
+
+              return AlertDialog(
+            title: Text(sourceVenue?.name ?? gig.venueName),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${DateFormat.yMMMEd().format(gig.dateTime)} at '
+                      '${DateFormat.jm().format(gig.dateTime)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text('Jam / Open Mic session'),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: gig.attendanceStatus == 'going'
+                              ? Colors.green.withValues(alpha: 0.15)
+                              : null,
+                          side: BorderSide(
+                            color: gig.attendanceStatus == 'going'
+                                ? Colors.green
+                                : Colors.grey,
+                          ),
+                        ),
+                        onPressed: () async {
+                          Navigator.of(dialogContext).pop();
+                          await _setJamAttendance(gig, 'going');
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("You're going!")),
+                          );
+                        },
+                        child: Text(
+                          goingCount != null
+                              ? 'GOING (${goingCount!})'
+                              : 'GOING',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor:
+                          gig.attendanceStatus == 'interested'
+                              ? Colors.amber.withValues(alpha: 0.15)
+                              : null,
+                          side: BorderSide(
+                            color: gig.attendanceStatus == 'interested'
+                                ? Colors.amber.shade700
+                                : Colors.grey,
+                          ),
+                        ),
+                        onPressed: () async {
+                          Navigator.of(dialogContext).pop();
+                          await _setJamAttendance(gig, 'interested');
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Marked as interested.')),
+                          );
+                        },
+                        child: Text(
+                          interestedCount != null
+                              ? 'INTERESTED (${interestedCount!})'
+                              : 'INTERESTED',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            actionsAlignment: MainAxisAlignment.spaceBetween,
             actions: <Widget>[
               TextButton(
                 child: const Text('CLOSE'),
                 onPressed: () => Navigator.of(dialogContext).pop(),
               ),
-              TextButton(
-                child: const Text('VIEW VENUE DETAILS'),
-                onPressed: () {
-                  Navigator.of(dialogContext).pop();
-                  _showVenueDetailsDialog(sourceVenue);
-                },
-              ),
+              if (sourceVenue != null)
+                TextButton(
+                  child: const Text('VIEW VENUE DETAILS'),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    _showVenueDetailsDialog(sourceVenue);
+                  },
+                ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                  backgroundColor:
+                  Theme.of(context).colorScheme.errorContainer,
                 ),
                 child: Text(
-                  'HIDE FROM MY GIGS',
+                  'NOT GOING',
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onErrorContainer,
                   ),
                 ),
                 onPressed: () async {
                   Navigator.of(dialogContext).pop();
-                  if (originalGig == null) return;
+                  // Nothing materialized yet (a virtual occurrence of an
+                  // active series the user never tapped GOING/INTERESTED
+                  // on) — there's no record to clear, so just acknowledge.
+                  if (!isMaterialized) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content:
+                          Text("Okay — you weren't marked as going.")),
+                    );
+                    return;
+                  }
+                  await _removeJamInstance(gig);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        isRecurringSeriesActive
+                            ? "Cleared — you'll still see this on your "
+                            "regular jam nights."
+                            : 'Removed from your gigs list.',
+                      ),
+                    ),
+                  );
+                },
+              ),
+              if (isRecurringSeriesActive)
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor:
+                    Theme.of(context).colorScheme.errorContainer,
+                  ),
+                  child: Text(
+                    'REMOVE REGULAR JAM',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                    ),
+                  ),
+                  onPressed: () async {
+                    Navigator.of(dialogContext).pop();
 
-                  // --- START OF DEFINITIVE FIX ---
-                  log(
-                    "--- HIDE BUTTON TAPPED ---",
-                  ); // 1. Get the base ID, which correctly removes the date suffix.
-                  final String baseGigId = originalGig.getBaseId();
-                  log("1. Base Gig ID for processing: $baseGigId");
-
-                  // 2. We have the sourceVenue, so we know its exact placeId.
-                  final String knownPlaceId = sourceVenue.placeId;
-
-                  // 3. The session ID is everything in the baseGigId *after* "jam_" and the known placeId.
-                  //    We construct the prefix we expect to find.
-                  final String prefix = 'jam_${knownPlaceId}_';
-
-                  if (baseGigId.startsWith(prefix)) {
-                    // 4. The true session ID is whatever remains after stripping the prefix.
-                    //    This is robust and handles underscores in both the placeId and sessionId.
-                    final String sessionId = baseGigId.substring(prefix.length);
-                    log("2. Extracted TRUE Session ID: $sessionId");
-
+                    // --- START OF DEFINITIVE FIX ---
+                    // (kept intact from the original HIDE FROM MY GIGS
+                    // handler — just reusing sessionId/sessionIndex already
+                    // resolved above instead of re-deriving them.)
+                    log(
+                      "--- REMOVE REGULAR JAM TAPPED ---",
+                    );
+                    // isRecurringSeriesActive (which gates this button) can
+                    // only be true when sourceVenue/session/sessionId all
+                    // resolved above, but that promotion doesn't carry into
+                    // this closure — see the same note on `gig` above.
+                    if (sourceVenue == null || sessionId == null) return;
                     final venueIndex = _allKnownVenues.indexWhere(
                           (v) => v.placeId == sourceVenue.placeId,
-                    );
-                    final sessionIndex = sourceVenue.jamSessions.indexWhere(
-                          (s) => s.id == sessionId,
                     );
 
                     if (venueIndex != -1 && sessionIndex != -1) {
                       log(
-                        "3. Found Venue '${sourceVenue.name}' and Session. Proceeding to update.",
+                        "Found Venue '${sourceVenue.name}' and Session. Proceeding to update.",
                       );
 
                       // Create a mutable copy of the venue list to modify in memory.
@@ -1264,7 +1475,7 @@ class _GigsPageState extends State<GigsPage>
                         venueToUpdate.jamSessions,
                       );
 
-                      // 4. Update the session's visibility and save the venue.
+                      // Update the session's visibility and save the venue.
                       updatedSessions[sessionIndex] =
                           updatedSessions[sessionIndex].copyWith(
                             showInGigsList: false,
@@ -1275,41 +1486,73 @@ class _GigsPageState extends State<GigsPage>
                       updatedAllVenues[venueIndex] = updatedVenue;
                       await _updateVenueJamNightSettings(updatedVenue);
 
+                      // Turning showInGigsList off only stops FUTURE virtual
+                      // occurrences from being generated (_generateJamOpenMicGigs)
+                      // — it does nothing for any date that was already
+                      // materialized into a real 'gigs_list' record (e.g. via
+                      // GO JAM, or by tapping GOING/INTERESTED on it before
+                      // removing the series). Those are fully standalone
+                      // records at that point (isRecurring: false), so the
+                      // list would otherwise keep showing them forever. Sweep
+                      // up any of THIS session's still-upcoming standalone
+                      // records here — past ones are left alone as real gig
+                      // history, not touched by this cleanup.
+                      final String seriesBaseId =
+                          'jam_${sourceVenue.placeId}_$sessionId';
+                      final prefs = await SharedPreferences.getInstance();
+                      final gigsJsonString =
+                          prefs.getString(_keyGigsList) ?? '[]';
+                      final List<Gig> allGigsFromPrefs =
+                      Gig.decode(gigsJsonString);
+                      final DateTime now = DateTime.now();
+                      allGigsFromPrefs.removeWhere((g) =>
+                      g.isJamOpenMic &&
+                          g.getBaseId() == seriesBaseId &&
+                          g.dateTime.isAfter(now));
+                      await prefs.setString(
+                          _keyGigsList, Gig.encode(allGigsFromPrefs));
+
                       log(
-                        "4. Saved to SharedPreferences. Forcing immediate UI refresh.",
+                        "Saved to SharedPreferences. Forcing immediate UI refresh.",
                       );
 
-                      // 5. Force the UI to refresh with the updated in-memory data.
+                      // Force the UI to refresh with the updated in-memory data
+                      // directly, rather than relying on the async reload that
+                      // globalRefreshNotifier.notify() (inside
+                      // _updateVenueJamNightSettings) kicks off elsewhere —
+                      // that reload can land after this synchronous rebuild,
+                      // which is why this used to require a full restart to
+                      // actually disappear from the list.
                       if (!mounted) return;
                       setState(() {
-                        // This is the crucial step: update the page's local state immediately.
                         _allKnownVenues = updatedAllVenues;
+                        _allGigs = allGigsFromPrefs;
                       });
                       // Now regenerate the gigs list using the corrected local data.
                       _generateAndSetDisplayedGigs();
+                      // Tell every other open screen too.
+                      globalRefreshNotifier.notify();
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Jam session hidden.'),
+                          content: Text(
+                              'Regular jam removed from your gigs.'),
                           backgroundColor: Colors.blueAccent,
                         ),
                       );
                       log(
-                        "5. Refresh complete. The session should now be hidden.",
+                        "Refresh complete. The series should now be off.",
                       );
                     } else {
                       log(
                         "Error: Could not find Venue (index: $venueIndex) or Session (index: $sessionIndex). This indicates a logic bug.",
                       );
                     }
-                  } else {
-                    log(
-                      "Error: Could not parse the baseGigId '$baseGigId' using the known placeId '$knownPlaceId'.",
-                    );
-                  }
-                  // --- END OF DEFINITIVE FIX ---
-                },
-              ),
+                    // --- END OF DEFINITIVE FIX ---
+                  },
+                ),
             ],
+          );
+            },
           );
         },
       );
@@ -1386,6 +1629,106 @@ class _GigsPageState extends State<GigsPage>
         ),
       );
     }
+  }
+
+  // ── Jam attendance (GOING / INTERESTED / NOT GOING) ────────────────────────
+  // Both write straight to the same 'gigs_list' prefs key GigsPage itself
+  // reads on load (see _loadGigs/_loadAllDataForGigsPage), then ping
+  // globalRefreshNotifier so this screen (and any other open screen) picks
+  // the change up immediately instead of waiting for the next natural
+  // reload. The local write is always the source of truth for this
+  // device; when connected to the network the same change is also
+  // mirrored to Firestore (see _mirrorJamAttendanceToNetwork) so other
+  // attendees can see Going/Interested counts — but that mirror is
+  // fire-and-forget and never blocks or gates the local write above it.
+
+  /// Sets Going/Interested on [gigInstance]. If it's still a virtual
+  /// (never-saved) occurrence of an ongoing recurring jam, this is what
+  /// materializes it into a real 'gigs_list' record — the same
+  /// materialize-on-interaction pattern the retrospective wizard already
+  /// uses for regular recurring gigs.
+  Future<void> _setJamAttendance(Gig gigInstance, String status) async {
+    final prefs = await SharedPreferences.getInstance();
+    final gigsJsonString = prefs.getString(_keyGigsList) ?? '[]';
+    final List<Gig> allGigs = Gig.decode(gigsJsonString);
+
+    final index = allGigs.indexWhere((g) => g.id == gigInstance.id);
+    if (index != -1) {
+      allGigs[index] = allGigs[index].copyWith(attendanceStatus: status);
+    } else {
+      allGigs.add(gigInstance.copyWith(attendanceStatus: status));
+    }
+
+    await prefs.setString(_keyGigsList, Gig.encode(allGigs));
+
+    // Update this screen's own in-memory copy directly and regenerate now
+    // — don't rely solely on the async reload globalRefreshNotifier.notify()
+    // kicks off, which can land after the dialog's already closed and
+    // leave the tile looking unchanged until the next natural refresh.
+    if (!mounted) return;
+    setState(() => _allGigs = allGigs);
+    _generateAndSetDisplayedGigs();
+    globalRefreshNotifier.notify();
+
+    _mirrorJamAttendanceToNetwork(gigInstance, newStatus: status);
+  }
+
+  /// Removes a single materialized jam instance from the gigs list (NOT
+  /// GOING / change of mind). Always available now regardless of whether
+  /// the occurrence belongs to an active recurring series — see the NOT
+  /// GOING button in _launchBookingDialogForGig for the visibility/messaging
+  /// logic that decides what this actually means to the user in each case.
+  Future<void> _removeJamInstance(Gig gigInstance) async {
+    final prefs = await SharedPreferences.getInstance();
+    final gigsJsonString = prefs.getString(_keyGigsList) ?? '[]';
+    final List<Gig> allGigs = Gig.decode(gigsJsonString);
+
+    allGigs.removeWhere((g) => g.id == gigInstance.id);
+
+    await prefs.setString(_keyGigsList, Gig.encode(allGigs));
+
+    if (!mounted) return;
+    setState(() => _allGigs = allGigs);
+    _generateAndSetDisplayedGigs();
+    globalRefreshNotifier.notify();
+
+    _mirrorJamAttendanceToNetwork(gigInstance, newStatus: null);
+  }
+
+  /// Mirrors a Going/Interested/cleared change to Firestore when connected
+  /// to the network, so other attendees of the same jam session can see
+  /// counts. No-ops silently for standalone users or a signed-out session.
+  ///
+  /// FIX (8/26/26): this used to compute a signed delta from the local
+  /// record's PREVIOUS attendanceStatus (decrement whatever it was, then
+  /// increment the new one) against a single counter doc. That broke the
+  /// first time it hit a gig that already had a local attendanceStatus
+  /// from before this feature existed (e.g. a GO JAM add, which has always
+  /// set attendanceStatus: 'going' locally) but had never been mirrored to
+  /// Firestore — tapping INTERESTED on one read oldStatus == 'going',
+  /// decremented a goingCount that was never actually incremented server-
+  /// side, and landed on Going (-1) / Interested (1). Any local/server
+  /// drift (reinstalls, this exact kind of pre-existing data, a prior
+  /// failed write) hit the same failure mode.
+  ///
+  /// Fixed by dropping delta math entirely: each user's vote is now its
+  /// own document at jamAttendance/{occurrenceId}/attendees/{userId} —
+  /// GOING/INTERESTED is an idempotent set(), NOT GOING is a delete(). A
+  /// stray write can never push a count negative or out of sync, because
+  /// there's no counter to drift — see JamAttendanceRepository.getCounts,
+  /// which now counts documents in that subcollection directly rather than
+  /// reading a maintained aggregate.
+  void _mirrorJamAttendanceToNetwork(Gig gigInstance,
+      {required String? newStatus}) {
+    if (!_isConnectedToNetwork) return;
+    final authService = AuthService();
+    if (!authService.isSignedIn) return;
+
+    unawaited(_jamAttendanceRepository.setAttendance(
+      occurrenceId: gigInstance.id,
+      userId: authService.currentUserId,
+      newStatus: newStatus,
+    ));
   }
 
   Future<void> _openNotesPage(Gig gig, {bool scrollToImpact = false}) async {
@@ -1810,9 +2153,14 @@ class _GigsPageState extends State<GigsPage>
           elevation: 0,
           child: TabBar(
             controller: _tabController,
-            labelColor: Theme.of(context).colorScheme.primary,
+            // Brand accent (8/26 color consolidation) — was
+            // colorScheme.primary (the deepPurple-derived purple); this is
+            // the "tab underline" that was sharing a color with the date
+            // circles below purely by ColorScheme coincidence. Orange is
+            // now the one intentional accent color.
+            labelColor: Colors.deepOrange.shade400,
             unselectedLabelColor: Colors.grey,
-            indicatorColor: Theme.of(context).colorScheme.primary,
+            indicatorColor: Colors.deepOrange.shade400,
             tabs: const [
               Tab(icon: Icon(Icons.event_note), text: 'Upcoming Gigs'),
               Tab(icon: Icon(Icons.location_city), text: 'Saved Venues'),

@@ -70,6 +70,12 @@ class Gig {
   // --- IMPACT EVENT INTELLIGENCE ---    ← NEW SECTION
   List<ImpactEvent>? impactEvents;
   DateTime? lastAssessedAt;
+  // --- JAM ATTENDANCE (GO JAM / jam listing dialog) ---
+  // 'going' | 'interested' | null (no status set yet). Only meaningful for
+  // isJamOpenMic gigs; ignored elsewhere. Local-only for now — a future
+  // pass syncs an aggregate going/interested count to Firestore per
+  // venue+session+date for connected/network users.
+  String? attendanceStatus;
 
   Gig({
     required this.id,
@@ -102,6 +108,7 @@ class Gig {
     this.retrospectiveCompleted,
     this.impactEvents,       // ← NEW
     this.lastAssessedAt,     // ← NEW
+    this.attendanceStatus,
   });
 
   Gig copyWith({
@@ -135,6 +142,7 @@ class Gig {
     bool? retrospectiveCompleted,
     List<ImpactEvent>? impactEvents,   // ← NEW
     DateTime? lastAssessedAt,          // ← NEW
+    String? attendanceStatus,
   }) {
     return Gig(
       id: id ?? this.id,
@@ -167,6 +175,7 @@ class Gig {
       retrospectiveCompleted: retrospectiveCompleted ?? this.retrospectiveCompleted,
       impactEvents: impactEvents ?? this.impactEvents,       // ← NEW
       lastAssessedAt: lastAssessedAt ?? this.lastAssessedAt, // ← NEW
+      attendanceStatus: attendanceStatus ?? this.attendanceStatus,
     );
   }
 
@@ -266,6 +275,7 @@ class Gig {
       recurrenceExceptions?.map((date) => date.toIso8601String()).toList(),
       'gigRatings': gigRatings?.map((r) => r.toJson()).toList(),
       'retrospectiveCompleted': retrospectiveCompleted,
+      'attendanceStatus': attendanceStatus,
       // ← NEW: impact events stored in cache (SharedPreferences), not here.
       // We do NOT persist impactEvents inside the gig JSON to keep gig storage
       // lean. The ImpactEventService has its own cache keyed by gigId.
@@ -337,6 +347,7 @@ class Gig {
       parseRecurrenceExceptions(json['recurrenceExceptions']),
       gigRatings: parseGigRatings(json['gigRatings']),
       retrospectiveCompleted: json['retrospectiveCompleted'] as bool?,
+      attendanceStatus: json['attendanceStatus'] as String?,
       // impactEvents and lastAssessedAt are not stored in gig JSON —
       // they live in the ImpactEventService cache.
       impactEvents: null,

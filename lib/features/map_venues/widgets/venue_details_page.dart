@@ -32,8 +32,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:the_money_gigs/core/services/analytics_service.dart';
 import 'package:the_money_gigs/core/services/auth_service.dart';
 import 'package:the_money_gigs/core/utils/logger.dart';
+import 'package:the_money_gigs/global_refresh_notifier.dart';
 import 'package:the_money_gigs/features/app_demo/providers/demo_provider.dart';
 import 'package:the_money_gigs/features/gigs/models/gig_model.dart';
+import 'package:the_money_gigs/features/gigs/repositories/jam_attendance_repository.dart';
+import 'package:the_money_gigs/features/map_venues/models/jam_session_model.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_contact.dart';
 import 'package:the_money_gigs/features/map_venues/models/venue_model.dart';
 import 'package:the_money_gigs/features/map_venues/repositories/venue_repository.dart';
@@ -99,11 +102,16 @@ class _VenueDetailPageState extends State<VenueDetailPage>
   bool _isDirty = false;
   final _bookingTabKey = GlobalKey<_BookingTabState>();
 
+  // ── GO JAM (bottom-bar quick-add, see _goJam) ────────────────────────────
+  bool _isAddingToGigsList = false;
+
   // ── Connection ────────────────────────────────────────────────────────────
   bool _isConnected = false;
   static const String _isConnectedKey = 'is_connected_to_network';
 
   final VenueRepository _venueRepository = VenueRepository();
+  final JamAttendanceRepository _jamAttendanceRepository =
+      JamAttendanceRepository();
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -378,6 +386,137 @@ class _VenueDetailPageState extends State<VenueDetailPage>
     widget.onBook(_buildUpdatedVenue());
   }
 
+  // ── GO JAM ────────────────────────────────────────────────────────────────
+  // One-tap alternative to "Edit Jam/Open Mic Settings" -> check "Show in
+  // Gigs list" -> Save, for someone who just wants to go to whichever jam
+  // is coming up soonest. Unlike that checkbox, this does NOT flip
+  // showInGigsList (so it doesn't turn on the ongoing recurring series) —
+  // it materializes a single standalone Gig for the next occurrence only,
+  // the same way a virtual recurring instance gets "materialized" into a
+  // real record elsewhere in the app (see gig_retrospective_wizard.dart).
+  // That materialized record is written straight to the 'gigs_list' prefs
+  // key that gigs.dart reads on load, so it shows up in My Gigs / the
+  // calendar without gigs.dart needing any changes.
+  Future<void> _goJam() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final venue = widget.venue;
+
+    // Across all of this venue's jam sessions, find whichever one's next
+    // occurrence comes soonest.
+    JamSession? soonestSession;
+    DateTime? soonestDate;
+    for (final session in venue.jamSessions) {
+      final occurrence = session.nextOccurrence();
+      if (occurrence == null) continue;
+      if (soonestDate == null || occurrence.isBefore(soonestDate)) {
+        soonestDate = occurrence;
+        soonestSession = session;
+      }
+    }
+
+    if (soonestSession == null || soonestDate == null) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text(
+            "Couldn't find an upcoming date for this venue's jam sessions."),
+      ));
+      return;
+    }
+
+    final session = soonestSession;
+    final date = soonestDate;
+
+    setState(() => _isAddingToGigsList = true);
+
+    // Same id shape gigs.dart's own generator uses for a jam occurrence
+    // (jam_{placeId}_{sessionId}_{yyyyMMdd}) — keeps this consistent with
+    // the rest of the app and de-dupes cleanly against itself on re-tap.
+    final String gigId =
+        'jam_${venue.placeId}_${session.id}_${DateFormat('yyyyMMdd').format(date)}';
+
+    try {
+      // Make sure this venue is in the user's own saved-locations list —
+      // My Gigs only knows about venues from there (see GigsPage._loadVenues),
+      // so a jam tapped straight off the map without ever being rated/saved/
+      // booked wouldn't otherwise be resolvable when the gig tile is tapped
+      // (GigsPage._launchBookingDialogForGig looks the venue up by placeId
+      // and silently no-ops if it isn't found). BOOK does the same
+      // save-first step via widget.onBook — this mirrors that.
+      widget.onSave(_buildUpdatedVenue());
+
+      final prefs = await SharedPreferences.getInstance();
+      final gigsJsonString = prefs.getString('gigs_list') ?? '[]';
+      final List<Gig> allGigs = Gig.decode(gigsJsonString);
+
+      if (!allGigs.any((g) => g.id == gigId)) {
+        allGigs.add(Gig(
+          id: gigId,
+          venueName: venue.name,
+          latitude: venue.coordinates.latitude,
+          longitude: venue.coordinates.longitude,
+          address: venue.address,
+          placeId: venue.placeId,
+          dateTime: date,
+          pay: 0,
+          gigLengthHours: 2,
+          driveSetupTimeHours: 0,
+          rehearsalLengthHours: 0,
+          isJamOpenMic: true,
+          notes: session.style,
+          isRecurring: false,
+          isFromRecurring: true,
+          recurrenceFrequency: session.frequency,
+          recurrenceDay: session.day,
+          recurrenceNthValue: session.nthValue,
+          attendanceStatus: 'going',
+        ));
+        await prefs.setString('gigs_list', Gig.encode(allGigs));
+      }
+
+      // Tell every other already-open screen (My Gigs chief among them) to
+      // reload from prefs now, instead of only picking this up on next
+      // app launch — same pattern used everywhere else in the app after a
+      // local write (see map.dart/_updateAndSaveLocationReview and friends).
+      globalRefreshNotifier.notify();
+
+      // GO JAM always defaults the user to GOING (see the Gig() above) —
+      // if connected to the network, mirror that immediately rather than
+      // waiting for them to ever re-open this occurrence and re-tap GOING
+      // themselves. Without this, the occurrence's Going/Interested count
+      // would sit at 0 in Firestore until they happened to interact with
+      // it again — exactly the drift GigsPage._launchBookingDialogForGig's
+      // own self-heal-on-open guards against, so this closes the same gap
+      // at the source instead of relying only on that later repair.
+      // Fire-and-forget, same as every other network mirror call — never
+      // gates or blocks the local save above, which already succeeded.
+      if (_isConnected && AuthService().isSignedIn) {
+        unawaited(_jamAttendanceRepository.setAttendance(
+          occurrenceId: gigId,
+          userId: AuthService().currentUserId,
+          newStatus: 'going',
+        ));
+      }
+
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+          'Added to your gigs list — ${DateFormat.yMMMEd().format(date)} '
+              'at ${DateFormat.jm().format(date)}.',
+        ),
+        duration: const Duration(seconds: 3),
+      ));
+      navigator.maybePop();
+    } catch (e) {
+      log('❌ Error adding jam session to gigs list: $e');
+      if (!mounted) return;
+      setState(() => _isAddingToGigsList = false);
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Something went wrong adding this to your gigs list.'),
+        backgroundColor: Colors.red,
+      ));
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -425,7 +564,38 @@ class _VenueDetailPageState extends State<VenueDetailPage>
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // GO JAM — only shown when this venue actually has jam
+              // sessions configured. Orange to match the jam-session
+              // markers/toggle on the map (Colors.orange.shade600/700 in
+              // map.dart).
+              if (widget.venue.hasJamOpenMic) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isAddingToGigsList ? null : _goJam,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange.shade600,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    icon: _isAddingToGigsList
+                        ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                        : const Icon(Icons.music_note),
+                    label: const Text('GO JAM',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               if (!widget.venue.isPublic)
@@ -488,6 +658,8 @@ class _VenueDetailPageState extends State<VenueDetailPage>
                   ),
                 ],
               ),
+            ],
+          ),
             ],
           ),
         ),

@@ -220,13 +220,25 @@ class AuthService {
 
   /// Identify user to RevenueCat — wrapped in its own try-catch because
   /// a failure here must NOT cancel a successful Firebase sign-in.
-  /// Shared by every sign-in/create-account path (Google, email).
+  /// Shared by every sign-in/create-account path (Google, email, Apple)
+  /// and the 8/17 re-identification wrapper below.
   Future<void> _identifyToRevenueCat(User? user) async {
     if (user == null) return;
     try {
       await ensureRevenueCatConfigured();
       await Purchases.logIn(user.uid);
       log('✅ User identified to RevenueCat: ${user.uid}');
+
+      // Added 8/21/26: RevenueCat customer records were showing up as bare
+      // anonymous-looking IDs with every attribute (name/email/phone) blank
+      // — logIn() only sets the App User ID, it never attaches an email.
+      // That made "who is this subscriber" lookups (e.g. confirming whether
+      // a specific person actually paid) unnecessarily hard. Single choke
+      // point, so this backfills every sign-in path going forward. Does not
+      // retroactively fix existing customers.
+      if (user.email != null && user.email!.isNotEmpty) {
+        await Purchases.setEmail(user.email!);
+      }
     } catch (e) {
       log('⚠️ RevenueCat logIn failed (non-fatal, sign-in still succeeds): $e');
     }

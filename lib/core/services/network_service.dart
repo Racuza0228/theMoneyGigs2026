@@ -1,5 +1,7 @@
 // lib/core/services/network_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'dart:async';
 import 'dart:math';
 import 'package:the_money_gigs/core/utils/logger.dart';
 
@@ -106,13 +108,54 @@ class NetworkService {
     }
   }
 
+  /// Rolls back a member created by createMemberWithInviteCode() — called
+  /// when the user declines the $2/mo purchase dialog or the purchase fails.
+  ///
+  /// Fixed 8/21/26: this used to only delete the networkMembers doc, leaving
+  /// the invite code's timesUsed/usedBy permanently incremented even on a
+  /// clean decline — every failed/declined redemption silently "spent" a use
+  /// of the code forever. Confirmed against INV-NASHV (Nashville, 8/14):
+  /// timesUsed showed 2 with only one live member, and that member's
+  /// subscriptionStatus still read 'active' though she never completed
+  /// payment — meaning this rollback either never ran or failed silently
+  /// for her. Now reverses the invite-code write atomically with the
+  /// member delete, and a rollback failure is recorded via Crashlytics
+  /// instead of just logged — same fix pattern as logAppleSignInFailed
+  /// (8/17), since a silent failure here leaves a ghost "active" member
+  /// with zero trace anywhere retrievable.
   Future<void> deleteMember(String userId) async {
     try {
-      await _firestore.collection('networkMembers').doc(userId).delete();
-      log('✅ Rolled back and deleted member: $userId');
-    } catch (e) {
+      final memberRef = _firestore.collection('networkMembers').doc(userId);
+      final doc = await memberRef.get();
+
+      final batch = _firestore.batch();
+      batch.delete(memberRef);
+
+      if (doc.exists) {
+        final inviteCodeUsed = doc.data()?['inviteCodeUsed'] as String?;
+        if (inviteCodeUsed != null && inviteCodeUsed.isNotEmpty) {
+          batch.update(
+            _firestore.collection('inviteCodes').doc(inviteCodeUsed),
+            {
+              'timesUsed': FieldValue.increment(-1),
+              'usedBy': FieldValue.arrayRemove([userId]),
+            },
+          );
+        }
+      }
+
+      await batch.commit();
+      log('✅ Rolled back and deleted member: $userId (invite code usage reversed)');
+    } catch (e, stack) {
       log('❌ Error rolling back member creation for user $userId: $e');
-      // Even if this fails, we don't block the user. Log for admin review.
+      // Even if this fails, we don't block the user — but a failed rollback
+      // here means a ghost "active" networkMembers doc with no paid
+      // subscription behind it, and no trace unless we record it.
+      unawaited(FirebaseCrashlytics.instance.recordError(
+        'Member rollback (deleteMember) failed for $userId: $e',
+        stack,
+        fatal: false,
+      ));
     }
   }
 

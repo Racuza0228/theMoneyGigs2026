@@ -58,6 +58,41 @@ class GigListTile extends StatelessWidget {
   bool get _hasImpactEvents => !_isJam && gig.impactEventCount > 0;
   bool get _hasSignificantImpact => gig.hasSignificantImpactEvents;
 
+  // ── Jam attendance badge (GOING / INTERESTED) ─────────────────────────────
+  String? get _attendanceLabel {
+    switch (gig.attendanceStatus) {
+      case 'going':
+        return 'GOING';
+      case 'interested':
+        return 'INTERESTED';
+      default:
+        return null;
+    }
+  }
+
+  Color get _attendanceColor =>
+      gig.attendanceStatus == 'going' ? Colors.green : Colors.amber.shade700;
+
+  // ── Brand palette (8/26 color consolidation) ──────────────────────────────
+  // A WCAG pass on this tile turned up two real contrast failures (white
+  // text on the purple date circle: 1.71:1; white text on the gold impact
+  // badge: ~3.66:1 — both below the 4.5:1 minimum for normal text) plus a
+  // color-count problem: this tile alone was pulling in purple and pink
+  // that only existed because ColorScheme.fromSeed(Colors.deepPurple) in
+  // main.dart auto-generates them — not an intentional design choice, and
+  // purple was coincidentally doing double duty as the nav/tab accent too.
+  // Consolidated down to neutrals + one orange accent (two weights for
+  // hierarchy) + green for GOING status:
+  //   - _orangeBold: paid gigs — solid fill, pairs with black text/icons.
+  //   - _orangeSoft: jam sessions — lighter weight, same treatment.
+  // The old gold impact-count badge is kept as-is (it already reads as a
+  // darker weight of this same orange family) but its text flips to black.
+  static const MaterialColor _orangeBold = Colors.deepOrange; // shade600/400 below
+  static const MaterialColor _orangeSoft = Colors.orange; // shade200/300 below
+
+  Color get _gigAccentColor =>
+      _isJam ? (_orangeSoft.shade300) : (_orangeBold.shade400);
+
   // ── Calendar view stays simple — no divider needed ────────────────────────
 
   @override
@@ -94,11 +129,7 @@ class GigListTile extends StatelessWidget {
                     children: [
                       Icon(
                         _isJam ? Icons.music_note : Icons.event,
-                        color: _isPast
-                            ? Colors.grey.shade500
-                            : (_isJam
-                            ? Theme.of(context).colorScheme.tertiary
-                            : Theme.of(context).colorScheme.primary),
+                        color: _isPast ? Colors.grey.shade500 : _gigAccentColor,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -121,8 +152,12 @@ class GigListTile extends StatelessWidget {
                             Text(
                               _isJam
                                   ? '${DateFormat.jm().format(gig.dateTime)} - Jam/Open Mic'
+                                  '${_attendanceLabel != null ? ' · $_attendanceLabel' : ''}'
                                   : '${DateFormat.jm().format(gig.dateTime)} - \$${gig.pay.toStringAsFixed(0)}',
                               style: TextStyle(
+                                fontWeight: _attendanceLabel != null
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
                                 color: _isPast
                                     ? Colors.grey.shade500
                                     : Colors.white,
@@ -243,14 +278,13 @@ class GigListTile extends StatelessWidget {
   // ── Leading avatar ────────────────────────────────────────────────────────
 
   Widget _buildLeading(BuildContext context) {
+    // Solid-fill circle — black foreground on both weights clears WCAG AA
+    // comfortably (the old white-on-purple pairing here measured 1.71:1).
     return CircleAvatar(
-      backgroundColor: _isJam
-          ? Theme.of(context).colorScheme.tertiary
-          : (_isPast
+      backgroundColor: _isPast
           ? Colors.grey.shade400
-          : Theme.of(context).colorScheme.primary),
-      foregroundColor:
-      _isJam ? Theme.of(context).colorScheme.onTertiary : Colors.white,
+          : (_isJam ? _orangeSoft.shade200 : _orangeBold.shade600),
+      foregroundColor: Colors.black,
       child: _isJam
           ? const Icon(Icons.music_note, size: 20)
           : Text(DateFormat('d').format(gig.dateTime)),
@@ -274,13 +308,12 @@ class GigListTile extends StatelessWidget {
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
+                  // Title text stays neutral for both gig types now — the
+                  // jam/paid distinction is carried by the leading icon and
+                  // card tint alone, not by a separate text color.
                   color: _isPast
                       ? Colors.grey.shade700
-                      : (_isJam
-                      ? Theme.of(context)
-                      .colorScheme
-                      .onSecondaryContainer
-                      : Theme.of(context).textTheme.titleLarge?.color),
+                      : Theme.of(context).textTheme.titleLarge?.color,
                 ),
               ),
             ),
@@ -290,9 +323,8 @@ class GigListTile extends StatelessWidget {
                 child: Icon(
                   Icons.event_repeat,
                   size: 16,
-                  color: _isPast
-                      ? Colors.grey.shade600
-                      : Theme.of(context).colorScheme.secondary,
+                  // Neutral — purely decorative metadata, not a brand accent.
+                  color: _isPast ? Colors.grey.shade600 : Colors.grey.shade400,
                   semanticLabel: 'Recurring Gig',
                 ),
               ),
@@ -306,9 +338,7 @@ class GigListTile extends StatelessWidget {
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: _isPast
-                    ? Colors.grey.shade500
-                    : Theme.of(context).colorScheme.primary,
+                color: _isPast ? Colors.grey.shade500 : _orangeBold.shade400,
               ),
             ),
           ),
@@ -324,15 +354,11 @@ class GigListTile extends StatelessWidget {
       children: [
         Text(
           '${DateFormat.yMMMEd().format(gig.dateTime)} at ${DateFormat.jm().format(gig.dateTime)}',
+          // Neutral for both gig types, same reasoning as the title above.
           style: TextStyle(
             color: _isPast
                 ? Colors.grey.shade600
-                : (_isJam
-                ? Theme.of(context)
-                .colorScheme
-                .onSecondaryContainer
-                .withValues(alpha: 0.8)
-                : Theme.of(context).textTheme.bodyMedium?.color),
+                : Theme.of(context).textTheme.bodyMedium?.color,
           ),
         ),
         if (!_isJam)
@@ -349,9 +375,34 @@ class GigListTile extends StatelessWidget {
             ),
           )
         else
-          const Text(
-            'Open Mic / Jam Session',
-            style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+          Row(
+            children: [
+              const Text(
+                'Open Mic / Jam Session',
+                style:
+                TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+              ),
+              if (_attendanceLabel != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _attendanceColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: _attendanceColor, width: 1),
+                  ),
+                  child: Text(
+                    _attendanceLabel!,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: _attendanceColor,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
       ],
     );
@@ -379,6 +430,10 @@ class GigListTile extends StatelessWidget {
                 width: 26,
                 height: 26,
                 decoration: BoxDecoration(
+                  // Kept as the darker-weight "gold" of the brand orange
+                  // family rather than a separate hue (per the palette
+                  // note above) — only the text color was actually broken:
+                  // white-on-gold measured ~3.66:1, below the 4.5:1 minimum.
                   color: _hasSignificantImpact
                       ? const Color(0xFFB8860B) // dark gold
                       : const Color(0xFFCDA535).withValues(alpha: 0.75),
@@ -390,7 +445,7 @@ class GigListTile extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: Colors.black,
                     height: 1.0,
                   ),
                 ),
@@ -409,12 +464,15 @@ class GigListTile extends StatelessWidget {
                 color: Colors.orange.shade700,
                 borderRadius: BorderRadius.circular(6),
               ),
+              // Bonus fix found during the same pass: white-on-orange.700
+              // here only measures ~2.7:1 — also below WCAG minimum. Black
+              // clears it at ~7.8:1.
               child: const Text(
                 'REVIEW',
                 style: TextStyle(
                   fontSize: 9,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: Colors.black,
                 ),
               ),
             ),
@@ -435,9 +493,7 @@ class GigListTile extends StatelessWidget {
         Icon(
           _hasNotes ? Icons.note_alt : Icons.note_alt_outlined,
           size: 22,
-          color: _hasNotes
-              ? Theme.of(context).colorScheme.primary
-              : Colors.grey.shade500,
+          color: _hasNotes ? _orangeBold.shade400 : Colors.grey.shade500,
         ),
 
       ],
@@ -446,10 +502,15 @@ class GigListTile extends StatelessWidget {
 
   Color _getCardColor(BuildContext context) {
     if (_isJam) {
-      return Theme.of(context)
-          .colorScheme
-          .secondaryContainer
-          .withValues(alpha: 0.7);
+      // Soft orange tint over the normal card color — was
+      // colorScheme.secondaryContainer, a purple/mauve tone auto-derived
+      // from the deepPurple seed. This keeps jam cards visually distinct
+      // from paid-gig cards using the same orange family instead of a
+      // one-off hue.
+      return Color.alphaBlend(
+        _orangeSoft.withValues(alpha: 0.14),
+        Theme.of(context).cardColor,
+      );
     }
     return Theme.of(context).cardColor;
   }
