@@ -41,6 +41,7 @@ import 'package:the_money_gigs/features/gigs/repositories/jam_attendance_reposit
 import 'package:the_money_gigs/features/bands/views/my_bands_tab.dart';
 import 'package:the_money_gigs/features/bands/views/create_band_page.dart';
 import 'package:the_money_gigs/features/bands/views/band_detail_page.dart';
+import 'package:the_money_gigs/features/day_of/day_of_notifier.dart';
 
 import '../../app_demo/providers/demo_provider.dart';
 import 'package:the_money_gigs/features/app_demo/widgets/simple_demo_overlay.dart';
@@ -641,6 +642,17 @@ class _GigsPageState extends State<GigsPage>
     });
     _prepareCalendarEvents();
     _onDaySelected(_selectedDay ?? _focusedDay, _focusedDay);
+
+    // Push "is there a gig today" to the app-wide notifier that drives the
+    // day-of FAB in main.dart. Reuses sortedGigs — the same deduped,
+    // fully-generated (recurring included) list this method already built —
+    // instead of a second recurrence pass. Soonest start time wins when
+    // more than one gig/jam falls on today.
+    final todaysGigs =
+        sortedGigs.where((g) => isSameDay(g.dateTime, now)).toList()
+          ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    Provider.of<DayOfNotifier>(context, listen: false)
+        .setTodaysGig(todaysGigs.isNotEmpty ? todaysGigs.first : null);
   }
 
   List<Gig> _generateJamOpenMicGigs(DateTime rangeEndDate) {

@@ -12,31 +12,61 @@
 // document fetch. See spec section 2.2.
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:the_money_gigs/core/models/person_model.dart';
 
 /// One member of a band/project. Embedded inside [BandProject.members] —
 /// there is no separate Firestore document per member.
+///
+/// FIX (8/26/26): now composes a shared [Person] internally (see
+/// core/models/person_model.dart) instead of owning name/email/phone/
+/// instruments directly — the same fields the new networking Contact
+/// feature needed, so rather than let the two drift into separate copies
+/// they share one definition. This is a Dart-level refactor ONLY: every
+/// public getter/setter below has the exact same name and type as before
+/// (still plain fields as far as any calling code can tell), and toMap()/
+/// fromMap() still read and write the exact same flat top-level Firestore
+/// keys ('name', 'email', 'phone', 'instruments' — no nested 'person' map).
+/// Every existing band already saved in Firestore, and every other file
+/// that constructs or reads a BandMember, needed zero changes for this.
 class BandMember {
-  final String localId; // client-generated UUID, stable reference
-  String name;
-  String email;
-  String? phone;
-  List<String> instruments; // empty until app joined + profile set
+  final Person _person;
   String? networkMemberId; // null until matched on join (see spec section 6)
   String status; // 'invited' | 'active'
   DateTime? invitedAt; // when first invite email sent
   String? inviteCodeSent; // which code was included in the invite
 
   BandMember({
-    required this.localId,
-    required this.name,
-    required this.email,
-    this.phone,
-    this.instruments = const [],
+    required String localId,
+    required String name,
+    required String email,
+    String? phone,
+    List<String> instruments = const [],
     this.networkMemberId,
     this.status = 'invited',
     this.invitedAt,
     this.inviteCodeSent,
-  });
+  }) : _person = Person(
+    localId: localId,
+    name: name,
+    email: email,
+    phone: phone,
+    instruments: instruments,
+  );
+
+  // ── Forwarding accessors — same names/types/mutability as before ────────
+  String get localId => _person.localId;
+  String get name => _person.name;
+  set name(String value) => _person.name = value;
+  // Person.email is nullable (a bare Contact might not have one); BandMember
+  // has always required one (band invites go out by email), so the getter
+  // falls back to '' rather than exposing null to callers that never had to
+  // handle it.
+  String get email => _person.email ?? '';
+  set email(String value) => _person.email = value;
+  String? get phone => _person.phone;
+  set phone(String? value) => _person.phone = value;
+  List<String> get instruments => _person.instruments;
+  set instruments(List<String> value) => _person.instruments = value;
 
   bool get isActive => status == 'active';
 

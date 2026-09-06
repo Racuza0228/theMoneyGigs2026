@@ -28,8 +28,8 @@ import 'package:the_money_gigs/features/gigs/models/impact_event.dart';
 
 const int kImpactWindowDaysBefore = 5;
 const int kImpactWindowDaysAfter = 0;
-const double kImpactRadiusMiles = 5.0;  // API fetch radius
-const double kImpactFilterMiles = 5.0;   // Client-side filter — drop anything beyond this
+const double kImpactRadiusMiles = 25.0;  // API fetch radius
+const double kImpactFilterMiles = 25.0;   // Client-side filter — drop anything beyond this
 const Duration kImpactCacheTtl = Duration(hours: 24);
 
 enum ImpactStatusType { loading, success, failure }
@@ -387,7 +387,7 @@ class ImpactEventService {
   }
 
   String _deriveImpactLevel(String eventType, double? distanceMiles) {
-    // All events are now within kImpactFilterMiles (5 miles) —
+    // All events are now within kImpactFilterMiles (25 miles) —
     // distance thresholds are meaningful and reliable.
     final double d = distanceMiles ?? 99.0;
 
